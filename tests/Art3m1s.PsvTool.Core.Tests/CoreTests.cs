@@ -587,9 +587,99 @@ public sealed class CoreTests : IDisposable
 
         Assert.Single(psbProcessor.Paths);
         Assert.Equal(0.5, psbProcessor.Paths[0].Ratio);
+        Assert.True(psbProcessor.Paths[0].ConvertToDxt5);
         ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"),
             Path.Combine(_root, "psb-verify"));
         Assert.Equal(original, await File.ReadAllBytesAsync(Assert.Single(rebuilt.Entries).ExtractedPath));
+    }
+
+    [Fact]
+    public async Task EmoteBc3SwitchCanBeDisabledWithoutDisablingExistingPsbResize()
+    {
+        string input = Path.Combine(_root, "psb-switch-game");
+        string output = Path.Combine(_root, "psb-switch-game-psv");
+        Directory.CreateDirectory(input);
+        byte[] original = CreateMinimalPsbV3();
+        string psb = Path.Combine(_root, "switch-character.psb");
+        await File.WriteAllBytesAsync(psb, original);
+        await new PfsCodec().PackPf8Async(new ExtractedArchive('8',
+        [
+            new PfsEntry(Encoding.UTF8.GetBytes("character.psb"), "character.psb", 0,
+                (uint)original.Length, psb)
+        ]), Path.Combine(input, "root.pfs"));
+        RecordingPsbProcessor processor = new();
+
+        await new ConversionService(psb: processor).ConvertAsync(new ConversionOptions(input, output,
+            Ratio: 0.75, Categories: AssetCategories.Animation, ConvertEmotePsbTexturesToDxt5: false));
+
+        Assert.Single(processor.Paths);
+        Assert.Equal(0.75, processor.Paths[0].Ratio);
+        Assert.False(processor.Paths[0].ConvertToDxt5);
+    }
+
+    [Fact]
+    public async Task EmoteBc3ConversionIsIndependentFromAnimationResizeSelection()
+    {
+        string input = Path.Combine(_root, "psb-bc3-only-game");
+        string output = Path.Combine(_root, "psb-bc3-only-game-psv");
+        Directory.CreateDirectory(input);
+        byte[] original = CreateMinimalPsbV3();
+        string psb = Path.Combine(_root, "bc3-only-character.psb");
+        await File.WriteAllBytesAsync(psb, original);
+        await new PfsCodec().PackPf8Async(new ExtractedArchive('8',
+        [
+            new PfsEntry(Encoding.UTF8.GetBytes("character.psb"), "character.psb", 0,
+                (uint)original.Length, psb)
+        ]), Path.Combine(input, "root.pfs"));
+        RecordingPsbProcessor processor = new();
+
+        await new ConversionService(psb: processor).ConvertAsync(new ConversionOptions(input, output,
+            Ratio: 0.5, Categories: AssetCategories.None, ConvertEmotePsbTexturesToDxt5: true));
+
+        Assert.Single(processor.Paths);
+        Assert.Equal(1, processor.Paths[0].Ratio);
+        Assert.True(processor.Paths[0].ConvertToDxt5);
+    }
+
+    [Fact]
+    public async Task NonEmotePsbIsReportedAndPreserved()
+    {
+        string path = Path.Combine(_root, "ordinary.psb");
+        byte[] original = CreateMinimalPsbV3();
+        await File.WriteAllBytesAsync(path, original);
+
+        PsbProcessingResult result = await new PsbProcessor().ProcessAsync(path, 0.5, true);
+
+        Assert.False(result.IsEmoteMotion);
+        Assert.False(result.Changed);
+        Assert.Contains("preserved", result.Message);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+    }
+
+    [Fact]
+    public void Bgra8ToBc3UsesRawBlocksAndPreservesContinuousAlphaForPartialBlocks()
+    {
+        const int width = 5, height = 3;
+        byte[] bgra = new byte[width * height * 4];
+        for (int pixel = 0; pixel < width * height; pixel++)
+        {
+            bgra[pixel * 4] = 17;       // B
+            bgra[pixel * 4 + 1] = 41;   // G
+            bgra[pixel * 4 + 2] = 233;  // R
+            bgra[pixel * 4 + 3] = (byte)(pixel * 17);
+        }
+
+        byte[] bc3 = PsbProcessor.EncodeBgra8ToDxt5ForTest(bgra, width, height);
+        byte[] decoded = PsbProcessor.DecodeDxt5ForTest(bc3, width, height);
+
+        Assert.Equal(((width + 3) / 4) * ((height + 3) / 4) * 16, bc3.Length);
+        Assert.All(decoded.Chunk(4), pixel =>
+        {
+            Assert.True(pixel[0] > pixel[2]); // red remains red; BGRA was not interpreted as RGBA
+            Assert.InRange(pixel[3], (byte)0, (byte)255);
+        });
+        Assert.Contains(decoded.Chunk(4), pixel => pixel[3] is > 0 and < 255);
+        Assert.True(decoded.Chunk(4).Select(pixel => pixel[3]).Distinct().Count() > 2);
     }
 
     private static byte[] CreateMinimalPsbV3()
@@ -684,13 +774,19 @@ public sealed class CoreTests : IDisposable
 
     private sealed class RecordingPsbProcessor : IPsbProcessor
     {
-        public List<(string Path, double Ratio)> Paths { get; } = [];
+        public List<(string Path, double Ratio, bool ConvertToDxt5)> Paths { get; } = [];
         public Task<PsbInspection> InspectAsync(string path, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PsbInspection(3, 0, 0, 0, false));
         public Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default)
         {
-            Paths.Add((path, ratio));
+            Paths.Add((path, ratio, false));
             return Task.CompletedTask;
+        }
+        public Task<PsbProcessingResult> ProcessAsync(string path, double ratio, bool convertRgba8ToDxt5,
+            CancellationToken cancellationToken = default)
+        {
+            Paths.Add((path, ratio, convertRgba8ToDxt5));
+            return Task.FromResult(new PsbProcessingResult(true, true, "processed"));
         }
     }
 

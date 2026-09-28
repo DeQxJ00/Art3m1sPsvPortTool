@@ -167,6 +167,7 @@ public sealed class ConversionService : IConversionService
         {
             string extension = Path.GetExtension(path);
             string relativePath = Path.GetRelativePath(root, path);
+            string progressEntry = relativePath;
             try
             {
                 if (TextExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Text))
@@ -177,10 +178,16 @@ public sealed class ConversionService : IConversionService
                                                  extension.Equals(".otf", StringComparison.OrdinalIgnoreCase)))
                     await _fonts.SubsetAsync(path, options.FontProfile, usedCodePoints, token);
                 else if (extension.Equals(".psb", StringComparison.OrdinalIgnoreCase) &&
-                         options.Categories.HasFlag(AssetCategories.Animation))
+                         (options.Categories.HasFlag(AssetCategories.Animation) || options.ConvertEmotePsbTexturesToDxt5))
                 {
                     await psbSlots.WaitAsync(token);
-                    try { await _psb.ResizeAsync(path, options.Ratio, token); }
+                    try
+                    {
+                        double psbRatio = options.Categories.HasFlag(AssetCategories.Animation) ? options.Ratio : 1;
+                        PsbProcessingResult result = await _psb.ProcessAsync(path, psbRatio,
+                            options.ConvertEmotePsbTexturesToDxt5, token);
+                        progressEntry = $"{relativePath} · {result.Message}";
+                    }
                     finally { psbSlots.Release(); }
                 }
                 else if (archiveName is not null && options.IgnorePfsVideos && VideoExtensions.Contains(extension))
@@ -220,7 +227,7 @@ public sealed class ConversionService : IConversionService
 
             int done = Interlocked.Increment(ref completed);
             double fraction = files.Length == 0 ? 1 : (double)done / files.Length;
-            progress?.Report(new ConversionProgress(progressStart + progressSpan * fraction, "resource", archiveName, relativePath));
+            progress?.Report(new ConversionProgress(progressStart + progressSpan * fraction, "resource", archiveName, progressEntry));
         });
     }
 

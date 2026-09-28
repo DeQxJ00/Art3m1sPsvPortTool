@@ -103,6 +103,11 @@
               <CheckBox IsChecked="{Binding IgnorePfsVideos}">
                 <TextBlock Text="{Binding IgnorePfsVideosLabel}" TextWrapping="Wrap" />
               </CheckBox>
+              <CheckBox IsChecked="{Binding ConvertEmotePsbTexturesToDxt5}">
+                <TextBlock Text="{Binding ConvertEmotePsbTexturesToDxt5Label}" TextWrapping="Wrap" />
+              </CheckBox>
+              <TextBlock Text="{Binding ConvertEmotePsbTexturesToDxt5Help}" TextWrapping="Wrap"
+                         Foreground="{DynamicResource SecondaryText}" FontSize="12" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">
               <TextBlock Text="{Binding LogLabel}" Classes="sectionTitle" />

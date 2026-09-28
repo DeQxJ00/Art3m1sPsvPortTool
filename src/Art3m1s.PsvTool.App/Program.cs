@@ -18,6 +18,8 @@ internal static class Program
             return RunPsbSelfTestAsync(args[1]).GetAwaiter().GetResult();
         if (args.Length == 3 && args[0].Equals("--psb-resize-test", StringComparison.Ordinal))
             return RunPsbResizeTestAsync(args[1], args[2]).GetAwaiter().GetResult();
+        if (args.Length == 4 && args[0].Equals("--psb-bc3-test", StringComparison.Ordinal))
+            return RunPsbBc3TestAsync(args[1], args[2], args[3]).GetAwaiter().GetResult();
         if (args.Length == 3 && args[0].Equals("--psb-pfs-self-test", StringComparison.Ordinal))
             return RunPsbPfsSelfTestAsync(args[1], args[2]).GetAwaiter().GetResult();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
@@ -93,6 +95,27 @@ internal static class Program
         {
             Console.Error.WriteLine(exception);
             return 8;
+        }
+    }
+
+    private static async Task<int> RunPsbBc3TestAsync(string source, string destination, string ratioText)
+    {
+        try
+        {
+            if (!double.TryParse(ratioText, System.Globalization.CultureInfo.InvariantCulture, out double ratio)) return 12;
+            if (File.Exists(destination)) return 13;
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destination))!);
+            File.Copy(source, destination);
+            PsbProcessingResult result = await new PsbProcessor().ProcessAsync(destination, ratio,
+                convertRgba8ToDxt5: true);
+            Console.WriteLine(result.Message);
+            await new PsbProcessor().InspectAsync(destination);
+            return result.IsEmoteMotion && result.Changed ? 0 : 14;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(exception);
+            return 15;
         }
     }
 

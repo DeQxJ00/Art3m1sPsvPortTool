@@ -23,6 +23,8 @@ public sealed class UiTests
         Assert.Equal("项目 GitHub", viewModel.ProjectRepositoryLabel);
         Assert.Equal("https://github.com/DeQxJ00/art3m1s_psv_port_tool", MainWindow.RepositoryUrl);
         Assert.True(viewModel.IgnorePfsVideos);
+        Assert.True(viewModel.ConvertEmotePsbTexturesToDxt5);
+        Assert.Equal("E-mote PSB 纹理转 DXT5（BC3）", viewModel.ConvertEmotePsbTexturesToDxt5Label);
         Assert.Contains("WMV / DAT / MP4 / AVI / MPG / MKV", viewModel.IgnorePfsVideosLabel);
         Assert.DoesNotContain("OGV", viewModel.IgnorePfsVideosLabel);
     }
@@ -38,6 +40,7 @@ public sealed class UiTests
         Assert.Equal("Ignore video inside PFS (WMV / DAT / MP4 / AVI / MPG / MKV)", viewModel.IgnorePfsVideosLabel);
         Assert.Equal("art3m1s PSV Port Tool", viewModel.Title);
         Assert.Equal("Project GitHub", viewModel.ProjectRepositoryLabel);
+        Assert.Equal("Convert E-mote PSB textures to DXT5 (BC3)", viewModel.ConvertEmotePsbTexturesToDxt5Label);
     }
 
     [Fact]
@@ -47,6 +50,36 @@ public sealed class UiTests
         viewModel.SetLanguage("en-US"); viewModel.ToggleTheme();
         Assert.Equal("en-US", store.Value.Language);
         Assert.False(store.Value.IsDark);
+        viewModel.ConvertEmotePsbTexturesToDxt5 = false;
+        Assert.False(store.Value.ConvertEmotePsbTexturesToDxt5);
+    }
+
+    [Fact]
+    public void OldSettingsWithoutBc3OptionDefaultToEnabled()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"art3m1s-settings-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, "{\"Language\":\"en-US\",\"IsDark\":false}");
+            AppSettings settings = new LocalSettingsStore(path).Load();
+            Assert.Equal("en-US", settings.Language);
+            Assert.False(settings.IsDark);
+            Assert.True(settings.ConvertEmotePsbTexturesToDxt5);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void Bc3OptionRoundTripsThroughLocalSettings()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"art3m1s-settings-{Guid.NewGuid():N}.json");
+        try
+        {
+            LocalSettingsStore store = new(path);
+            store.Save(new AppSettings("zh-CN", true, false));
+            Assert.False(store.Load().ConvertEmotePsbTexturesToDxt5);
+        }
+        finally { File.Delete(path); }
     }
 
     [Fact]
