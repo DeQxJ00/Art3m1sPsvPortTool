@@ -35,7 +35,8 @@ public sealed record ConversionOptions(
     bool OverwriteExisting = false,
     bool SubsetFonts = false,
     FontSubsetProfile FontProfile = FontSubsetProfile.SimplifiedChinese,
-    bool IgnorePfsVideos = true)
+    bool IgnorePfsVideos = true,
+    bool ConvertEmotePsbTexturesToDxt5 = true)
 {
     public int EffectiveParallelism => MaxParallelism > 0
         ? MaxParallelism

@@ -3,7 +3,10 @@ using System.Text.Json.Serialization;
 
 namespace Art3m1s.PsvTool.App;
 
-public sealed record AppSettings(string Language = "zh-CN", bool IsDark = true);
+public sealed record AppSettings(
+    string Language = "zh-CN",
+    bool IsDark = true,
+    bool ConvertEmotePsbTexturesToDxt5 = true);
 
 public interface ISettingsStore
 {

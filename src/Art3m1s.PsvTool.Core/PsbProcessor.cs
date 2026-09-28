@@ -11,10 +11,14 @@ public sealed record PsbInspection(
     int ExtraResourceCount,
     bool BodyEncrypted);
 
+public sealed record PsbProcessingResult(bool IsEmoteMotion, bool Changed, string Message);
+
 public interface IPsbProcessor
 {
     Task<PsbInspection> InspectAsync(string path, CancellationToken cancellationToken = default);
     Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default);
+    Task<PsbProcessingResult> ProcessAsync(string path, double ratio, bool convertRgba8ToDxt5,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

@@ -27,6 +27,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _log = string.Empty;
     private bool _text = true, _images = true, _animation = true, _video = true;
     private bool _ignorePfsVideos = true;
+    private bool _convertEmotePsbTexturesToDxt5 = true;
     private bool _subsetFonts;
     private int _fontProfile;
     private int _selectedParallel;
@@ -40,6 +41,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _settings = settings ?? new LocalSettingsStore();
         AppSettings saved = _settings.Load();
         IsDark = saved.IsDark;
+        _convertEmotePsbTexturesToDxt5 = saved.ConvertEmotePsbTexturesToDxt5;
         _localizer.SetLanguage(saved.Language);
         if (Application.Current is not null)
             Application.Current.RequestedThemeVariant = IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
@@ -56,6 +58,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool ProcessAnimation { get => _animation; set => Set(ref _animation, value); }
     public bool ProcessVideo { get => _video; set => Set(ref _video, value); }
     public bool IgnorePfsVideos { get => _ignorePfsVideos; set => Set(ref _ignorePfsVideos, value); }
+    public bool ConvertEmotePsbTexturesToDxt5
+    {
+        get => _convertEmotePsbTexturesToDxt5;
+        set { if (Set(ref _convertEmotePsbTexturesToDxt5, value)) SaveSettings(); }
+    }
     public bool SubsetFonts { get => _subsetFonts; set => Set(ref _subsetFonts, value); }
     public int FontProfile { get => _fontProfile; set => Set(ref _fontProfile, value); }
     public int SelectedParallel { get => _selectedParallel; set => Set(ref _selectedParallel, value); }
@@ -85,6 +92,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string AdvancedLabel => L("Advanced"); public string ParallelLabel => L("Parallel"); public string AutoLabel => L("Auto");
     public string EncodingLabel => L("Encoding"); public string LogLabel => L("Log"); public string StartLabel => L("Start");
     public string IgnorePfsVideosLabel => L("IgnorePfsVideos");
+    public string ConvertEmotePsbTexturesToDxt5Label => L("ConvertEmotePsbTexturesToDxt5");
+    public string ConvertEmotePsbTexturesToDxt5Help => L("ConvertEmotePsbTexturesToDxt5Help");
     public string CancelLabel => L("Cancel"); public string AboutLabel => L("About"); public string AboutBody => L("AboutBody"); public string ProjectRepositoryLabel => L("ProjectRepository"); public string ThemeLabel => L("Theme"); public string ThemeValue => L(IsDark ? "Dark" : "Light");
 
     public void SetRatio(double ratio) => Ratio = ratio.ToString("0.###", CultureInfo.InvariantCulture);
@@ -139,7 +148,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 Progress = value.Percent; Status = LocalizeStage(value.Stage);
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
             });
-            await _converter.ConvertAsync(new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos), reporter, _conversionCancellation.Token);
+            await _converter.ConvertAsync(new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5), reporter, _conversionCancellation.Token);
             Status = L("Finished");
         }
         catch (OperationCanceledException) { Status = L("Cancel"); }
@@ -191,7 +200,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     private void SaveSettings()
     {
-        try { _settings.Save(new AppSettings(Language, IsDark)); }
+        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5)); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
@@ -199,6 +208,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     private void RaiseAllLocalized()
     {
-        foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ProjectRepositoryLabel), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
+        foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(ConvertEmotePsbTexturesToDxt5Label), nameof(ConvertEmotePsbTexturesToDxt5Help), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ProjectRepositoryLabel), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
     }
 }

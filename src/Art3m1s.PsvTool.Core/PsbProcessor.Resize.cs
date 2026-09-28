@@ -12,20 +12,39 @@ namespace Art3m1s.PsvTool.Core;
 public sealed partial class PsbProcessor
 {
     public async Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default)
+        => _ = await ProcessAsync(path, ratio, convertRgba8ToDxt5: false, cancellationToken);
+
+    public async Task<PsbProcessingResult> ProcessAsync(string path, double ratio, bool convertRgba8ToDxt5,
+        CancellationToken cancellationToken = default)
     {
         if (ratio is <= 0 or > 1) throw new ArgumentOutOfRangeException(nameof(ratio));
-        if (ratio == 1)
-        {
-            await InspectAsync(path, cancellationToken);
-            return;
-        }
 
         byte[] data = await File.ReadAllBytesAsync(path, cancellationToken);
-        MutableDocument document = MutableDocument.Parse(data);
+        MutableDocument document;
+        try { document = MutableDocument.Parse(data); }
+        catch (Exception exception) when (exception is InvalidDataException or NotSupportedException or
+                                           IndexOutOfRangeException or OverflowException or ArgumentException)
+        {
+            await InspectAsync(path, cancellationToken);
+            return new PsbProcessingResult(false, false,
+                $"non-E-mote or unsupported PSB body preserved: {exception.Message}");
+        }
+        ObjectNode root = document.Root as ObjectNode ?? throw new InvalidDataException("PSB root is not an object.");
+        bool isMotion = string.Equals(root.GetString("id"), "motion", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(root.GetString("type"), "motion", StringComparison.OrdinalIgnoreCase);
+        if (!isMotion ||
+            root.GetObject("source") is null)
+            return new PsbProcessingResult(false, false, "non-E-mote motion PSB preserved");
+
         Dictionary<ResourceKey, byte[]> replacements = [];
-        ResizeModel(document, ratio, replacements, cancellationToken);
+        ProcessingSummary summary = ProcessModel(document, ratio, convertRgba8ToDxt5, replacements, cancellationToken);
+        if (summary.UnsupportedFormats.Count > 0)
+            return new PsbProcessingResult(true, false,
+                $"unsupported PSB texture format(s) preserved: {string.Join(", ", summary.UnsupportedFormats.Order(StringComparer.OrdinalIgnoreCase))}");
         if (replacements.Count == 0)
-            throw new InvalidDataException("The PSB contains no supported RGBA8 or DXT5 E-mote textures.");
+            return new PsbProcessingResult(true, false, summary.SupportedTextureCount == 0
+                ? "E-mote motion PSB has no supported embedded RGBA8/DXT5 texture; preserved"
+                : "E-mote PSB texture already DXT5; no resize required");
 
         byte[] rebuilt = document.RebuildResources(replacements);
         string temporary = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.psb");
@@ -38,14 +57,19 @@ public sealed partial class PsbProcessor
         {
             if (File.Exists(temporary)) File.Delete(temporary);
         }
+        return new PsbProcessingResult(true, true, summary.ConvertedToDxt5Count > 0
+            ? $"converted {summary.ConvertedToDxt5Count} RGBA8 texture(s) to DXT5 (BC3)"
+            : $"resized {summary.SupportedTextureCount} E-mote texture(s)");
     }
 
-    private static void ResizeModel(MutableDocument document, double ratio,
+    private static ProcessingSummary ProcessModel(MutableDocument document, double ratio, bool convertRgba8ToDxt5,
         Dictionary<ResourceKey, byte[]> replacements, CancellationToken cancellationToken)
     {
         ObjectNode root = document.Root as ObjectNode ?? throw new InvalidDataException("PSB root is not an object.");
         ObjectNode sources = root.GetObject("source") ?? throw new InvalidDataException(
             $"E-mote PSB has no source table (root keys: {string.Join(", ", root.Values.Keys)}).");
+        int supportedTextureCount = 0, convertedToDxt5Count = 0;
+        HashSet<string> unsupportedFormats = new(StringComparer.OrdinalIgnoreCase);
         foreach ((string sourceName, Node sourceNode) in sources.Values)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -53,7 +77,11 @@ public sealed partial class PsbProcessor
             string format = texture.GetString("type") ?? "unknown";
             if (!format.Equals("DXT5", StringComparison.OrdinalIgnoreCase) &&
                 !format.Equals("RGBA8", StringComparison.OrdinalIgnoreCase))
-                throw new NotSupportedException($"PSB texture {sourceName} uses unsupported format {format}.");
+            {
+                unsupportedFormats.Add(format);
+                continue;
+            }
+            supportedTextureCount++;
             ResourceNode resource = (texture.Get("pixel") ?? texture.Get("data") ?? texture.Get("resource")) as ResourceNode
                 ?? throw new InvalidDataException($"PSB texture {sourceName} has no pixel resource.");
             NumberNode widthNode = texture.GetNumber("width")
@@ -65,49 +93,68 @@ public sealed partial class PsbProcessor
             int targetWidth = Math.Max(1, (int)(width * ratio));
             int targetHeight = Math.Max(1, (int)(height * ratio));
             ResourceKey key = new(resource.Index, resource.Extra);
-            if (!replacements.ContainsKey(key))
+            bool needsResize = targetWidth != width || targetHeight != height;
+            bool needsConversion = convertRgba8ToDxt5 && format.Equals("RGBA8", StringComparison.OrdinalIgnoreCase);
+            if ((needsResize || needsConversion) && !replacements.ContainsKey(key))
             {
                 byte[] compressed = document.GetResource(key);
                 byte[] rgba = format.Equals("DXT5", StringComparison.OrdinalIgnoreCase)
                     ? DecodeDxt5(compressed, width, height)
-                    : ValidateRgba8(compressed, width, height);
-                using Image<Rgba32> image = Image.LoadPixelData<Rgba32>(rgba, width, height);
-                image.Mutate(context => context.Resize(new ResizeOptions
+                    : DecodeBgra8(compressed, width, height);
+                if (needsResize)
                 {
-                    Size = new Size(targetWidth, targetHeight),
-                    Mode = ResizeMode.Stretch,
-                    Sampler = KnownResamplers.Bicubic,
-                    Compand = false
-                }));
-                byte[] resized = new byte[targetWidth * targetHeight * 4];
-                image.CopyPixelDataTo(resized);
-                replacements.Add(key, format.Equals("DXT5", StringComparison.OrdinalIgnoreCase)
-                    ? EncodeDxt5(resized, targetWidth, targetHeight)
-                    : resized);
+                    using Image<Rgba32> image = Image.LoadPixelData<Rgba32>(rgba, width, height);
+                    image.Mutate(context => context.Resize(new ResizeOptions
+                    {
+                        Size = new Size(targetWidth, targetHeight),
+                        Mode = ResizeMode.Stretch,
+                        Sampler = KnownResamplers.Bicubic,
+                        Compand = false
+                    }));
+                    rgba = new byte[targetWidth * targetHeight * 4];
+                    image.CopyPixelDataTo(rgba);
+                }
+                bool targetDxt5 = format.Equals("DXT5", StringComparison.OrdinalIgnoreCase) || needsConversion;
+                replacements.Add(key, targetDxt5
+                    ? EncodeDxt5(rgba, targetWidth, targetHeight)
+                    : EncodeBgra8(rgba, targetWidth, targetHeight));
             }
 
-            widthNode.ScaleDimension(ratio);
-            heightNode.ScaleDimension(ratio);
-            texture.GetNumber("truncated_width")?.ScaleDimension(ratio);
-            texture.GetNumber("truncated_height")?.ScaleDimension(ratio);
-            if (source.GetObject("icon") is { } icons)
+            if (needsConversion)
             {
-                foreach (Node iconNode in icons.Values.Values)
-                    if (iconNode is ObjectNode icon)
-                        foreach (string field in new[] { "left", "top", "width", "height", "originX", "originY" })
-                            icon.GetNumber(field)?.Scale(ratio);
+                (texture.Get("type") as StringNode)?.Rewrite("DXT5");
+                convertedToDxt5Count++;
+            }
+
+            if (needsResize)
+            {
+                widthNode.ScaleDimension(ratio);
+                heightNode.ScaleDimension(ratio);
+                texture.GetNumber("truncated_width")?.ScaleDimension(ratio);
+                texture.GetNumber("truncated_height")?.ScaleDimension(ratio);
+                if (source.GetObject("icon") is { } icons)
+                {
+                    foreach (Node iconNode in icons.Values.Values)
+                        if (iconNode is ObjectNode icon)
+                            foreach (string field in new[] { "left", "top", "width", "height", "originX", "originY" })
+                                icon.GetNumber(field)?.Scale(ratio);
+                }
             }
         }
 
-        if (root.GetObject("screenSize") is { } screen)
+        if (ratio != 1 && root.GetObject("screenSize") is { } screen)
         {
             screen.GetNumber("width")?.ScaleDimension(ratio);
             screen.GetNumber("height")?.ScaleDimension(ratio);
         }
 
-        if (root.GetObject("object") is { } objects)
+        if (ratio != 1 && root.GetObject("object") is { } objects)
             ScaleMotionGeometry(objects, ratio);
+        return new ProcessingSummary(supportedTextureCount, convertedToDxt5Count, unsupportedFormats);
     }
+
+    private sealed record ProcessingSummary(int SupportedTextureCount, int ConvertedToDxt5Count,
+        IReadOnlySet<string> UnsupportedFormats);
 
     private static void ScaleMotionGeometry(Node node, double ratio)
     {
@@ -528,12 +575,30 @@ public sealed partial class PsbProcessor
         return output;
     }
 
-    private static byte[] ValidateRgba8(byte[] data, int width, int height)
+    private static byte[] DecodeBgra8(byte[] data, int width, int height)
     {
         if (data.Length != checked(width * height * 4))
             throw new InvalidDataException("RGBA8 resource size does not match its texture dimensions.");
-        return data;
+        byte[] rgba = data.ToArray();
+        for (int index = 0; index < rgba.Length; index += 4)
+            (rgba[index], rgba[index + 2]) = (rgba[index + 2], rgba[index]);
+        return rgba;
     }
+
+    private static byte[] EncodeBgra8(byte[] rgba, int width, int height)
+    {
+        if (rgba.Length != checked(width * height * 4))
+            throw new InvalidDataException("RGBA8 resource size does not match its texture dimensions.");
+        byte[] bgra = rgba.ToArray();
+        for (int index = 0; index < bgra.Length; index += 4)
+            (bgra[index], bgra[index + 2]) = (bgra[index + 2], bgra[index]);
+        return bgra;
+    }
+
+    internal static byte[] EncodeBgra8ToDxt5ForTest(byte[] bgra, int width, int height) =>
+        EncodeDxt5(DecodeBgra8(bgra, width, height), width, height);
+
+    internal static byte[] DecodeDxt5ForTest(byte[] data, int width, int height) => DecodeDxt5(data, width, height);
 
     private static void DecodeDxt5Block(ReadOnlySpan<byte> block, byte[] output, int width, int height, int ox, int oy)
     {
