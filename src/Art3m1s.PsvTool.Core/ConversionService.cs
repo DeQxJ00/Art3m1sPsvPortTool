@@ -171,7 +171,16 @@ public sealed class ConversionService : IConversionService
             try
             {
                 if (TextExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Text))
-                    await _text.ProcessAsync(path, options.Ratio, token);
+                {
+                    if (_text is ArtemisTextProcessor artemis)
+                    {
+                        IReadOnlyList<int> preserved = await artemis.ProcessWithDiagnosticsAsync(path, options.Ratio, token);
+                        if (preserved.Count > 0)
+                            progressEntry = $"{relativePath} · text: preserved dynamic expressions at lines {string.Join(",", preserved.Take(8))}" +
+                                (preserved.Count > 8 ? $" (+{preserved.Count - 8})" : "");
+                    }
+                    else await _text.ProcessAsync(path, options.Ratio, token);
+                }
                 else if (extension.Equals(".png", StringComparison.OrdinalIgnoreCase) && options.Categories.HasFlag(AssetCategories.Images))
                     await _png.ResizeAsync(path, options.Ratio, token);
                 else if (options.SubsetFonts && (extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase) ||
