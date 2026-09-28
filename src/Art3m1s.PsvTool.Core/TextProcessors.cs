@@ -25,20 +25,25 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
 
     public async Task ProcessAsync(string path, double ratio, CancellationToken cancellationToken = default)
     {
+        await ProcessWithDiagnosticsAsync(path, ratio, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<int>> ProcessWithDiagnosticsAsync(string path, double ratio, CancellationToken cancellationToken = default)
+    {
+        if (!double.IsFinite(ratio) || ratio <= 0) throw new ArgumentOutOfRangeException(nameof(ratio));
         byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken);
         EncodedText encoded = EncodedText.Decode(bytes);
         string extension = Path.GetExtension(path).ToLowerInvariant();
+        List<int> preservedExpressions = [];
         string output = extension switch
         {
             ".ini" => ScaleIni(encoded.Text, ratio),
-            ".tbl" => ScaleTbl(encoded.Text, ratio),
-            ".ipt" => ScaleIpt(encoded.Text, ratio),
-            ".ast" => ScaleAst(encoded.Text, ratio),
-            ".lua" => ScaleLua(encoded.Text, ratio),
+            ".tbl" or ".ipt" or ".ast" or ".lua" => ScaleScript(encoded.Text, ratio, extension, preservedExpressions),
             _ => encoded.Text
         };
         if (!ReferenceEquals(output, encoded.Text) && output != encoded.Text)
             await File.WriteAllBytesAsync(path, encoded.Encode(output), cancellationToken);
+        return preservedExpressions.Distinct().Order().ToArray();
     }
 
     private static string ScaleIni(string text, double ratio)
@@ -54,9 +59,9 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
             string transformed = line;
             if (!inVita)
             {
-                Match size = Regex.Match(transformed, @"^(WIDTH|HEIGHT)(\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
+                Match size = Regex.Match(transformed, @"^(WIDTH|HEIGHT)(\s*=\s*)(\d+)(?=\s*(?:;|$))", RegexOptions.CultureInvariant);
                 if (size.Success)
-                    transformed = ScalePythonMatch(size, ratio);
+                    transformed = size.Groups[1].Value + size.Groups[2].Value + ScaleInteger(size.Groups[3].Value, ratio) + transformed[(size.Groups[3].Index + size.Groups[3].Length)..];
                 Match savePath = Regex.Match(transformed, @"^(;?)(SAVEPATH.*)", RegexOptions.CultureInvariant);
                 if (savePath.Success)
                 {
@@ -79,184 +84,8 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         return result.ToString();
     }
 
-    private static string ScaleTbl(string text, double ratio)
-    {
-        StringBuilder result = new(text.Length);
-        bool inEmoteTable = false;
-        int emoteTableDepth = 0;
-        foreach (string line in SplitLines(text))
-        {
-            string scaled = line;
-            foreach (string key in TblListKeys)
-            {
-                Match match = Regex.Match(scaled, @"^(\s*" + Regex.Escape(key) + @"\W+?\{)(.*?)(\}.*)", RegexOptions.CultureInvariant);
-                if (match.Success)
-                    scaled = match.Groups[1].Value + ScaleCommaList(match.Groups[2].Value, ratio) + match.Groups[3].Value;
-            }
-            foreach (string key in TblScalarKeys)
-            {
-                Match match = Regex.Match(scaled, @"^(.*\W+" + Regex.Escape(key) + @"\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
-                if (match.Success)
-                    scaled = ScalePythonMatch(match, ratio);
-            }
-            foreach (string key in TblClipKeys)
-            {
-                Match match = Regex.Match(scaled, @"^(.*\W+" + Regex.Escape(key) + "\\W+?\")(.*?)(\".*)", RegexOptions.CultureInvariant);
-                if (match.Success)
-                    scaled = match.Groups[1].Value + ScaleCommaList(match.Groups[2].Value, ratio) + match.Groups[3].Value;
-            }
-            foreach (string key in new[] { "game_width", "game_height" })
-            {
-                Match match = Regex.Match(scaled, @"^(\s*" + key + @"\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
-                if (match.Success)
-                    scaled = ScalePythonMatch(match, ratio);
-            }
-
-            if (!inEmoteTable && Regex.IsMatch(scaled, @"^\s*emote\s*=\s*\{", RegexOptions.CultureInvariant))
-            {
-                inEmoteTable = true;
-                emoteTableDepth = CountBraceDelta(scaled);
-                if (emoteTableDepth <= 0)
-                {
-                    inEmoteTable = false;
-                    emoteTableDepth = 0;
-                }
-            }
-            else if (inEmoteTable)
-            {
-                scaled = ScaleEmotePoseTuple(scaled, ratio);
-                emoteTableDepth += CountBraceDelta(scaled);
-                if (emoteTableDepth <= 0)
-                {
-                    inEmoteTable = false;
-                    emoteTableDepth = 0;
-                }
-            }
-            result.Append(scaled);
-        }
-        return result.ToString();
-    }
-
-    private static string ScaleIpt(string text, double ratio)
-    {
-        StringBuilder result = new(text.Length);
-        foreach (string line in SplitLines(text))
-        {
-            string scaled = line;
-            foreach (string key in IptKeys)
-            {
-                Match match = Regex.Match(scaled, @"^(.*\W+" + Regex.Escape(key) + @"\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
-                if (match.Success)
-                    scaled = ScalePythonMatch(match, ratio);
-            }
-            Match quoted = Regex.Match(scaled, "^(.*\\W+\")(\\d+.*?)(\".*)", RegexOptions.CultureInvariant);
-            if (quoted.Success)
-                scaled = quoted.Groups[1].Value + ScaleCommaList(quoted.Groups[2].Value, ratio) + quoted.Groups[3].Value;
-            result.Append(scaled);
-        }
-        return result.ToString();
-    }
-
-    private static string ScaleAst(string text, double ratio) => ScaleLinesByKeys(text, ratio, AstKeys, allowNegative: true).Text;
-
-    private static string ScaleLua(string text, double ratio)
-    {
-        (string output, bool changed) = ScaleLinesByKeys(text, ratio, LuaKeys, allowNegative: false);
-        string scaledMulpos = Regex.Replace(output, @"(?<prefix>\bmulpos\(\s*)(?<value>-?\d+)(?<suffix>\s*\))", match =>
-            match.Groups["prefix"].Value + ScaleInteger(match.Groups["value"].Value, ratio) + match.Groups["suffix"].Value,
-            RegexOptions.CultureInvariant);
-        if (!string.Equals(output, scaledMulpos, StringComparison.Ordinal))
-        {
-            output = scaledMulpos;
-            changed = true;
-        }
-        return changed ? output : text;
-    }
-
-    private static string ScaleEmotePoseTuple(string line, double ratio)
-    {
-        Match match = Regex.Match(line,
-            @"^(?<prefix>\s*[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{\s*)(?<scale>-?(?:\d+(?:\.\d+)?|\.\d+))(?<s1>\s*,\s*)(?<x>-?\d+)(?<s2>\s*,\s*)(?<y>-?\d+)(?<s3>\s*,\s*)(?<width>\d+)(?<s4>\s*,\s*)(?<height>\d+)(?<suffix>\s*,?\s*\}.*)$",
-            RegexOptions.CultureInvariant);
-        if (!match.Success) return line;
-
-        return match.Groups["prefix"].Value
-            + match.Groups["scale"].Value
-            + match.Groups["s1"].Value + ScaleInteger(match.Groups["x"].Value, ratio)
-            + match.Groups["s2"].Value + ScaleInteger(match.Groups["y"].Value, ratio)
-            + match.Groups["s3"].Value + ScaleInteger(match.Groups["width"].Value, ratio)
-            + match.Groups["s4"].Value + ScaleInteger(match.Groups["height"].Value, ratio)
-            + match.Groups["suffix"].Value;
-    }
-
-    private static int CountBraceDelta(string line)
-    {
-        int delta = 0;
-        bool inString = false;
-        bool escaped = false;
-        foreach (char character in line)
-        {
-            if (inString)
-            {
-                if (escaped) escaped = false;
-                else if (character == '\\') escaped = true;
-                else if (character == '"') inString = false;
-                continue;
-            }
-            if (character == '"') inString = true;
-            else if (character == '{') delta++;
-            else if (character == '}') delta--;
-        }
-        return delta;
-    }
-
     private static string ScaleInteger(string value, double ratio) =>
         ((int)(int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture) * ratio)).ToString(CultureInfo.InvariantCulture);
-
-    private static (string Text, bool Changed) ScaleLinesByKeys(string text, double ratio, IReadOnlyList<string> keys, bool allowNegative)
-    {
-        StringBuilder result = new(text.Length);
-        bool changed = false;
-        string numberPattern = allowNegative ? @"-?\d+" : @"\d+";
-        foreach (string line in SplitLines(text))
-        {
-            string scaled = line;
-            foreach (string key in keys)
-            {
-                Match match = Regex.Match(scaled, @"^(.*\W+" + Regex.Escape(key) + @"\W+?)(" + numberPattern + @")(.*)", RegexOptions.CultureInvariant);
-                if (!match.Success) continue;
-                scaled = ScalePythonMatch(match, ratio);
-                changed = true;
-            }
-            result.Append(scaled);
-        }
-        return (result.ToString(), changed);
-    }
-
-    private static string ScalePythonMatch(Match match, double ratio)
-    {
-        StringBuilder result = new(match.Length);
-        for (int index = 1; index < match.Groups.Count; index++)
-        {
-            string value = match.Groups[index].Value;
-            result.Append(double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double number)
-                ? ((int)(number * ratio)).ToString(CultureInfo.InvariantCulture)
-                : value);
-        }
-        return result.ToString();
-    }
-
-    private static string ScaleCommaList(string value, double ratio)
-    {
-        string[] fields = value.Split(',');
-        for (int i = 0; i < fields.Length; i++)
-        {
-            string trimmed = fields[i].Trim();
-            if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
-                fields[i] = fields[i].Replace(trimmed, ((int)(number * ratio)).ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
-        }
-        return string.Join(',', fields);
-    }
 
     private static IEnumerable<string> SplitLines(string text)
     {
@@ -291,7 +120,7 @@ public sealed partial class VitaIniProcessor : IVitaIniProcessor
             ?? "Shift_JIS";
         string separator = encoded.Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         string prefix = encoded.Text.Length == 0 || encoded.Text.EndsWith('\n') || encoded.Text.EndsWith('\r') ? string.Empty : separator;
-        string block = VitaTemplate.Replace("\n", separator, StringComparison.Ordinal).Replace("{CHARSET}", charset, StringComparison.Ordinal);
+        string block = VitaTemplate.ReplaceLineEndings("\n").Replace("\n", separator, StringComparison.Ordinal).Replace("{CHARSET}", charset, StringComparison.Ordinal);
         await File.WriteAllBytesAsync(path, encoded.Encode(encoded.Text + prefix + block), cancellationToken);
     }
 

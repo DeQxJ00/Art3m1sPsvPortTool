@@ -414,14 +414,14 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
-    public async Task ArtemisTextRulesMatchVisualNovelUpscalerLineAndSavePathBehavior()
+    public async Task ArtemisTextRulesPreserveLineEndingsAndSavePathBehavior()
     {
         string ast = Path.Combine(_root, "sample.ast");
         await File.WriteAllTextAsync(ast,
             "astver = 2.0\r\n{\"bg\", ax=640, ay=360, x=-941, x2=1280}\r\nuntouched\r\n",
             new UTF8Encoding(false));
         await new ArtemisTextProcessor().ProcessAsync(ast, 0.5);
-        Assert.Equal("astver = 2.0\r\n{\"bg\", ax=320, ay=180, x=-470, x2=640}\runtouched\r\n",
+        Assert.Equal("astver = 2.0\r\n{\"bg\", ax=320, ay=180, x=-470, x2=640}\r\nuntouched\r\n",
             await File.ReadAllTextAsync(ast));
 
         string ini = Path.Combine(_root, "visualnovel.ini");
@@ -429,7 +429,7 @@ public sealed class CoreTests : IDisposable
             "WIDTH = 1920\r\nHEIGHT = 1080\r\nSAVEPATH = savedata\r\n;SAVEPATH = maker\\title\r\n",
             new UTF8Encoding(false));
         await new ArtemisTextProcessor().ProcessAsync(ini, 0.5);
-        Assert.Equal("WIDTH = 960\rHEIGHT = 540\r;SAVEPATH = savedata\r\nSAVEPATH = savedataHD\r\n",
+        Assert.Equal("WIDTH = 960\r\nHEIGHT = 540\r\n;SAVEPATH = savedata\r\nSAVEPATH = savedataHD\r\n",
             await File.ReadAllTextAsync(ini));
     }
 
