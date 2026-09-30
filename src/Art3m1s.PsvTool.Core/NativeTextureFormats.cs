@@ -3,7 +3,8 @@ namespace Art3m1s.PsvTool.Core;
 public enum NativeTextureFormat
 {
     Preserve, Auto, Bc1, Bc2, Bc3, Bc4, Bc4Signed, Bc5, Bc5Signed,
-    PvrtcRgb2, PvrtcRgba2, PvrtcRgb4, PvrtcRgba4, Pvrtc2_2, Pvrtc2_4, Etc1
+    PvrtcRgb2, PvrtcRgba2, PvrtcRgb4, PvrtcRgba4, Pvrtc2_2, Pvrtc2_4, Etc1,
+    AutoWithoutMetadata
 }
 
 public sealed record NativeTextureRule(string Category, bool Enabled, NativeTextureFormat Format = NativeTextureFormat.Auto);
@@ -35,11 +36,23 @@ public static class NativeTextureFormats
         new(NativeTextureFormat.PvrtcRgba4, "PVRTC1 RGBA 4bpp", 4, 3, "RGBA", "二次幂尺寸 / Power-of-two dimensions"),
         new(NativeTextureFormat.Pvrtc2_2, "PVRTC2 2bpp", 2, 4, "RGBA", "较小，但可能损失细节 / Small, lower detail"),
         new(NativeTextureFormat.Pvrtc2_4, "PVRTC2 4bpp", 4, 5, "RGBA", "透明彩色图片 / Color with alpha"),
-        new(NativeTextureFormat.Etc1, "ETC1", 4, 6, "RGB", "无 Alpha；目前 Vita3K 不兼容 / No alpha; current Vita3K incompatible")
+        new(NativeTextureFormat.Etc1, "ETC1", 4, 6, "RGB", "无 Alpha；目前 Vita3K 不兼容 / No alpha; current Vita3K incompatible"),
+        new(NativeTextureFormat.AutoWithoutMetadata, "除带偏移信息外的 AUTO 转换（仅手动） / AUTO conversion excluding offset metadata (manual only)", 0, -1,
+            "按图片选择 / Per image", "跳过 metadata，其余沿用 AUTO 规则 / Skip metadata; apply existing AUTO rules to the rest")
     ];
     public static NativeFormatInfo Info(NativeTextureFormat f) => All.Single(x => x.Format == f);
+    public static bool IsAutomatic(NativeTextureFormat format) =>
+        format is NativeTextureFormat.Auto or NativeTextureFormat.AutoWithoutMetadata;
+    public static NativeTextureFormat Resolve(TextureImageInfo image, NativeTextureFormat requested, bool ignoreAlpha) => requested switch
+    {
+        NativeTextureFormat.Auto => Recommend(image, ignoreAlpha),
+        NativeTextureFormat.AutoWithoutMetadata => image.HasMetadata ? NativeTextureFormat.Preserve : Recommend(image, ignoreAlpha),
+        _ => requested
+    };
     public static NativeTextureFormat Recommend(TextureImageInfo image, bool ignoreAlpha) =>
-        image.IsGray || image.IsNative || image.HasMetadata || image.Error != null || IsConservative(image.Category)
+        IsConservative(image.Category) ? NativeTextureFormat.Preserve : RecommendColor(image, ignoreAlpha);
+    private static NativeTextureFormat RecommendColor(TextureImageInfo image, bool ignoreAlpha) =>
+        image.IsGray || image.IsNative || image.HasMetadata || image.Error != null
             ? NativeTextureFormat.Preserve
             : image.HasAlpha && !(ignoreAlpha && image.IsBackground) ? NativeTextureFormat.Bc3 : NativeTextureFormat.Bc1;
     private static bool IsConservative(string category) => !category.Split('/').Any(x =>
@@ -50,7 +63,7 @@ public static class NativeTextureFormats
     public static string? Unsuitable(TextureImageInfo image, NativeTextureFormat format, double ratio, bool ignoreAlpha)
     {
         if (format == NativeTextureFormat.Preserve) return null;
-        if (format == NativeTextureFormat.Auto) format = Recommend(image, ignoreAlpha);
+        format = Resolve(image, format, ignoreAlpha);
         if (format == NativeTextureFormat.Preserve) return null;
         if (image.Error != null) return "无法解析图片 / Cannot inspect image";
         if (image.IsNative) return "已是原生纹理，避免重复有损压缩 / Already compressed";

@@ -10,7 +10,7 @@ public sealed partial class MainViewModel
     public bool NativeTextures { get => _nativeTextures; set { if (Set(ref _nativeTextures, value)) SaveSettings(); } }
     public bool IgnoreBackgroundAlpha { get => _ignoreBackgroundAlpha; set { if (Set(ref _ignoreBackgroundAlpha, value)) RefreshTextures(); } }
     public ObservableCollection<TextureCategoryViewModel> TextureCategories { get; } = [];
-    public IReadOnlyList<NativeFormatInfo> TextureFormats => NativeTextureFormats.All.Skip(2).ToArray();
+    public IReadOnlyList<NativeFormatInfo> TextureFormats => NativeTextureFormats.All.Where(f => f.PvrCode >= 0).ToArray();
     private bool English => Language.StartsWith("en", StringComparison.Ordinal);
     public string NativeTexturesLabel => English ? "Convert images to PSV textures (disabled by default)" : "图片压制为 PSV 专用纹理（默认关闭）";
     public string NativeTexturesHelp => English ? "If the game runs smoothly with this option unchecked, there is no need to enable it. Original PNG images can be kept. If loading stutters, try converting BG images to PSV textures first. Only adjust other categories if you understand image formats; otherwise, leave everything except BG unchanged.\nFor compatible Art3m1sPSV builds. Uncheck if these resources will also be used on other platforms or original engines. Only BG is selected by default; grayscale is kept."
@@ -18,8 +18,8 @@ public sealed partial class MainViewModel
     public string ScanTexturesLabel => English ? "Scan image categories" : "扫描图片分类";
     public string IgnoreBackgroundAlphaLabel => English ? "Ignore BG alpha when converting (discards transparency; can break transition overlays stored in BG)" : "转换 BG 时忽略透明度（会丢弃 Alpha；BG 中的过渡叠加图可能显示错误）";
     public string TextureFormatsLabel => English ? "GXM formats: bits/pixel, channels and usage" : "GXM 原生压缩格式：位/像素、通道和用途";
-    public string TextureHelp => English ? "Scan all .pfs / .pfs.xxx archives and loose images. Unchecked images still follow the resize setting. Unsuitable selections are kept and reported. Size estimates include block alignment and container headers; retained images use original size estimates. GPU allocation overhead is extra. Compressed textures are lossy and may be larger than PNG. No mipmaps. PVRTC1 requires power-of-two dimensions; ETC1 currently has Vita3K compatibility issues. PNG offsets/crop metadata are kept as PNG."
-        : "扫描全部 .pfs / .pfs.xxx 和散装图片。未勾选的图片仍按原缩放设置处理。不适合的选择会保留原格式并记录原因。大小估计包含块对齐与容器头；保留图片按原文件估计，实际缩放后会不同。显存分配还有额外开销。压缩有损，文件不一定比 PNG 小；不生成 mipmap。PVRTC1 要求二次幂尺寸；ETC1 目前有 Vita3K 兼容问题。带偏移/裁剪信息的 PNG 保留原格式。";
+    public string TextureHelp => English ? "Scan all .pfs / .pfs.xxx archives and loose images. Unchecked images still follow the resize setting. Unsuitable selections are kept and reported. Size estimates include block alignment and container headers; retained images use original size estimates. GPU allocation overhead is extra. Compressed textures are lossy and may be larger than PNG. No mipmaps. PVRTC1 requires power-of-two dimensions; ETC1 currently has Vita3K compatibility issues. PNG offsets/crop metadata are kept as PNG.\nManual-only AUTO conversion excluding offset metadata applies only to the selected category: skip metadata images and use the existing AUTO rules for the rest. It is never selected by default."
+        : "扫描全部 .pfs / .pfs.xxx 和散装图片。未勾选的图片仍按原缩放设置处理。不适合的选择会保留原格式并记录原因。大小估计包含块对齐与容器头；保留图片按原文件估计，实际缩放后会不同。显存分配还有额外开销。压缩有损，文件不一定比 PNG 小；不生成 mipmap。PVRTC1 要求二次幂尺寸；ETC1 目前有 Vita3K 兼容问题。带偏移/裁剪信息的 PNG 保留原格式。\n手动模式“除带偏移信息外的 AUTO 转换”仅作用于所选分类：跳过含 metadata 的图片，其余沿用现有 AUTO 规则，不会默认选中。";
     private void RefreshTextures()
     {
         double ratio = TryRatio(out var r) ? r : 1;
