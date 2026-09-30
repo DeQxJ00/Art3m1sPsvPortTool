@@ -42,15 +42,18 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
     {
         var reasons = Images.Select(x => NativeTextureFormats.Unsuitable(x, f.Format, _ratio, _ignoreAlpha)).Where(x => x != null).ToArray();
         string name = f.Name;
-        if (f.Format == NativeTextureFormat.Auto)
+        if (NativeTextureFormats.IsAutomatic(f.Format))
         {
             var formats = Images.GroupBy(image =>
             {
-                var recommended = NativeTextureFormats.Recommend(image, _ignoreAlpha);
+                var recommended = NativeTextureFormats.Resolve(image, f.Format, _ignoreAlpha);
                 return NativeTextureFormats.Unsuitable(image, recommended, _ratio, _ignoreAlpha) == null
                     ? recommended : NativeTextureFormat.Preserve;
             }).OrderBy(group => group.Key).ToArray();
-            name = (_english ? "AUTO → " : "AUTO 自动 → ") + string.Join(" + ", formats.Select(group =>
+            string prefix = f.Format == NativeTextureFormat.AutoWithoutMetadata
+                ? (_english ? "AUTO conversion excluding offset metadata (manual only) → " : "除带偏移信息外的 AUTO 转换（仅手动） → ")
+                : (_english ? "AUTO → " : "AUTO 自动 → ");
+            name = prefix + string.Join(" + ", formats.Select(group =>
             {
                 string label = group.Key == NativeTextureFormat.Preserve
                     ? (_english ? "Keep original" : "保留原格式") : NativeTextureFormats.Info(group.Key).Name;
@@ -72,7 +75,7 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
             int converted = 0;
             foreach (var image in Images)
             {
-                var f = Rule.Format == NativeTextureFormat.Auto ? NativeTextureFormats.Recommend(image, _ignoreAlpha) : Rule.Format;
+                var f = NativeTextureFormats.Resolve(image, Rule.Format, _ignoreAlpha);
                 if (!Enabled || f == NativeTextureFormat.Preserve || NativeTextureFormats.Unsuitable(image, f, _ratio, _ignoreAlpha) != null)
                 { target += image.SourceBytes; continue; }
                 converted++;

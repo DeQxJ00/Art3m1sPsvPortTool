@@ -49,6 +49,47 @@ public sealed class NativeTextureTests : IDisposable
     public static IEnumerable<object[]> SupportedColorFormats => NativeTextureFormats.All
         .Where(x => x.PvrCode >= 0 && x.Format is not (NativeTextureFormat.Bc4 or NativeTextureFormat.Bc4Signed or NativeTextureFormat.Bc5 or NativeTextureFormat.Bc5Signed))
         .Select(x => new object[] { x.Format });
+    [Fact]
+    public async Task ManualAutoUsesExistingRulesAndKeepsMetadataAndGray()
+    {
+        string input = Path.Combine(root, "manual-input"); Directory.CreateDirectory(input);
+        var resources = new[]
+        {
+            ("image/fg/opaque.png", await Png("opaque.png")),
+            ("image/fg/alpha.png", await Png("alpha.png", alpha: true)),
+            ("image/fg/offset.png", await Png("offset.png", metadata: true)),
+            ("image/fg/gray.png", await Png("gray.png", gray: true))
+        };
+        var codec = new PfsCodec();
+        await codec.PackPf8Async(new('8', resources.Select(x => new PfsEntry(Encoding.UTF8.GetBytes(x.Item1), x.Item1, 0, 0, x.Item2)).ToArray()),
+            Path.Combine(input, "root.pfs.001"));
+        var images = await new TextureScanner().ScanAsync(input);
+        Assert.All(images, i => Assert.Equal(NativeTextureFormats.Recommend(i, false),
+            NativeTextureFormats.Resolve(i, NativeTextureFormat.AutoWithoutMetadata, false)));
+        Assert.Equal(NativeTextureFormat.Preserve, NativeTextureFormats.Resolve(images[0] with { Category = "system" }, NativeTextureFormat.AutoWithoutMetadata, false));
+        var rules = images.Select(i => i.GroupKey).Distinct().Select(key => new NativeTextureRule(key, true, NativeTextureFormat.AutoWithoutMetadata)).ToArray();
+        string output = Path.Combine(root, "manual-output");
+        await new ConversionService().ConvertAsync(new(input, output, Ratio: 1, Categories: AssetCategories.Images,
+            ConvertEmotePsbTexturesToDxt5: false, NativeTextures: new(Rules: rules)));
+        var unpack = await codec.ExtractAsync(Path.Combine(output, "root.pfs.001"), Path.Combine(root, "manual-unpack"));
+        foreach (var (name, fourcc) in new[] { ("opaque", "DXT1"), ("alpha", "DXT5") })
+        {
+            var file = Assert.Single(unpack.Entries, e => e.Path == $"image/fg/{name}.dds");
+            Assert.Equal(fourcc, Encoding.ASCII.GetString((await File.ReadAllBytesAsync(file.ExtractedPath)).AsSpan(84, 4)));
+            Assert.DoesNotContain(unpack.Entries, e => e.Path == $"image/fg/{name}.png");
+        }
+        foreach (var name in new[] { "offset", "gray" })
+        {
+            var file = Assert.Single(unpack.Entries, e => e.Path == $"image/fg/{name}.png");
+            using var original = Image.Load<Rgba32>(Path.Combine(root, name + ".png"));
+            using var retained = Image.Load<Rgba32>(file.ExtractedPath);
+            Assert.Equal(original.Size, retained.Size);
+            for (int y = 0; y < original.Height; y++) for (int x = 0; x < original.Width; x++)
+                Assert.Equal(original[x, y], retained[x, y]);
+            if (name == "offset")
+                Assert.Contains(retained.Metadata.GetPngMetadata().TextData, item => item.Keyword == "offset" && item.Value == "12,24");
+        }
+    }
     [Theory]
     [MemberData(nameof(SupportedColorFormats))]
     public async Task NativeEncoderWritesValidatedContainers(NativeTextureFormat format)

@@ -17,6 +17,29 @@ public sealed class TextureUiTests
         Assert.False(new AppSettings().NativeTextures);
     }
     [Fact]
+    public void ManualAutoShowsFormatsAndCountsWithoutChangingDefaults()
+    {
+        var vm = new TextureCategoryViewModel([
+            Sample("image/fg"), Sample("image/fg", alpha: true),
+            Sample("image/fg") with { HasMetadata = true }, Sample("image/fg", gray: true)
+        ], 1, false, false);
+        Assert.False(vm.Enabled);
+        Assert.Equal(NativeTextureFormat.Auto, vm.Rule.Format);
+        var label = vm.Choices[(int)NativeTextureFormat.AutoWithoutMetadata];
+        Assert.Contains("除带偏移信息外的 AUTO 转换（仅手动）", label);
+        Assert.Contains("BC1 / DXT1 × 1", label);
+        Assert.Contains("BC3 / DXT5 × 1", label);
+        Assert.Contains("保留原格式 × 2", label);
+        Assert.DoesNotContain("推荐", label);
+        vm.SelectedFormat = (int)NativeTextureFormat.AutoWithoutMetadata;
+        Assert.Contains("可转换 0 张", vm.Summary);
+        vm.Enabled = true;
+        Assert.Contains("可转换 2 张", vm.Summary);
+        vm.DetailsExpanded = true;
+        Assert.Contains("附加信息", vm.FileRows[2]);
+        Assert.Equal(NativeTextureFormat.Auto, new TextureCategoryViewModel([Sample("image/bg")], 1, false, false).Rule.Format);
+    }
+    [Fact]
     public void DropdownReasonsChangeWithAlphaAndOutputDimensions()
     {
         var vm = new TextureCategoryViewModel([Sample("image/bg", alpha: true)], 1, false, false);
