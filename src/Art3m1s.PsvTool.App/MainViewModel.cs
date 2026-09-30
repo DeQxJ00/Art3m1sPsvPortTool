@@ -19,6 +19,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _ratio = "0.5";
     private int? _width;
     private int? _height;
+    private IReadOnlyList<IniResolution> _resolutions = [];
+    private int _selectedResolutionIndex = -1;
     private int _archiveCount;
     private bool _isBusy;
     private bool _overwriteArmed;
@@ -50,7 +52,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    public string InputDirectory { get => _inputDirectory; set { Set(ref _inputDirectory, value); _overwriteArmed = false; } }
+    public string InputDirectory
+    {
+        get => _inputDirectory;
+        set
+        {
+            if (Set(ref _inputDirectory, value))
+            {
+                _resolutions = []; _selectedResolutionIndex = -1; _width = _height = null; _archiveCount = 0;
+                OnPropertyChanged(nameof(ResolutionChoices)); OnPropertyChanged(nameof(HasResolutionChoices));
+                OnPropertyChanged(nameof(SelectedResolutionIndex)); OnPropertyChanged(nameof(OriginalResolution));
+                OnPropertyChanged(nameof(TargetResolution)); OnPropertyChanged(nameof(ScanSummary));
+            }
+            _overwriteArmed = false;
+        }
+    }
     public string OutputDirectory { get => _outputDirectory; set { Set(ref _outputDirectory, value); _overwriteArmed = false; } }
     public string Ratio { get => _ratio; set { if (Set(ref _ratio, value)) OnPropertyChanged(nameof(TargetResolution)); } }
     public bool ProcessText { get => _text; set => Set(ref _text, value); }
@@ -73,6 +89,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Status { get => _status; private set => Set(ref _status, value); }
     public string Log { get => _log; private set => Set(ref _log, value); }
     public string OriginalResolution => _width is > 0 && _height is > 0 ? $"{_width} × {_height}" : L("Unknown");
+    public string ResolutionListLabel => L("ResolutionList");
+    public IReadOnlyList<string> ResolutionChoices => _resolutions.Select(item =>
+        $"{item.Source} · [{(string.IsNullOrEmpty(item.Section) ? L("IniPreamble") : item.Section)}] · {item.Width} × {item.Height}").ToArray();
+    public bool HasResolutionChoices => _resolutions.Count > 0;
+    public int SelectedResolutionIndex
+    {
+        get => _selectedResolutionIndex;
+        set
+        {
+            if (!Set(ref _selectedResolutionIndex, value) || value < 0 || value >= _resolutions.Count) return;
+            IniResolution selected = _resolutions[value];
+            _width = selected.Width; _height = selected.Height;
+            OnPropertyChanged(nameof(OriginalResolution)); OnPropertyChanged(nameof(TargetResolution));
+        }
+    }
     public string TargetResolution => _width is > 0 && _height is > 0 && TryRatio(out double ratio)
         ? $"{Math.Max(1, (int)(_width.Value * ratio))} × {Math.Max(1, (int)(_height.Value * ratio))}" : L("Unknown");
     public string ScanSummary => _archiveCount == 0 ? L("ScanEmpty") : $"{_archiveCount} {L("Archives")}";
@@ -82,6 +113,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Title => L("Title"); public string Subtitle => L("Subtitle"); public string ProjectLabel => L("Project");
     public string InputLabel => L("Input"); public string OutputLabel => L("Output"); public string BrowseLabel => L("Browse");
     public string ScanLabel => L("Scan"); public string RatioLabel => L("Ratio"); public string RatioHelp => L("RatioHelp");
+    public string AutoScanResolutionLabel => L("AutoScanResolution");
     public string OriginalLabel => L("Original"); public string TargetLabel => L("Target"); public string TypesLabel => L("Types");
     public string TextLabel => L("Text"); public string ImagesLabel => L("Images"); public string AnimationLabel => L("Animation");
     public string VideoLabel => L("Video"); public string ModeLabel => L("Mode"); public string ModeHelp => L("ModeHelp");
@@ -110,7 +142,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SaveSettings();
     }
 
-    public async Task ScanAsync()
+    public Task ScanAsync() => ScanCoreAsync(false);
+    public Task AutoScanResolutionAsync() => ScanCoreAsync(true);
+
+    private async Task ScanCoreAsync(bool resolutionOnly)
     {
         if (!Directory.Exists(InputDirectory)) { Status = L("InvalidPaths"); return; }
         IsBusy = true; Status = L("Scanning");
@@ -118,7 +153,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             ScanResult result = await _scanner.ScanAsync(InputDirectory);
             _archiveCount = result.Archives.Count; _width = result.Width; _height = result.Height;
-            Status = _archiveCount == 0 ? L("NoPfs") : ScanSummary;
+            _resolutions = result.Resolutions;
+            _selectedResolutionIndex = _resolutions.ToList().FindIndex(item =>
+                item.Width == result.Width && item.Height == result.Height);
+            OnPropertyChanged(nameof(ResolutionChoices)); OnPropertyChanged(nameof(HasResolutionChoices));
+            OnPropertyChanged(nameof(SelectedResolutionIndex));
+            Status = resolutionOnly
+                ? result.HasResolution
+                    ? string.Format(CultureInfo.CurrentUICulture, L("ResolutionDetected"), OriginalResolution)
+                    : L("ResolutionNotFound")
+                : _archiveCount == 0 ? L("NoPfs") : ScanSummary;
             Log = string.Join(Environment.NewLine, result.Archives.Select(item => $"{item.FileName} · pf{item.Version} · {item.Length:N0} B"));
             OnPropertyChanged(nameof(ScanSummary)); OnPropertyChanged(nameof(OriginalResolution)); OnPropertyChanged(nameof(TargetResolution));
         }
@@ -171,6 +215,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         InputDirectory = OperatingSystem.IsWindows() ? @"D:\Games\ArtemisDemo" : "/games/ArtemisDemo";
         OutputDirectory = OperatingSystem.IsWindows() ? @"D:\Games\ArtemisDemo-PSV" : "/games/ArtemisDemo-PSV";
         _width = 1920; _height = 1080; _archiveCount = 5; Ratio = "0.5"; Progress = 68;
+        _resolutions = [new("root.pfs/system.ini", "VITA", 960, 540),
+            new("root.pfs/system.ini", "WINDOWS", 1920, 1080)];
+        _selectedResolutionIndex = 1;
+        OnPropertyChanged(nameof(ResolutionChoices)); OnPropertyChanged(nameof(HasResolutionChoices));
+        OnPropertyChanged(nameof(SelectedResolutionIndex));
         SubsetFonts = true; FontProfile = 0;
         Status = string.Format(CultureInfo.CurrentUICulture, L("DemoProgress"), "root.pfs.010", 68);
         Log = "root.pfs\nroot.pfs.000\nroot.pfs.001\nroot.pfs.010\nroot.pfs.011";
@@ -208,6 +257,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     private void RaiseAllLocalized()
     {
-        foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(ConvertEmotePsbTexturesToDxt5Label), nameof(ConvertEmotePsbTexturesToDxt5Help), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ProjectRepositoryLabel), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
+        foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(AutoScanResolutionLabel), nameof(ResolutionListLabel), nameof(ResolutionChoices), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(ConvertEmotePsbTexturesToDxt5Label), nameof(ConvertEmotePsbTexturesToDxt5Help), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ProjectRepositoryLabel), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
     }
 }

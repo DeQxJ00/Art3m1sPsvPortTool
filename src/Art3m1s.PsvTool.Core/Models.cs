@@ -63,11 +63,14 @@ public sealed record ConversionOptions(
 
 public sealed record PfsFileInfo(string Path, string FileName, char Version, long Length);
 
+public sealed record IniResolution(string Source, string Section, int Width, int Height);
+
 public sealed record ScanResult(
     IReadOnlyList<PfsFileInfo> Archives,
     bool HasSystemIni,
     int? Width,
-    int? Height)
+    int? Height,
+    IReadOnlyList<IniResolution> Resolutions)
 {
     public bool HasResolution => Width > 0 && Height > 0;
 }

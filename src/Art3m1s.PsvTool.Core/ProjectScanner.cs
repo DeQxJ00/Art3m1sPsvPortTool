@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -31,37 +30,78 @@ public sealed partial class ProjectScanner : IProjectScanner
         }
 
         string systemIni = Path.Combine(inputDirectory, "system.ini");
-        (int? width, int? height) = File.Exists(systemIni)
-            ? await ReadResolutionAsync(systemIni, cancellationToken)
-            : (null, null);
+        bool hasSystemIni = File.Exists(systemIni);
+        List<IniResolution> resolutions = [];
+        IniResolution? preferred = null;
+        if (hasSystemIni)
+        {
+            IReadOnlyList<IniResolution> loose = ReadResolutions(
+                await File.ReadAllBytesAsync(systemIni, cancellationToken), "system.ini");
+            resolutions.AddRange(loose);
+            preferred = PickPreferred(loose);
+        }
+        PfsCodec codec = new();
+        foreach (PfsFileInfo archive in archives)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            byte[]? contents = await codec.ReadSmallEntryAsync(archive.Path, "system.ini", cancellationToken);
+            if (contents is null) continue;
+            hasSystemIni = true;
+            IReadOnlyList<IniResolution> found = ReadResolutions(contents, $"{archive.FileName}/system.ini");
+            resolutions.AddRange(found);
+            preferred ??= PickPreferred(found);
+        }
 
-        return new ScanResult(archives, File.Exists(systemIni), width, height);
+        return new ScanResult(archives, hasSystemIni, preferred?.Width, preferred?.Height, resolutions);
     }
 
     private static bool IsPfsName(string path) => PfsNameRegex().IsMatch(Path.GetFileName(path));
 
-    private static async Task<(int?, int?)> ReadResolutionAsync(string path, CancellationToken cancellationToken)
+    private static IniResolution? PickPreferred(IReadOnlyList<IniResolution> resolutions) =>
+        resolutions.FirstOrDefault(item => item.Section.Equals("WINDOWS", StringComparison.OrdinalIgnoreCase))
+        ?? resolutions.FirstOrDefault();
+
+    private static IReadOnlyList<IniResolution> ReadResolutions(byte[] bytes, string source)
     {
-        byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken);
-        string text = TextEncoding.Detect(bytes).Encoding.GetString(bytes);
-        Match section = WindowsSectionRegex().Match(text);
-        string source = section.Success ? section.Groups[1].Value : text;
-        Match width = WidthRegex().Match(source);
-        Match height = HeightRegex().Match(source);
-        return (width.Success ? int.Parse(width.Groups[1].Value) : null,
-            height.Success ? int.Parse(height.Groups[1].Value) : null);
+        string text = TextEncoding.Detect(bytes).Encoding.GetString(bytes).TrimStart('\uFEFF');
+        List<IniResolution> resolutions = [];
+        string section = string.Empty;
+        int? width = null, height = null;
+        using StringReader reader = new(text);
+        while (reader.ReadLine() is { } line)
+        {
+            Match heading = SectionRegex().Match(line);
+            if (heading.Success)
+            {
+                section = heading.Groups[1].Value.Trim();
+                width = height = null;
+                continue;
+            }
+            Match widthMatch = WidthRegex().Match(line);
+            if (widthMatch.Success)
+                width = int.TryParse(widthMatch.Groups[1].Value, out int widthValue) && widthValue > 0 ? widthValue : null;
+            Match heightMatch = HeightRegex().Match(line);
+            if (heightMatch.Success)
+                height = int.TryParse(heightMatch.Groups[1].Value, out int heightValue) && heightValue > 0 ? heightValue : null;
+            if (width is > 0 && height is > 0)
+            {
+                resolutions.Add(new IniResolution(source, section, width.Value, height.Value));
+                width = height = null;
+            }
+        }
+        return resolutions;
     }
 
     [GeneratedRegex(@"^.+\.pfs(?:\.\d{3})?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PfsNameRegex();
 
-    [GeneratedRegex(@"(?ims)^\s*\[WINDOWS\]\s*(.*?)(?=^\s*\[|\z)")]
-    private static partial Regex WindowsSectionRegex();
+    [GeneratedRegex(@"(?im)^[ \t]*\[([^\]\r\n]+)\][ \t]*(?:[;#].*)?$")]
+    private static partial Regex SectionRegex();
 
-    [GeneratedRegex(@"(?im)^\s*WIDTH\s*=\s*(\d+)")]
+    [GeneratedRegex(@"(?im)^[ \t]*WIDTH[ \t]*=[ \t]*(\d+)(?=[ \t]*(?:[;#]|$))")]
     private static partial Regex WidthRegex();
 
-    [GeneratedRegex(@"(?im)^\s*HEIGHT\s*=\s*(\d+)")]
+    [GeneratedRegex(@"(?im)^[ \t]*HEIGHT[ \t]*=[ \t]*(\d+)(?=[ \t]*(?:[;#]|$))")]
     private static partial Regex HeightRegex();
 }
 

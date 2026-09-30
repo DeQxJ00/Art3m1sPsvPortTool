@@ -52,6 +52,7 @@ public sealed partial class MainWindow : Window
         return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
     }
     private async void ScanClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanAsync();
+    private async void AutoScanResolutionClick(object? sender, RoutedEventArgs e) => await ViewModel.AutoScanResolutionAsync();
     private async void StartClick(object? sender, RoutedEventArgs e) => await ViewModel.StartAsync();
     private void CancelClick(object? sender, RoutedEventArgs e) => ViewModel.Cancel();
     private void ChineseClick(object? sender, RoutedEventArgs e) => ViewModel.SetLanguage("zh-CN");

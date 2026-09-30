@@ -25,6 +25,7 @@ public sealed class UiTests
         Assert.True(viewModel.IgnorePfsVideos);
         Assert.True(viewModel.ConvertEmotePsbTexturesToDxt5);
         Assert.Equal("E-mote PSB 纹理转 DXT5（BC3）", viewModel.ConvertEmotePsbTexturesToDxt5Label);
+        Assert.Equal("自动扫描分辨率", viewModel.AutoScanResolutionLabel);
         Assert.Contains("WMV / DAT / MP4 / AVI / MPG / MKV", viewModel.IgnorePfsVideosLabel);
         Assert.DoesNotContain("OGV", viewModel.IgnorePfsVideosLabel);
     }
@@ -41,6 +42,39 @@ public sealed class UiTests
         Assert.Equal("art3m1s PSV Port Tool", viewModel.Title);
         Assert.Equal("Project GitHub", viewModel.ProjectRepositoryLabel);
         Assert.Equal("Convert E-mote PSB textures to DXT5 (BC3)", viewModel.ConvertEmotePsbTexturesToDxt5Label);
+        Assert.Equal("Detect resolution", viewModel.AutoScanResolutionLabel);
+    }
+
+    [Fact]
+    public async Task AutoScanResolutionUpdatesPreviewWithoutChangingRatio()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "art3m1s-ui-scan-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            MainViewModel viewModel = new(scanner: new FixedScanner(1920, 1080), settings: new MemorySettingsStore())
+            { InputDirectory = root };
+            await viewModel.AutoScanResolutionAsync();
+            Assert.Equal("1920 × 1080", viewModel.OriginalResolution);
+            Assert.Equal("960 × 540", viewModel.TargetResolution);
+            Assert.Equal("0.5", viewModel.Ratio);
+            Assert.Contains("已识别原始分辨率", viewModel.Status);
+            Assert.Equal(2, viewModel.ResolutionChoices.Count);
+            Assert.Equal(1, viewModel.SelectedResolutionIndex);
+            viewModel.SelectedResolutionIndex = 0;
+            Assert.Equal("960 × 540", viewModel.OriginalResolution);
+            Assert.Equal("480 × 270", viewModel.TargetResolution);
+            Assert.Equal("0.5", viewModel.Ratio);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    private sealed class FixedScanner(int width, int height) : IProjectScanner
+    {
+        public Task<ScanResult> ScanAsync(string inputDirectory, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ScanResult([], true, width, height,
+                [new IniResolution("root.pfs/system.ini", "VITA", 960, 540),
+                    new IniResolution("root.pfs/system.ini", "WINDOWS", width, height)]));
     }
 
     [Fact]

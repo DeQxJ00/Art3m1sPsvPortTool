@@ -32,7 +32,7 @@ Lookup order is environment variables, the application's `tools` directory, besi
 ## Usage
 
 1. Select a game root containing `xxxxx.pfs` and a different output directory.
-2. Scan and verify the independent PFS count and detected resolution.
+2. Click “Scan project” to verify the independent PFS count, or “Detect resolution” to list all INI resolutions and select one for the preview.
 3. Set Ratio and select Text, Images, Animation, and Video.
 4. Start conversion. If output exists, click Start once more to confirm replacement.
 
@@ -40,7 +40,7 @@ The converter writes to a dedicated sibling staging directory and replaces the d
 
 ## Ratio and PSV resolution guidance
 
-The default is `0.5`; valid input is `0 < Ratio ≤ 1`. Presets are `0.75 · 720p`, `0.5 · 1080p`, `0.375 · 2K`, and `0.25 · 4K`. Aim for “game resolution × Ratio” near PSV `960×540` (or `960×544`). Larger images can exhaust PSV memory. Resolution is read from `[WINDOWS]` in root `system.ini`; otherwise inspect a PNG under extracted `image/bg`.
+The default is `0.5`; valid input is `0 < Ratio ≤ 1`. Presets are `0.75 · 720p`, `0.5 · 1080p`, `0.375 · 2K`, and `0.25 · 4K`. Aim for “game resolution × Ratio” near PSV `960×540` (or `960×544`). Larger images can exhaust PSV memory. “Detect resolution” lists every complete width/height pair from loose and PFS-contained `system.ini` files, showing the source and section. It initially selects `[WINDOWS]` in the first valid INI, or that INI's first pair; choose another item to change the preview. Only the PFS index and matching entry are read; archives are not fully extracted. If detection fails, inspect a PNG under extracted `image/bg`. Scanning and selection do not change Ratio.
 
 ## Asset processing rules
 

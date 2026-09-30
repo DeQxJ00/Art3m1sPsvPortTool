@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using Art3m1s.PsvTool.Core;
 using SixLabors.ImageSharp;
@@ -45,6 +46,93 @@ public sealed class CoreTests : IDisposable
         Assert.Equal(5, result.Archives.Count);
         Assert.Contains(result.Archives, item => item.FileName == "root.pfs.010");
         Assert.DoesNotContain(result.Archives, item => item.FileName == "root.pfs.002");
+    }
+
+    [Fact]
+    public async Task ScannerReadsFirstPfsSystemIniAndPrefersWindowsResolution()
+    {
+        string game = Path.Combine(_root, "scan-pfs-resolution");
+        Directory.CreateDirectory(game);
+        await PackIniAsync(Path.Combine(game, "root.pfs"),
+            "[VITA]\nWIDTH=960\nHEIGHT=540\n[WINDOWS]\nWIDTH=1920\nHEIGHT=1080\n");
+        await PackIniAsync(Path.Combine(game, "root.pfs.010"),
+            "[WINDOWS]\nWIDTH=2560\nHEIGHT=1440\n");
+
+        ScanResult result = await new ProjectScanner().ScanAsync(game);
+
+        Assert.True(result.HasSystemIni);
+        Assert.Equal(2, result.Archives.Count);
+        Assert.Equal(1920, result.Width);
+        Assert.Equal(1080, result.Height);
+        Assert.Equal(3, result.Resolutions.Count);
+        Assert.Equal(new IniResolution("root.pfs/system.ini", "VITA", 960, 540), result.Resolutions[0]);
+        Assert.Equal(new IniResolution("root.pfs/system.ini", "WINDOWS", 1920, 1080), result.Resolutions[1]);
+        Assert.Equal(new IniResolution("root.pfs.010/system.ini", "WINDOWS", 2560, 1440), result.Resolutions[2]);
+        Assert.False(Directory.Exists(Path.Combine(game, "root.pfs.unpacked")));
+    }
+
+    [Theory]
+    [InlineData('2')]
+    [InlineData('6')]
+    public async Task ScannerReadsPlainPfsAndFallsBackToFirstCompleteSection(char version)
+    {
+        string game = Path.Combine(_root, $"scan-pf{version}");
+        Directory.CreateDirectory(game);
+        string archive = Path.Combine(game, "root.pfs");
+        await PackIniAsync(archive,
+            "[DISPLAY]\nWIDTH=1280\nHEIGHT=720\n[WINDOWS]\nWIDTH=1920\n");
+        byte[] packed = await File.ReadAllBytesAsync(archive);
+        int indexSize = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(packed.AsSpan(3, 4)));
+        int dataOffset = 7 + indexSize;
+        byte[] key = SHA1.HashData(packed.AsSpan(7, indexSize));
+        for (int i = dataOffset; i < packed.Length; i++) packed[i] ^= key[(i - dataOffset) % key.Length];
+        packed[2] = (byte)version;
+        await File.WriteAllBytesAsync(archive, packed);
+
+        ScanResult result = await new ProjectScanner().ScanAsync(game);
+
+        Assert.Equal(1280, result.Width);
+        Assert.Equal(720, result.Height);
+        Assert.Single(result.Resolutions);
+    }
+
+    [Fact]
+    public async Task ScannerKeepsLooseIniPriorityAndSkipsIncompletePair()
+    {
+        string game = Path.Combine(_root, "scan-loose-priority");
+        Directory.CreateDirectory(game);
+        await File.WriteAllTextAsync(Path.Combine(game, "system.ini"),
+            "[VITA]\nWIDTH=960\nHEIGHT=540\n[WINDOWS]\nWIDTH=1920\nHEIGHT=1080\n", new UTF8Encoding(true));
+        await PackIniAsync(Path.Combine(game, "root.pfs"), "[WINDOWS]\nWIDTH=2560\nHEIGHT=1440\n");
+        ScanResult result = await new ProjectScanner().ScanAsync(game);
+        Assert.Equal(1920, result.Width);
+        Assert.Equal(1080, result.Height);
+        Assert.Equal(3, result.Resolutions.Count);
+        Assert.Equal("system.ini", result.Resolutions[1].Source);
+        Assert.Equal("root.pfs/system.ini", result.Resolutions[2].Source);
+    }
+
+    [Fact]
+    public async Task ScannerListsRepeatedPairsWithinOneIniSection()
+    {
+        string game = Path.Combine(_root, "scan-repeated-resolutions");
+        Directory.CreateDirectory(game);
+        await File.WriteAllTextAsync(Path.Combine(game, "system.ini"),
+            "[WINDOWS]\nWIDTH=1280\nHEIGHT=720\nWIDTH=1920\nHEIGHT=1080\n;WIDTH=9999\n;HEIGHT=9999\n");
+        ScanResult result = await new ProjectScanner().ScanAsync(game);
+        Assert.Equal(2, result.Resolutions.Count);
+        Assert.Equal(1280, result.Width);
+        Assert.Equal(720, result.Height);
+        Assert.Equal(1920, result.Resolutions[1].Width);
+    }
+
+    private async Task PackIniAsync(string archivePath, string content)
+    {
+        string source = Path.Combine(_root, Guid.NewGuid().ToString("N") + ".ini");
+        await File.WriteAllTextAsync(source, content);
+        byte[] rawName = Encoding.UTF8.GetBytes("system.ini");
+        await new PfsCodec().PackPf8Async(new ExtractedArchive('8',
+            [new PfsEntry(rawName, "system.ini", 0, checked((uint)new FileInfo(source).Length), source)]), archivePath);
     }
 
     [Fact]

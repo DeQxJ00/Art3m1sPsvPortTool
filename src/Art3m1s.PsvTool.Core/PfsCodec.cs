@@ -23,6 +23,58 @@ public sealed class PfsCodec : IPfsCodec
 {
     private const int HeaderSize = 11;
 
+    /// <summary>Reads one small entry without extracting the rest of the archive.</summary>
+    public async Task<byte[]?> ReadSmallEntryAsync(string archivePath, string entryPath,
+        CancellationToken cancellationToken = default)
+    {
+        const int maximumEntrySize = 4 * 1024 * 1024;
+        const int maximumIndexSize = 64 * 1024 * 1024;
+        await using FileStream input = new(archivePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        byte[] header = new byte[HeaderSize];
+        await ReadExactlyAsync(input, header, cancellationToken);
+        if (header[0] != 'p' || header[1] != 'f' || header[2] is not ((byte)'2' or (byte)'6' or (byte)'8'))
+            throw new InvalidDataException($"Unsupported PFS header in {archivePath}.");
+        uint indexSize = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(3, 4));
+        uint count = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(7, 4));
+        if (indexSize < 4 || indexSize > maximumIndexSize || 7L + indexSize > input.Length || count > 10_000_000)
+            throw new InvalidDataException("Invalid PFS index bounds.");
+        byte[] index = GC.AllocateUninitializedArray<byte>(checked((int)indexSize));
+        header.AsSpan(7, 4).CopyTo(index);
+        await ReadExactlyAsync(input, index.AsMemory(4), cancellationToken);
+        byte[]? xorKey = header[2] == '8' ? SHA1.HashData(index) : null;
+        int cursor = 4;
+        for (uint i = 0; i < count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            EnsureAvailable(index, cursor, 4);
+            uint nameLength = BinaryPrimitives.ReadUInt32LittleEndian(index.AsSpan(cursor, 4));
+            cursor += 4;
+            if (nameLength == 0 || nameLength > 1024 * 1024)
+                throw new InvalidDataException("Invalid PFS entry name length.");
+            EnsureAvailable(index, cursor, checked((int)nameLength + 12));
+            ReadOnlySpan<byte> rawName = index.AsSpan(cursor, checked((int)nameLength));
+            bool matches = DecodeName(rawName.ToArray(), PfsNameEncoding.Auto)
+                .Replace('\\', '/').Equals(entryPath, StringComparison.OrdinalIgnoreCase);
+            cursor += checked((int)nameLength) + 4; // name and reserved field
+            uint offset = BinaryPrimitives.ReadUInt32LittleEndian(index.AsSpan(cursor, 4));
+            uint size = BinaryPrimitives.ReadUInt32LittleEndian(index.AsSpan(cursor + 4, 4));
+            cursor += 8;
+            if ((ulong)offset + size > (ulong)input.Length)
+                throw new InvalidDataException("PFS entry points outside the archive.");
+            if (!matches) continue;
+            if (size > maximumEntrySize) return null;
+            byte[] result = new byte[checked((int)size)];
+            input.Position = offset;
+            await ReadExactlyAsync(input, result, cancellationToken);
+            if (xorKey is not null)
+                for (int byteIndex = 0; byteIndex < result.Length; byteIndex++)
+                    result[byteIndex] ^= xorKey[byteIndex % xorKey.Length];
+            return result;
+        }
+        return null;
+    }
+
     public async Task<ExtractedArchive> ExtractAsync(
         string archivePath,
         string outputDirectory,
