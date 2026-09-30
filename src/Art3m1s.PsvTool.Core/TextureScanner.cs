@@ -12,6 +12,9 @@ public sealed record TextureImageInfo(string? Archive, string Path, string Categ
     public string GroupKey => Category + (IsGray ? "#gray" : "");
     public IReadOnlySet<string> ExistingPaths { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public bool HasStemConflict { get; init; }
+    public IReadOnlyList<TextureImageInfo> OverlayPeers { get; init; } = [];
+    public string? OverlayWinner { get; init; }
+    public string? ConflictReason { get; init; }
 }
 
 public sealed class TextureScanner
@@ -31,15 +34,14 @@ public sealed class TextureScanner
         var codec = new PfsCodec();
         List<(PfsFileInfo Archive, PfsIndex Index)> indices = [];
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> duplicates = new(StringComparer.OrdinalIgnoreCase);
         foreach (var archive in project.Archives)
         {
             var index = await codec.ReadIndexAsync(archive.Path, encoding, token);
             indices.Add((archive, index));
-            foreach (var e in index.Entries) if (!names.Add(e.Path)) duplicates.Add(e.Path);
+            foreach (var e in index.Entries) names.Add(e.Path);
         }
         string[] loose = Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories).Where(IsImage).ToArray();
-        foreach (string p in loose) { string relative = Path.GetRelativePath(input, p).Replace('\\', '/'); if (!names.Add(relative)) duplicates.Add(relative); }
+        foreach (string p in loose) names.Add(Path.GetRelativePath(input, p).Replace('\\', '/'));
         var stems = names.Where(IsImage).GroupBy(x => Path.ChangeExtension(x, null), StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         int total = indices.Sum(x => x.Index.Entries.Count(e => IsImage(e.Path))) + loose.Length, done = 0;
@@ -51,7 +53,7 @@ public sealed class TextureScanner
             try { image = InspectBytes(await read(), path, archive); }
             catch (Exception e) when (e is not OperationCanceledException)
             { image = new(archive, path, CategoryFor(path), 0, 0, size, false, false, false, false, Error: e.Message); }
-            result.Add(image with { ExistingPaths = names, HasStemConflict = stems.Contains(Path.ChangeExtension(path, null)) || duplicates.Contains(path) });
+            result.Add(image with { ExistingPaths = names, HasStemConflict = stems.Contains(Path.ChangeExtension(path, null)) });
             progress?.Report(new(100d * ++done / Math.Max(1, total), "texture-scan", archive, path));
         }
         foreach (var (archive, index) in indices)
@@ -66,7 +68,30 @@ public sealed class TextureScanner
                 if (new FileInfo(path).Length > 64 * 1024 * 1024) throw new InvalidDataException("Image exceeds 64 MiB scan limit.");
                 return await File.ReadAllBytesAsync(path, token);
             });
-        return result;
+        var overlays = result.GroupBy(x => x.Path, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1)
+            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.OrdinalIgnoreCase);
+        return result.Select(image =>
+        {
+            if (!overlays.TryGetValue(image.Path, out var peers)) return image;
+            var ranks = peers.Select(p => ArchiveRank(p.Archive)).ToArray();
+            bool ordered = ranks.All(r => r != null)
+                && ranks.Select(r => r!.Value.Family).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1
+                && ranks.Select(r => r!.Value.Priority).Distinct().Count() == peers.Length;
+            if (!ordered) return image with { HasStemConflict = true,
+                ConflictReason = "同路径重复，无法确定包覆盖顺序 / Duplicate path with ambiguous archive priority" };
+            int winner = Enumerable.Range(0, peers.Length).MaxBy(i => ranks[i]!.Value.Priority);
+            return image with { OverlayPeers = peers, OverlayWinner = peers[winner].Archive };
+        }).ToArray();
+    }
+    private static (string Family, System.Numerics.BigInteger Priority)? ArchiveRank(string? archive)
+    {
+        if (archive == null) return null;
+        int at = archive.LastIndexOf(".pfs", StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return null;
+        string suffix = archive[(at + 4)..];
+        if (suffix.Length == 0) return (archive, -1);
+        if (suffix.Length < 2 || suffix[0] != '.' || !suffix[1..].All(char.IsAsciiDigit)) return null;
+        return (archive[..(at + 4)], System.Numerics.BigInteger.Parse(suffix[1..], System.Globalization.CultureInfo.InvariantCulture));
     }
     public static TextureImageInfo InspectBytes(byte[] bytes, string path, string? archive = null)
     {

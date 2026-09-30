@@ -49,38 +49,42 @@ public sealed class NativeTextureTests : IDisposable
     public static IEnumerable<object[]> SupportedColorFormats => NativeTextureFormats.All
         .Where(x => x.PvrCode >= 0 && x.Format is not (NativeTextureFormat.Bc4 or NativeTextureFormat.Bc4Signed or NativeTextureFormat.Bc5 or NativeTextureFormat.Bc5Signed))
         .Select(x => new object[] { x.Format });
-    [Fact]
-    public async Task ManualAutoUsesExistingRulesAndKeepsMetadataAndGray()
+    [Theory]
+    [InlineData("image/fg")]
+    [InlineData("system")]
+    [InlineData("custom/art")]
+    public async Task ManualAutoConvertsSelectedFolderAndKeepsMetadataAndGray(string category)
     {
         string input = Path.Combine(root, "manual-input"); Directory.CreateDirectory(input);
         var resources = new[]
         {
-            ("image/fg/opaque.png", await Png("opaque.png")),
-            ("image/fg/alpha.png", await Png("alpha.png", alpha: true)),
-            ("image/fg/offset.png", await Png("offset.png", metadata: true)),
-            ("image/fg/gray.png", await Png("gray.png", gray: true))
+            ( $"{category}/opaque.png", await Png("opaque.png")),
+            ( $"{category}/alpha.png", await Png("alpha.png", alpha: true)),
+            ( $"{category}/offset.png", await Png("offset.png", metadata: true)),
+            ( $"{category}/gray.png", await Png("gray.png", gray: true)),
+            ("untouched/opaque.png", await Png("untouched.png"))
         };
         var codec = new PfsCodec();
         await codec.PackPf8Async(new('8', resources.Select(x => new PfsEntry(Encoding.UTF8.GetBytes(x.Item1), x.Item1, 0, 0, x.Item2)).ToArray()),
             Path.Combine(input, "root.pfs.001"));
         var images = await new TextureScanner().ScanAsync(input);
-        Assert.All(images, i => Assert.Equal(NativeTextureFormats.Recommend(i, false),
-            NativeTextureFormats.Resolve(i, NativeTextureFormat.AutoWithoutMetadata, false)));
-        Assert.Equal(NativeTextureFormat.Preserve, NativeTextureFormats.Resolve(images[0] with { Category = "system" }, NativeTextureFormat.AutoWithoutMetadata, false));
-        var rules = images.Select(i => i.GroupKey).Distinct().Select(key => new NativeTextureRule(key, true, NativeTextureFormat.AutoWithoutMetadata)).ToArray();
+        var rules = images.Where(i => i.Category == TextureScanner.CategoryFor(category + "/opaque.png")).Select(i => i.GroupKey).Distinct()
+            .Select(key => new NativeTextureRule(key, true, NativeTextureFormat.AutoWithoutMetadata)).ToArray();
         string output = Path.Combine(root, "manual-output");
         await new ConversionService().ConvertAsync(new(input, output, Ratio: 1, Categories: AssetCategories.Images,
             ConvertEmotePsbTexturesToDxt5: false, NativeTextures: new(Rules: rules)));
         var unpack = await codec.ExtractAsync(Path.Combine(output, "root.pfs.001"), Path.Combine(root, "manual-unpack"));
+        Assert.Contains(unpack.Entries, e => e.Path == "untouched/opaque.png");
+        Assert.DoesNotContain(unpack.Entries, e => e.Path == "untouched/opaque.dds");
         foreach (var (name, fourcc) in new[] { ("opaque", "DXT1"), ("alpha", "DXT5") })
         {
-            var file = Assert.Single(unpack.Entries, e => e.Path == $"image/fg/{name}.dds");
+            var file = Assert.Single(unpack.Entries, e => e.Path == $"{category}/{name}.dds");
             Assert.Equal(fourcc, Encoding.ASCII.GetString((await File.ReadAllBytesAsync(file.ExtractedPath)).AsSpan(84, 4)));
-            Assert.DoesNotContain(unpack.Entries, e => e.Path == $"image/fg/{name}.png");
+            Assert.DoesNotContain(unpack.Entries, e => e.Path == $"{category}/{name}.png");
         }
         foreach (var name in new[] { "offset", "gray" })
         {
-            var file = Assert.Single(unpack.Entries, e => e.Path == $"image/fg/{name}.png");
+            var file = Assert.Single(unpack.Entries, e => e.Path == $"{category}/{name}.png");
             using var original = Image.Load<Rgba32>(Path.Combine(root, name + ".png"));
             using var retained = Image.Load<Rgba32>(file.ExtractedPath);
             Assert.Equal(original.Size, retained.Size);
@@ -170,6 +174,59 @@ public sealed class NativeTextureTests : IDisposable
         Assert.False(result.Converted);
         using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new TextureScanner().ScanAsync(root, token: cancelled.Token));
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NumberedOverlaysKeepPriorityAndNeverMixPngAndDds(bool protectLatest)
+    {
+        string input = Path.Combine(root, "overlays"); Directory.CreateDirectory(input);
+        string relative = "image/staff/picture.png";
+        var codec = new PfsCodec();
+        foreach (var suffix in new[] { "", ".2", ".10" })
+        {
+            string png = await Png("overlay" + suffix + ".png", alpha: suffix == ".10", metadata: protectLatest && suffix == ".10");
+            await codec.PackPf8Async(new('8', [new(Encoding.UTF8.GetBytes(relative), relative, 0, 0, png)]),
+                Path.Combine(input, "root.pfs" + suffix));
+        }
+        var scan = await new TextureScanner().ScanAsync(input);
+        Assert.Equal(3, scan.Count);
+        Assert.All(scan, i => { Assert.False(i.HasStemConflict); Assert.Equal("root.pfs.10", i.OverlayWinner); });
+        var options = new NativeTextureOptions(Rules: [new("image/staff", true, NativeTextureFormat.AutoWithoutMetadata)]);
+        string output = Path.Combine(root, "overlay-output");
+        await new ConversionService().ConvertAsync(new(input, output, Ratio: 1, Categories: AssetCategories.Images,
+            ConvertEmotePsbTexturesToDxt5: false, NativeTextures: options));
+        foreach (var suffix in new[] { "", ".2", ".10" })
+        {
+            var extracted = await codec.ExtractAsync(Path.Combine(output, "root.pfs" + suffix), Path.Combine(root, "overlay-unpacked" + suffix));
+            var entry = Assert.Single(extracted.Entries);
+            Assert.Equal(protectLatest ? relative : "image/staff/picture.dds", entry.Path);
+            if (!protectLatest)
+            {
+                byte[] data = await File.ReadAllBytesAsync(entry.ExtractedPath);
+                Assert.Equal(suffix == ".10" ? "DXT5" : "DXT1", Encoding.ASCII.GetString(data.AsSpan(84, 4)));
+                if (suffix == ".10")
+                {
+                    byte[] pixels = PsbProcessor.DecodeDxt5ForTest(data[128..], 32, 16);
+                    Assert.Equal(0, pixels[3]); Assert.Equal(255, pixels[31 * 4 + 3]);
+                }
+            }
+        }
+        if (protectLatest)
+            Assert.Contains("覆盖链", NativeTextureFormats.Unsuitable(scan.First(i => i.Archive == "root.pfs"), NativeTextureFormat.AutoWithoutMetadata, 1, false));
+    }
+    [Fact]
+    public async Task DifferentExtensionsAndAmbiguousArchivesRemainConflicts()
+    {
+        string input = Path.Combine(root, "ambiguous"); Directory.CreateDirectory(input);
+        string png = await Png("source.png"); var codec = new PfsCodec();
+        foreach (var (archive, path) in new[] {
+            ("root.pfs", "image/bg/a.png"), ("root.pfs.2", "image/bg/a.jpg"),
+            ("other.pfs", "image/bg/a.png") })
+            await codec.PackPf8Async(new('8', [new(Encoding.UTF8.GetBytes(path), path, 0, 0, png)]), Path.Combine(input, archive));
+        var scan = await new TextureScanner().ScanAsync(input);
+        Assert.All(scan, i => Assert.True(i.HasStemConflict));
+        Assert.All(scan, i => Assert.NotNull(NativeTextureFormats.Unsuitable(i, NativeTextureFormat.Bc3, 1, false)));
     }
     [Fact]
     public async Task GrayCanOptIntoBc4AndBadImageIsPreserved()

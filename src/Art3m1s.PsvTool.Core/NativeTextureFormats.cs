@@ -38,7 +38,7 @@ public static class NativeTextureFormats
         new(NativeTextureFormat.Pvrtc2_4, "PVRTC2 4bpp", 4, 5, "RGBA", "透明彩色图片 / Color with alpha"),
         new(NativeTextureFormat.Etc1, "ETC1", 4, 6, "RGB", "无 Alpha；目前 Vita3K 不兼容 / No alpha; current Vita3K incompatible"),
         new(NativeTextureFormat.AutoWithoutMetadata, "除带偏移信息外的 AUTO 转换（仅手动） / AUTO conversion excluding offset metadata (manual only)", 0, -1,
-            "按图片选择 / Per image", "跳过 metadata，其余沿用 AUTO 规则 / Skip metadata; apply existing AUTO rules to the rest")
+            "按图片选择 / Per image", "所选分类跳过 metadata 和灰度；其余不透明 BC1、透明 BC3 / Selected category: keep metadata and gray; opaque BC1, alpha BC3")
     ];
     public static NativeFormatInfo Info(NativeTextureFormat f) => All.Single(x => x.Format == f);
     public static bool IsAutomatic(NativeTextureFormat format) =>
@@ -46,7 +46,7 @@ public static class NativeTextureFormats
     public static NativeTextureFormat Resolve(TextureImageInfo image, NativeTextureFormat requested, bool ignoreAlpha) => requested switch
     {
         NativeTextureFormat.Auto => Recommend(image, ignoreAlpha),
-        NativeTextureFormat.AutoWithoutMetadata => image.HasMetadata ? NativeTextureFormat.Preserve : Recommend(image, ignoreAlpha),
+        NativeTextureFormat.AutoWithoutMetadata => RecommendColor(image, ignoreAlpha),
         _ => requested
     };
     public static NativeTextureFormat Recommend(TextureImageInfo image, bool ignoreAlpha) =>
@@ -61,6 +61,22 @@ public static class NativeTextureFormats
     // Hard blockers are kept unchanged even if explicitly selected. Lossy channel
     // choices remain selectable, but are never applied silently to incompatible data.
     public static string? Unsuitable(TextureImageInfo image, NativeTextureFormat format, double ratio, bool ignoreAlpha)
+    {
+        string? ownReason = UnsuitableSingle(image, format, ratio, ignoreAlpha);
+        if (ownReason != null) return ownReason;
+        var resolved = Resolve(image, format, ignoreAlpha);
+        if (resolved == NativeTextureFormat.Preserve) return null;
+        foreach (var peer in image.OverlayPeers)
+        {
+            var peerFormat = Resolve(peer, format, ignoreAlpha);
+            if (peer.GroupKey != image.GroupKey || peerFormat == NativeTextureFormat.Preserve
+                || UnsuitableSingle(peer, format, ratio, ignoreAlpha) != null
+                || Info(peerFormat).Extension != Info(resolved).Extension)
+                return "覆盖链需统一后缀，部分图片需保留原格式 / Keep overlay chain: some versions require the original format";
+        }
+        return null;
+    }
+    private static string? UnsuitableSingle(TextureImageInfo image, NativeTextureFormat format, double ratio, bool ignoreAlpha)
     {
         if (format == NativeTextureFormat.Preserve) return null;
         format = Resolve(image, format, ignoreAlpha);
@@ -79,7 +95,7 @@ public static class NativeTextureFormats
         if (format == NativeTextureFormat.Bc4 && !image.IsGray) return "会丢失彩色通道 / Loses color channels";
         if (format == NativeTextureFormat.Bc5) return "普通图片需要完整 RGB / Full RGB required";
         if (image.ExistingPaths.Contains(Path.ChangeExtension(image.Path, f.Extension))) return "目标文件已存在 / Target name already exists";
-        if (image.HasStemConflict) return "同名不同后缀资源冲突 / Conflicting source names";
+        if (image.HasStemConflict) return image.ConflictReason ?? "同名不同后缀资源冲突 / Conflicting source names";
         return null;
     }
     public static long PayloadBytes(NativeTextureFormat format, int width, int height)
