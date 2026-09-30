@@ -49,6 +49,13 @@ internal static class Program
             await File.WriteAllTextAsync(Path.Combine(input, "system.ini"), "[WINDOWS]\nCHARSET=UTF-8\nWIDTH=1920\nHEIGHT=1080\n");
             await new ConversionService().ConvertAsync(new ConversionOptions(input, output, Categories: AssetCategories.None));
             if (!File.Exists(Path.Combine(output, "root.pfs")) || !File.ReadAllText(Path.Combine(output, "system.ini")).Contains("[VITA]", StringComparison.Ordinal)) return 2;
+            string texturePath = Path.Combine(root, "背景.png");
+            using (var image = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(32, 16,
+                new SixLabors.ImageSharp.PixelFormats.Rgba32(40, 120, 210, 128)))
+                await SixLabors.ImageSharp.ImageExtensions.SaveAsPngAsync(image, texturePath);
+            var info = TextureScanner.InspectBytes(await File.ReadAllBytesAsync(texturePath), "image/bg/test.png");
+            var converted = await new NativeTextureProcessor().ConvertAsync(texturePath, info, new(), 1);
+            if (!converted.Converted || !File.ReadAllBytes(converted.OutputPath).AsSpan().StartsWith("DDS "u8)) return 12;
             return 0;
         }
         finally

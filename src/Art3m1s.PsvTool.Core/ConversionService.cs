@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 using System.Text;
 
 namespace Art3m1s.PsvTool.Core;
@@ -60,6 +63,12 @@ public sealed class ConversionService : IConversionService
         if (Directory.Exists(options.OutputDirectory) && !options.OverwriteExisting)
             throw new IOException("Output directory already exists.");
 
+        IReadOnlyList<TextureImageInfo> textureImages = options.NativeTextures?.Enabled == true && options.Categories.HasFlag(AssetCategories.Images)
+            ? await new TextureScanner().ScanAsync(options.InputDirectory, options.NameEncoding,
+                progress == null ? null : new MappedProgress(progress, 0, 0.1), cancellationToken) : [];
+        if (options.NativeTextures?.Enabled == true && options.Categories.HasFlag(AssetCategories.Images) && progress != null)
+            progress = new MappedProgress(progress, 10, 0.9);
+        var textureLookup = textureImages.ToDictionary(x => (x.Archive ?? "") + "|" + x.Path, StringComparer.OrdinalIgnoreCase);
         string outputFull = Path.GetFullPath(options.OutputDirectory).TrimEnd(Path.DirectorySeparatorChar);
         string parent = Path.GetDirectoryName(outputFull) ?? throw new InvalidOperationException("Output has no parent directory.");
         Directory.CreateDirectory(parent);
@@ -79,11 +88,11 @@ public sealed class ConversionService : IConversionService
                 cancellationToken.ThrowIfCancellationRequested();
                 PfsFileInfo archive = scan.Archives[index];
                 progress?.Report(new ConversionProgress(100d * index / total, "extract", archive.FileName));
-                await ConvertArchiveAsync(archive, staging, options, progress, index, total, cancellationToken);
+                await ConvertArchiveAsync(archive, staging, options, progress, index, total, textureLookup, cancellationToken);
             }
 
             progress?.Report(new ConversionProgress(100d * scan.Archives.Count / total, "loose"));
-            await ProcessTreeAsync(staging, options, progress, cancellationToken, archiveName: null, skipPfs: true, preserveDat: false,
+            await ProcessTreeAsync(staging, options, progress, cancellationToken, textureLookup, archiveName: null, skipPfs: true, preserveDat: false,
                 progressStart: 100d * scan.Archives.Count / total, progressSpan: 100d / total);
             CommitDirectory(staging, outputFull, backup, options.OverwriteExisting);
             committed = true;
@@ -103,6 +112,7 @@ public sealed class ConversionService : IConversionService
         IProgress<ConversionProgress>? progress,
         int archiveIndex,
         int totalUnits,
+        IReadOnlyDictionary<string, TextureImageInfo> textureLookup,
         CancellationToken cancellationToken)
     {
         string workParent = Path.Combine(staging, ".art3m1s-work");
@@ -112,13 +122,23 @@ public sealed class ConversionService : IConversionService
         try
         {
             ExtractedArchive extracted = await _pfs.ExtractAsync(archive.Path, work, options.NameEncoding, cancellationToken);
-            await ProcessTreeAsync(work, options, progress, cancellationToken, archive.FileName, skipPfs: false, preserveDat: true,
+            var renamed = await ProcessTreeAsync(work, options, progress, cancellationToken, textureLookup, archive.FileName, skipPfs: false, preserveDat: true,
                 progressStart: 100d * (archiveIndex + 0.05) / totalUnits,
                 progressSpan: 100d * 0.85 / totalUnits);
             string destination = Path.Combine(staging, archive.FileName);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             string temporary = destination + ".packing";
             progress?.Report(new ConversionProgress(100d * (archiveIndex + 0.9) / totalUnits, "pack", archive.FileName));
-            await _pfs.PackPf8Async(extracted, temporary, cancellationToken);
+            // Only the ASCII extension changes; keep original Shift-JIS/UTF-8 name bytes.
+            var entries = extracted.Entries.Select(e =>
+            {
+                if (!renamed.TryGetValue(e.Path, out string? newPath)) return e;
+                int dot = Array.LastIndexOf(e.RawName, (byte)'.');
+                byte[] extension = Encoding.ASCII.GetBytes(Path.GetExtension(newPath));
+                byte[] raw = [.. e.RawName.AsSpan(0, dot).ToArray(), .. extension];
+                return e with { RawName = raw, Path = newPath, ExtractedPath = Path.Combine(work, newPath.Replace('/', Path.DirectorySeparatorChar)) };
+            }).ToArray();
+            await _pfs.PackPf8Async(extracted with { Entries = entries }, temporary, cancellationToken);
             File.Move(temporary, destination, true);
             completed = true;
         }
@@ -140,11 +160,12 @@ public sealed class ConversionService : IConversionService
         }
     }
 
-    private async Task ProcessTreeAsync(
+    private async Task<IReadOnlyDictionary<string, string>> ProcessTreeAsync(
         string root,
         ConversionOptions options,
         IProgress<ConversionProgress>? progress,
         CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, TextureImageInfo> textureLookup,
         string? archiveName,
         bool skipPfs,
         bool preserveDat,
@@ -159,6 +180,8 @@ public sealed class ConversionService : IConversionService
         using SemaphoreSlim animationSlots = new(1);
         using SemaphoreSlim psbSlots = new(1);
         int completed = 0;
+        ConcurrentDictionary<string, string> renamed = new(StringComparer.OrdinalIgnoreCase);
+        int converted = 0, kept = 0; long beforeBytes = 0, afterBytes = 0;
         await Parallel.ForEachAsync(files, new ParallelOptions
         {
             MaxDegreeOfParallelism = options.EffectiveParallelism,
@@ -181,8 +204,31 @@ public sealed class ConversionService : IConversionService
                     }
                     else await _text.ProcessAsync(path, options.Ratio, token);
                 }
-                else if (extension.Equals(".png", StringComparison.OrdinalIgnoreCase) && options.Categories.HasFlag(AssetCategories.Images))
-                    await _png.ResizeAsync(path, options.Ratio, token);
+                else if (TextureScanner.IsImage(path) && options.Categories.HasFlag(AssetCategories.Images))
+                {
+                    string normalized = relativePath.Replace('\\', '/');
+                    textureLookup.TryGetValue((archiveName ?? "") + "|" + normalized, out var info);
+                    bool readable = info?.Error == null;
+                    if (readable && extension.Equals(".png", StringComparison.OrdinalIgnoreCase)) await _png.ResizeAsync(path, options.Ratio, token);
+                    else if (readable && options.NativeTextures?.Enabled == true && extension.ToLowerInvariant() is ".jpg" or ".jpeg")
+                    {
+                        using Image image = await Image.LoadAsync(path, token);
+                        image.Mutate(x => x.Resize(Math.Max(1, (int)(image.Width * options.Ratio)), Math.Max(1, (int)(image.Height * options.Ratio))));
+                        await image.SaveAsync(path, token);
+                    }
+                    if (options.NativeTextures?.Enabled == true && info != null)
+                    {
+                        var result = await new NativeTextureProcessor().ConvertAsync(path, info, options.NativeTextures, options.Ratio, token);
+                        if (result.Converted)
+                        {
+                            renamed[normalized] = Path.GetRelativePath(root, result.OutputPath).Replace('\\', '/');
+                            Interlocked.Increment(ref converted);
+                        }
+                        else Interlocked.Increment(ref kept);
+                        Interlocked.Add(ref beforeBytes, result.Before); Interlocked.Add(ref afterBytes, result.After);
+                        progressEntry += $" · {result.Message} · {result.Before:N0} → {result.After:N0} B";
+                    }
+                }
                 else if (options.SubsetFonts && (extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase) ||
                                                  extension.Equals(".otf", StringComparison.OrdinalIgnoreCase)))
                     await _fonts.SubsetAsync(path, options.FontProfile, usedCodePoints, token);
@@ -238,6 +284,10 @@ public sealed class ConversionService : IConversionService
             double fraction = files.Length == 0 ? 1 : (double)done / files.Length;
             progress?.Report(new ConversionProgress(progressStart + progressSpan * fraction, "resource", archiveName, progressEntry));
         });
+        if (options.NativeTextures?.Enabled == true)
+            progress?.Report(new(progressStart + progressSpan, "resource", archiveName,
+                $"PSV textures: converted={converted}, kept={kept}, resized source={beforeBytes:N0} B, output={afterBytes:N0} B"));
+        return renamed;
     }
 
     private static async Task<IReadOnlySet<int>> CollectUsedCodePointsAsync(IEnumerable<string> files, CancellationToken cancellationToken)
@@ -298,12 +348,17 @@ public sealed class ConversionService : IConversionService
         }
     }
 
+    private sealed class MappedProgress(IProgress<ConversionProgress> target, double start, double scale) : IProgress<ConversionProgress>
+    {
+        public void Report(ConversionProgress value) => target.Report(value with { Percent = start + value.Percent * scale });
+    }
+
     private static bool IsPfsFileName(string name)
     {
         int marker = name.LastIndexOf(".pfs", StringComparison.OrdinalIgnoreCase);
         if (marker <= 0) return false;
         string suffix = name[(marker + 4)..];
-        return suffix.Length == 0 || (suffix.Length == 4 && suffix[0] == '.' && suffix[1..].All(char.IsAsciiDigit));
+        return suffix.Length == 0 || (suffix.Length > 1 && suffix[0] == '.' && !suffix[1..].Contains('.'));
     }
 
     private static void SafeDeleteTaskDirectory(string path, string expectedParent, bool suppressIoErrors = false)

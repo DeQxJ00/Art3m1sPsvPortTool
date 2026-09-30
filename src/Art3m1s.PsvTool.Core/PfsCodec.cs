@@ -19,7 +19,7 @@ public interface IPfsCodec
         CancellationToken cancellationToken = default);
 }
 
-public sealed class PfsCodec : IPfsCodec
+public sealed partial class PfsCodec : IPfsCodec
 {
     private const int HeaderSize = 11;
 

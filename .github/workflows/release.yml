@@ -190,6 +190,7 @@ jobs:
           if ('${{ matrix.rid }}' -eq 'win-x64') {
             $withFfmpegFiles = @(
               "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
+              "publish/${{ matrix.rid }}/PVRTexLib.dll",
               "publish/${{ matrix.rid }}/LICENSE",
               "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt",
               "publish/${{ matrix.rid }}/tools",
@@ -197,6 +198,7 @@ jobs:
             )
             $withoutFfmpegFiles = @(
               "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
+              "publish/${{ matrix.rid }}/PVRTexLib.dll",
               "publish/${{ matrix.rid }}/LICENSE",
               "publish/${{ matrix.rid }}/licenses"
             )
@@ -210,8 +212,8 @@ jobs:
           chmod +x publish/${{ matrix.rid }}/Art3m1s.PsvTool.App
           cd publish/${{ matrix.rid }}
           prefix="art3m1s_psv_port_tool-v${PACKAGE_VERSION}-${{ matrix.rid }}"
-          zip -9r "../../${prefix}-with-ffmpeg.zip" Art3m1s.PsvTool.App LICENSE FFMPEG-BUILD-CONFIG.txt tools licenses
-          zip -9r "../../${prefix}-no-ffmpeg.zip" Art3m1s.PsvTool.App LICENSE licenses
+          zip -9r "../../${prefix}-with-ffmpeg.zip" Art3m1s.PsvTool.App libPVRTexLib.so LICENSE FFMPEG-BUILD-CONFIG.txt tools licenses
+          zip -9r "../../${prefix}-no-ffmpeg.zip" Art3m1s.PsvTool.App libPVRTexLib.so LICENSE licenses
       - if: runner.os == 'macOS'
         shell: bash
         run: |

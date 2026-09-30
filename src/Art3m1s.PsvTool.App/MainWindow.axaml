@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Art3m1s.PsvTool.App"
+        xmlns:core="using:Art3m1s.PsvTool.Core"
         x:Class="Art3m1s.PsvTool.App.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="{Binding Title}" Width="1180" Height="1000" MinWidth="900" MinHeight="680"
@@ -30,8 +31,8 @@
       </Grid>
     </Border>
 
-    <ScrollViewer Grid.Row="1">
-      <Grid Margin="28,22" ColumnDefinitions="1.3*,1*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="18">
+    <ScrollViewer x:Name="MainScroll" Grid.Row="1">
+      <Grid Margin="28,22" ColumnDefinitions="1.3*,1*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="18">
         <Border Grid.Row="0" Grid.ColumnSpan="2" Classes="card">
           <StackPanel Spacing="12">
             <TextBlock Text="{Binding ProjectLabel}" Classes="sectionTitle" />
@@ -101,7 +102,57 @@
           </StackPanel>
         </Border>
 
-        <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="card">
+        <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="card" IsEnabled="{Binding CanStart}">
+          <StackPanel Spacing="10">
+            <CheckBox Content="{Binding NativeTexturesLabel}" IsChecked="{Binding NativeTextures}" />
+            <TextBlock Text="{Binding NativeTexturesHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
+            <StackPanel IsEnabled="{Binding NativeTextures}" Spacing="10">
+              <Button Content="{Binding ScanTexturesLabel}" Click="ScanTexturesClick" HorizontalAlignment="Left" />
+              <CheckBox Content="{Binding IgnoreBackgroundAlphaLabel}" IsChecked="{Binding IgnoreBackgroundAlpha}" />
+              <ItemsControl ItemsSource="{Binding TextureCategories}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:TextureCategoryViewModel">
+                    <Border Background="{DynamicResource SubtleBg}" Padding="10" Margin="0,0,0,8" CornerRadius="6">
+                      <StackPanel Spacing="5">
+                        <Grid ColumnDefinitions="220,*" ColumnSpacing="8">
+                          <CheckBox Content="{Binding Label}" IsChecked="{Binding Enabled}" />
+                          <ComboBox Grid.Column="1" ItemsSource="{Binding Choices}" SelectedIndex="{Binding SelectedFormat}" HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" MaxWidth="720" /></DataTemplate></ComboBox.ItemTemplate>
+                          </ComboBox>
+                        </Grid>
+                        <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+                        <Expander Header="{Binding DetailsLabel}" IsExpanded="{Binding DetailsExpanded, Mode=TwoWay}">
+                          <ListBox ItemsSource="{Binding FileRows}" MaxHeight="220"
+                                   ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                            <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" /></DataTemplate></ListBox.ItemTemplate>
+                          </ListBox>
+                        </Expander>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <TextBlock Text="{Binding TextureHelp}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryText}" />
+            <Expander Header="{Binding TextureFormatsLabel}" IsExpanded="True">
+              <ItemsControl ItemsSource="{Binding TextureFormats}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="core:NativeFormatInfo">
+                    <Grid ColumnDefinitions="210,55,210,*" ColumnSpacing="8" Margin="0,4">
+                      <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
+                      <TextBlock Grid.Column="1" Text="{Binding BitsPerPixel}" />
+                      <TextBlock Grid.Column="2" Text="{Binding Channels}" TextWrapping="Wrap" />
+                      <TextBlock Grid.Column="3" Text="{Binding Description}" TextWrapping="Wrap" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Row="3" Grid.ColumnSpan="2" Classes="card">
           <Grid ColumnDefinitions="1*,2*" ColumnSpacing="18">
             <StackPanel Spacing="10">
               <TextBlock Text="{Binding AdvancedLabel}" Classes="sectionTitle" />

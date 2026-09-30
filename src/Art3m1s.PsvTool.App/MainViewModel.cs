@@ -7,7 +7,7 @@ using Avalonia.Styling;
 
 namespace Art3m1s.PsvTool.App;
 
-public sealed class MainViewModel : INotifyPropertyChanged
+public sealed partial class MainViewModel : INotifyPropertyChanged
 {
     private readonly ILocalizer _localizer;
     private readonly IProjectScanner _scanner;
@@ -44,6 +44,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         AppSettings saved = _settings.Load();
         IsDark = saved.IsDark;
         _convertEmotePsbTexturesToDxt5 = saved.ConvertEmotePsbTexturesToDxt5;
+        _nativeTextures = saved.NativeTextures;
         _localizer.SetLanguage(saved.Language);
         if (Application.Current is not null)
             Application.Current.RequestedThemeVariant = IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
@@ -59,6 +60,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             if (Set(ref _inputDirectory, value))
             {
+                TextureCategories.Clear();
                 _resolutions = []; _selectedResolutionIndex = -1; _width = _height = null; _archiveCount = 0;
                 OnPropertyChanged(nameof(ResolutionChoices)); OnPropertyChanged(nameof(HasResolutionChoices));
                 OnPropertyChanged(nameof(SelectedResolutionIndex)); OnPropertyChanged(nameof(OriginalResolution));
@@ -68,7 +70,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
     public string OutputDirectory { get => _outputDirectory; set { Set(ref _outputDirectory, value); _overwriteArmed = false; } }
-    public string Ratio { get => _ratio; set { if (Set(ref _ratio, value)) OnPropertyChanged(nameof(TargetResolution)); } }
+    public string Ratio { get => _ratio; set { if (Set(ref _ratio, value)) { OnPropertyChanged(nameof(TargetResolution)); RefreshTextures(); } } }
     public bool ProcessText { get => _text; set => Set(ref _text, value); }
     public bool ProcessImages { get => _images; set => Set(ref _images, value); }
     public bool ProcessAnimation { get => _animation; set => Set(ref _animation, value); }
@@ -192,7 +194,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 Progress = value.Percent; Status = LocalizeStage(value.Stage);
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
             });
-            await _converter.ConvertAsync(new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5), reporter, _conversionCancellation.Token);
+            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()));
+            var token = _conversionCancellation.Token;
+            await Task.Run(() => _converter.ConvertAsync(options, reporter, token), token);
             Status = L("Finished");
         }
         catch (OperationCanceledException) { Status = L("Cancel"); }
@@ -234,6 +238,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         "pack" => L("StagePack"),
         "loose" => L("StageLoose"),
         "resource" => L("StageResource"),
+        "texture-scan" => L("Scanning"),
         "complete" => L("StageComplete"),
         _ => stage
     };
@@ -249,7 +254,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     private void SaveSettings()
     {
-        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5)); }
+        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5, NativeTextures)); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
@@ -257,6 +262,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     private void RaiseAllLocalized()
     {
+        RefreshTextures();
+        foreach (string name in new[] { nameof(NativeTexturesLabel), nameof(NativeTexturesHelp), nameof(ScanTexturesLabel), nameof(IgnoreBackgroundAlphaLabel), nameof(TextureHelp), nameof(TextureFormatsLabel) }) OnPropertyChanged(name);
         foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(AutoScanResolutionLabel), nameof(ResolutionListLabel), nameof(ResolutionChoices), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(ConvertEmotePsbTexturesToDxt5Label), nameof(ConvertEmotePsbTexturesToDxt5Help), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ProjectRepositoryLabel), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
     }
 }

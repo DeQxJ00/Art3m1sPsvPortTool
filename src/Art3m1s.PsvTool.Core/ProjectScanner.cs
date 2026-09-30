@@ -16,7 +16,7 @@ public sealed partial class ProjectScanner : IProjectScanner
             throw new DirectoryNotFoundException(inputDirectory);
 
         List<PfsFileInfo> archives = [];
-        foreach (string file in Directory.EnumerateFiles(inputDirectory, "*", SearchOption.TopDirectoryOnly)
+        foreach (string file in Directory.EnumerateFiles(inputDirectory, "*", SearchOption.AllDirectories)
                      .Where(IsPfsName)
                      .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
         {
@@ -26,7 +26,7 @@ public sealed partial class ProjectScanner : IProjectScanner
             if (await stream.ReadAsync(header, cancellationToken) != header.Length ||
                 header[0] != (byte)'p' || header[1] != (byte)'f' || header[2] is not ((byte)'2' or (byte)'6' or (byte)'8'))
                 continue;
-            archives.Add(new PfsFileInfo(file, Path.GetFileName(file), (char)header[2], stream.Length));
+            archives.Add(new PfsFileInfo(file, Path.GetRelativePath(inputDirectory, file).Replace('\\', '/'), (char)header[2], stream.Length));
         }
 
         string systemIni = Path.Combine(inputDirectory, "system.ini");
@@ -92,7 +92,7 @@ public sealed partial class ProjectScanner : IProjectScanner
         return resolutions;
     }
 
-    [GeneratedRegex(@"^.+\.pfs(?:\.\d{3})?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^.+\.pfs(?:\.[^.]+)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PfsNameRegex();
 
     [GeneratedRegex(@"(?im)^[ \t]*\[([^\]\r\n]+)\][ \t]*(?:[;#].*)?$")]
