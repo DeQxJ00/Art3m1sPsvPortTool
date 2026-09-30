@@ -51,6 +51,7 @@ public sealed partial class MainWindow : Window
         { AllowMultiple = false, SuggestedStartLocation = Directory.Exists(suggested) ? await StorageProvider.TryGetFolderFromPathAsync(suggested) : null });
         return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
     }
+    private async void ScanTexturesClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanTexturesAsync();
     private async void ScanClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanAsync();
     private async void AutoScanResolutionClick(object? sender, RoutedEventArgs e) => await ViewModel.AutoScanResolutionAsync();
     private async void StartClick(object? sender, RoutedEventArgs e) => await ViewModel.StartAsync();

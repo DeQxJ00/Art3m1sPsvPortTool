@@ -45,7 +45,7 @@ Release 为 `win-x64`、`linux-x64`、`osx-x64` 和 `osx-arm64` 各提供两种�
 ## 资源处理规则
 
 - 文本：INI / TBL / IPT / AST / LUA 严格复刻 VisualNovelUpscaler 的 Artemis 匹配、取整、编码与输出行为；IET 原样复制。E-mote 会额外同步缩放 TBL 姿态表中的 X/Y 偏移与画布宽高、AST 坐标以及 LUA 的固定 `mulpos()` 坐标；人物缩放倍率、动作、表情、口型采样和资源名保持不变。
-- 图片：PNG 使用 ImageSharp 的 Alpha 预乘高质量 Bicubic，仅缩放，不进行 PNG 优化、调色板压缩、waifu2x 或有损压缩。
+- 图片：PNG 使用 ImageSharp 的 Alpha 预乘高质量 Bicubic，默认缩放；保留 PNG 时不进行 PNG 优化、调色板压缩或 waifu2x。下方 PSV 纹理选项可启用有损压缩。
 - 动画：OGV 使用 FFmpeg Bicubic；目标宽高与 VisualNovelUpscaler 一样分别按 `int(原尺寸 × Ratio)` 截断，保持帧率与音频。Artemis／E-mote 动态立绘 PSB（v1–v4）会解析内嵌 `RGBA8` / `DXT5` atlas，以 Bicubic 按 Ratio 缩小并重建资源表，同时缩放 texture 尺寸、裁切尺寸、icon 矩形、origin、screenSize、动作坐标、偏移、运动路径与空白网格域；角度、动作时间、缩放倍率、曲线和参数范围保持不变。独立的“E-mote PSB 纹理转 DXT5（BC3）”默认开启：缩放完成后将 motion PSB 的 BGRA 字节序 RGBA8 图集编码成无 DDS 头、无 PSV swizzle 的原始 4×4 BC3 块，并更新纹理类型与资源表；已有 DXT5 且无需缩放时不会重复压缩。关闭后维持原有缩放与纹理格式。PSB 内外及 PFS 内均使用相同逻辑。为控制峰值内存，PSB 固定逐个处理。BC3 的收益是减少资源数据、内存和传输量；例如 3072×1536 RGBA 数据由 18 MiB 降为 4.5 MiB，当前 PSV GPU 对齐后实际占用 8 MiB。首次加载速度与持续帧率收益未量化。
 - 视频：默认勾选“忽略 PFS 内的视频（WMV / DAT / MP4 / AVI / MPG / MKV）”，这些 PFS 条目保持原文件名和原始字节，不交给 FFmpeg；OGV 不在此忽略范围内，仍按动画规则处理。取消勾选后可处理 PFS 内受支持的视频，但 PFS 内 DAT 仍因可能是字体缓存等普通数据而原样保留。PFS 外散装目录中的 WMV / DAT / MP4 / AVI / MPG / MKV 视频统一输出为同名 MP4（H.264 Main@3.1、AAC）；除 DAT 固定为 960×544 外，其余格式使用 Ratio 尺寸截断规则。无法检测到视频流的普通数据 DAT 原样保留。
 - 字体（可选）：支持 TTF 与 OTF。TrueType `glyf` 字体使用内置保守削减器，CFF OpenType 字体使用 HarfBuzz 子集器；按简体中文、日文或繁体中文常用范围裁剪，同时始终保留脚本中实际出现的字符、ASCII、常用标点与全角/半角符号。TTC 为避免损坏会原样保留。
@@ -53,7 +53,36 @@ Release 为 `win-x64`、`linux-x64`、`osx-x64` 和 `osx-arm64` 各提供两种�
 
 并行度默认为 `max(1, CPU 逻辑核心数 - 1)`；OGV 动画固定逐个单线程转换，其他视频任务最多同时两个。
 
+## PSV 原生压缩纹理
+
+“图片压制为 PSV 专用纹理”总开关默认关闭，需要时手动勾选；若同一份资源还要给其他平台或原版引擎使用，请保持关闭。需要包含 DDS/PVR 加载支持的 Art3m1sPSV 版本；这不是所有原版 PSV 引擎通用的转换。
+
+点击“扫描图片分类”读取全部有效 `.pfs` / `.pfs.xxx`（含子目录）及散装 PNG/JPEG/DDS/PVR。按真实目录生成分类，列出数量、透明度、文件和估计大小。只有彩色 BG 默认勾选；灰度独立归类、不勾选并推荐保留，其他分类默认不勾选。每类可选自动、保留或具体格式。下拉框按实际图片及缩放后的尺寸标注“不适合 X/N 张”和原因；这些图片在转换时保留并记录原因，不强制丢弃通道。
+
+自动策略：彩色背景/CG/立绘不透明用 BC1，有透明用 BC3；灰度、UI、未知目录和已有原生纹理保留。“转换 BG 时忽略透明度”独立可选，默认关闭；开启会丢弃 BG 的 Alpha。与引擎运行时设置不同，它会改变输出资源本身。
+
+| 格式 | 位/像素 | 通道/透明度 |
+| --- | ---: | --- |
+| BC1 / DXT1 | 4 | RGB + 二值 Alpha |
+| BC2 / DXT3 | 8 | RGB + 4-bit Alpha |
+| BC3 / DXT5 | 8 | RGB + 插值 Alpha |
+| BC4 UNORM / SNORM | 4 | 单通道 R，无独立 Alpha |
+| BC5 UNORM / SNORM | 8 | RG，无蓝色或独立 Alpha |
+| PVRTC1 RGB / RGBA 2bpp | 2 | RGB 或 RGBA |
+| PVRTC1 RGB / RGBA 4bpp | 4 | RGB 或 RGBA |
+| PVRTC2 2bpp / 4bpp | 2 / 4 | RGBA |
+| ETC1 | 4 | RGB，无 Alpha |
+
+BC4 只适合显式选择的无透明灰度数据；普通图片的 BC5/有符号格式会标为不适合。PVRTC1 要求缩放后的尺寸为二次幂；不会自动拉伸。ETC1 实机支持，但当前 Vita3K 存在兼容问题。尺寸上限 4096，不生成 mipmap。估计包含块对齐和容器头，保留项暂按原文件大小计算；实际显存有额外对齐/分配开销，输出也不保证小于 PNG。
+
+转换后 BC 使用 DDS、PVRTC/ETC1 使用 PVR，更新 PFS 原始名称的后缀而保留编码，脚本的 PNG 引用由引擎同名查找兼容。重复虚拟路径、同名后缀冲突、已存在的目标和无法检查的图片会保留。带 PNG 文本、偏移、裁剪或未知附加块的图片保留为 PNG，并沿用原 PNG 缩放规则，不丢弃定位信息。PSB 的内嵌图集继续由独立 E-mote 选项处理。
+
+发布包须保留随附的 PVRTexLib 原生库（Windows `PVRTexLib.dll`、Linux `libPVRTexLib.so`、macOS `libPVRTexLib.dylib`）和许可文件。
+
 ## PNG 颜色表与透明度保证
+
+以下适用于保留 PNG 格式的图片。
+
 
 RGB24 输出仍为 RGB24，不增加 Alpha；RGBA、灰度、透明灰度保持颜色类型。遮罩使用的 Gray8 PNG 强制保持 8-bit 灰度（PNG color type 0），不会转成 RGB、RGBA 或灰度透明格式。索引色保持原 1/2/4/8-bit 位深，原 `PLTE` 与 `tRNS` 块逐字节写回，不修改、重排或删减自带颜色表。Bicubic 结果仅映射回原颜色表并重写像素索引。PNG 坐标文本按 Ratio 缩放；除图像尺寸、像素数据和坐标文本外，其余 PNG 块逐字节保留。
 
@@ -88,6 +117,7 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 | **art3m1s-core** | MPL-2.0 | E-mote PSB v1–v4 结构、加密头、对象及资源表解析参考 | [Alphaly2K/art3m1s-core@0c06f37](https://github.com/Alphaly2K/art3m1s-core/tree/0c06f37160961c9ff75d4937d5e6bb0500d0bef9) |
 | **VisualNovelUpscaler** | MIT | Artemis 文本坐标、尺寸与 Ratio 处理规则参考； | [hokejyo/VisualNovelUpscaler@d755913](https://github.com/hokejyo/VisualNovelUpscaler/tree/d755913eb72f739ad4faea70e689cf933ba54c7f) |
 | **Avalonia** | MIT | 跨平台桌面 UI（12.1.2） | [AvaloniaUI/Avalonia](https://github.com/AvaloniaUI/Avalonia) |
+| **PVRTexLib.NET / PVRTexLib** | MIT wrapper / PowerVR Tools EULA | GXM 纹理编码 | [PVRTexLib.NET](https://github.com/YingFengTingYu/PVRTexLib.NET) · [PowerVR EULA](https://developer.imaginationtech.com/terms/software-end-user-licence-agreement/) |
 | **SixLabors.ImageSharp** | Six Labors Split License 1.0 | PNG 解码与 Bicubic 缩放（3.1.12） | [SixLabors/ImageSharp](https://github.com/SixLabors/ImageSharp) |
 | **HarfBuzz** | Old MIT | CFF OpenType 字体削减（8.3.1） | [harfbuzz/harfbuzz](https://github.com/harfbuzz/harfbuzz) |
 | **Optris.StaticGraphics.Avalonia.Software** | MIT fork 及上游组件许可证 | NativeAOT 静态 Skia / HarfBuzz 图形后端 | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
@@ -98,3 +128,5 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 | **libtheora** | BSD-3-Clause | Theora 编码 | [Xiph.Org/libtheora](https://github.com/xiph/theora) |
 | **libogg** | BSD-3-Clause | Ogg 容器 | [Xiph.Org/libogg](https://github.com/xiph/ogg) |
 | **zlib** | Zlib | PNG 帧序列压缩 | [zlib](https://zlib.net/) |
+
+This product includes components of the PowerVR Tools Software from Imagination Technologies Limited.

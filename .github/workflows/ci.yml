@@ -54,7 +54,8 @@ jobs:
       - run: dotnet publish src/Art3m1s.PsvTool.App/Art3m1s.PsvTool.App.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:PublishSingleFile=true -p:IlcGenerateCompleteTypeMetadata=false -o artifacts/${{ matrix.rid }}
       - shell: pwsh
         run: |
-          $binary = Get-ChildItem "artifacts/${{ matrix.rid }}" -File | Where-Object { $_.Extension -notin '.pdb','.dbg','.dSYM' } | Select-Object -First 1
+          $binaryName = if ([OperatingSystem]::IsWindows()) { 'Art3m1s.PsvTool.App.exe' } else { 'Art3m1s.PsvTool.App' }
+          $binary = Get-Item "artifacts/${{ matrix.rid }}/$binaryName"
           if (-not $binary) { throw 'Native executable was not produced.' }
           $process = Start-Process -FilePath $binary.FullName -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw "Native self-test failed: $($process.ExitCode)" }

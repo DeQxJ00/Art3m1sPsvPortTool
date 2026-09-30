@@ -37,6 +37,10 @@ function Save-PinnedLicense {
     Invoke-WebRequest -Uri $Uri -OutFile (Join-Path $licensePath $DestinationName)
 }
 
+Save-PinnedLicense 'https://raw.githubusercontent.com/YingFengTingYu/PVRTexLib.NET/a97ebedef2c191d6a0e1309667557485f81261b2/LICENSE.txt' 'PVRTexLib.NET-MIT.txt'
+Save-PinnedLicense 'https://developer.imaginationtech.com/terms/software-end-user-licence-agreement/' 'PowerVR-Tools-EULA.html'
+'This product includes components of the PowerVR Tools Software from Imagination Technologies Limited. PVRTexLib is distributed under its own PowerVR Tools EULA, not under the application GPL license.' | Set-Content (Join-Path $licensePath 'PowerVR-NOTICE.txt')
+
 Copy-PackageLicense 'sixlabors.imagesharp' '3.1.12' 'LICENSE' 'ImageSharp-LICENSE.txt'
 Copy-PackageLicense 'skiasharp' '3.119.4' 'LICENSE.txt' 'SkiaSharp-MIT.txt'
 Copy-PackageLicense 'harfbuzzsharp' '8.3.1.3' 'LICENSE.txt' 'HarfBuzzSharp-MIT.txt'

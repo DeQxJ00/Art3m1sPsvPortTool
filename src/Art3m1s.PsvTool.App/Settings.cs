@@ -6,7 +6,8 @@ namespace Art3m1s.PsvTool.App;
 public sealed record AppSettings(
     string Language = "zh-CN",
     bool IsDark = true,
-    bool ConvertEmotePsbTexturesToDxt5 = true);
+    bool ConvertEmotePsbTexturesToDxt5 = true,
+    bool NativeTextures = false);
 
 public interface ISettingsStore
 {
