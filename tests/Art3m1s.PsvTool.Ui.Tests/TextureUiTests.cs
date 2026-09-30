@@ -20,11 +20,11 @@ public sealed class TextureUiTests
     public void ManualAutoShowsFormatsAndCountsWithoutChangingDefaults()
     {
         var vm = new TextureCategoryViewModel([
-            Sample("image/fg"), Sample("image/fg", alpha: true),
-            Sample("image/fg") with { HasMetadata = true }, Sample("image/fg", gray: true)
+            Sample("system"), Sample("system", alpha: true),
+            Sample("system") with { HasMetadata = true }, Sample("system", gray: true)
         ], 1, false, false);
         Assert.False(vm.Enabled);
-        Assert.Equal(NativeTextureFormat.Auto, vm.Rule.Format);
+        Assert.Equal(NativeTextureFormat.Preserve, vm.Rule.Format);
         var label = vm.Choices[(int)NativeTextureFormat.AutoWithoutMetadata];
         Assert.Contains("除带偏移信息外的 AUTO 转换（仅手动）", label);
         Assert.Contains("BC1 / DXT1 × 1", label);

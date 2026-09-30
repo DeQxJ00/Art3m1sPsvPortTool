@@ -47,7 +47,7 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
             var formats = Images.GroupBy(image =>
             {
                 var recommended = NativeTextureFormats.Resolve(image, f.Format, _ignoreAlpha);
-                return NativeTextureFormats.Unsuitable(image, recommended, _ratio, _ignoreAlpha) == null
+                return NativeTextureFormats.Unsuitable(image, f.Format, _ratio, _ignoreAlpha) == null
                     ? recommended : NativeTextureFormat.Preserve;
             }).OrderBy(group => group.Key).ToArray();
             string prefix = f.Format == NativeTextureFormat.AutoWithoutMetadata
@@ -76,7 +76,7 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
             foreach (var image in Images)
             {
                 var f = NativeTextureFormats.Resolve(image, Rule.Format, _ignoreAlpha);
-                if (!Enabled || f == NativeTextureFormat.Preserve || NativeTextureFormats.Unsuitable(image, f, _ratio, _ignoreAlpha) != null)
+                if (!Enabled || f == NativeTextureFormat.Preserve || NativeTextureFormats.Unsuitable(image, Rule.Format, _ratio, _ignoreAlpha) != null)
                 { target += image.SourceBytes; continue; }
                 converted++;
                 target += NativeTextureFormats.PayloadBytes(f, Math.Max(1, (int)(image.Width * _ratio)), Math.Max(1, (int)(image.Height * _ratio)))
@@ -93,6 +93,7 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
         string? reason = i.HasMetadata ? "含偏移/裁剪等附加信息，保留原格式 / Embedded metadata; keep original"
             : NativeTextureFormats.Unsuitable(i, Rule.Format, _ratio, _ignoreAlpha);
         return $"{i.Archive ?? "loose"} / {i.Path} · {i.Width}×{i.Height}" +
+            (i.OverlayWinner != null ? $" · 覆盖来源 / Overlay winner: {i.OverlayWinner}" : "") +
             (i.HasSmoothAlpha ? " · 半透明 / smooth alpha" : i.HasAlpha ? " · 透明 / alpha" : " · 不透明 / opaque") +
             (i.Error != null ? " · " + i.Error : reason != null ? " · " + reason : "");
     }).ToArray();

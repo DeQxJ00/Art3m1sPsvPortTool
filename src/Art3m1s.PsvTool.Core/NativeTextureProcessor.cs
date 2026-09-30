@@ -22,10 +22,10 @@ public sealed class NativeTextureProcessor
         NativeTextureFormat format = rule?.Format ?? NativeTextureFormat.Auto;
         if (source.Error != null) return new(path, false, "无法解析，原样保留 / Cannot inspect, kept: " + source.Error, before, before);
         if (!enabled) return new(path, false, "未勾选 / Not selected", before, before);
-        format = NativeTextureFormats.Resolve(source, format, options.IgnoreBackgroundAlpha);
-        if (format == NativeTextureFormat.Preserve) return new(path, false, "保留原格式 / Kept original", before, before);
         string? reason = NativeTextureFormats.Unsuitable(source, format, ratio, options.IgnoreBackgroundAlpha);
         if (reason != null) return new(path, false, "保留 / Kept: " + reason, before, before);
+        format = NativeTextureFormats.Resolve(source, format, options.IgnoreBackgroundAlpha);
+        if (format == NativeTextureFormat.Preserve) return new(path, false, "保留原格式 / Kept original", before, before);
         NativeFormatInfo spec = NativeTextureFormats.Info(format);
         string output = Path.ChangeExtension(path, spec.Extension);
         if (File.Exists(output)) return new(path, false, "保留：目标文件已存在 / Kept: target exists", before, before);
