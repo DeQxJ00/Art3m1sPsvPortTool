@@ -4,6 +4,11 @@
 
 This file records user-facing changes by application version. Dates use China Standard Time. Historical entries are based on repository commits and tags. Update this file and `Directory.Build.props` before tagging a release; CI and Release check for a matching entry and version.
 
+## 未发布 / Unreleased
+
+- 在主界面固定底栏显示游戏资源修改权限与备份提醒；中文、英文界面均可见。
+- Added a persistent bilingual reminder about asset rights and backing up the original project.
+
 ## [1.0.12] - 2026-09-30
 
 - 修复带编号 PFS 归档的覆盖关系，原生纹理转换时不再丢失或错误覆盖分卷中的资源；补充对应测试。

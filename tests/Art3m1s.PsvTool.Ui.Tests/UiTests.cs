@@ -26,6 +26,7 @@ public sealed class UiTests
         Assert.True(viewModel.ConvertEmotePsbTexturesToDxt5);
         Assert.Equal("E-mote PSB 纹理转 DXT5（BC3）", viewModel.ConvertEmotePsbTexturesToDxt5Label);
         Assert.Equal("自动扫描分辨率", viewModel.AutoScanResolutionLabel);
+        Assert.Equal("请只处理你有权修改的游戏资源，并先备份原项目。", viewModel.AssetRightsBackupWarning);
         Assert.Contains("WMV / DAT / MP4 / AVI / MPG / MKV", viewModel.IgnorePfsVideosLabel);
         Assert.DoesNotContain("OGV", viewModel.IgnorePfsVideosLabel);
     }
@@ -34,7 +35,9 @@ public sealed class UiTests
     public void LanguageSwitchUpdatesLongLabels()
     {
         Localizer localizer = new(); MainViewModel viewModel = new(localizer, settings: new MemorySettingsStore());
-        localizer.SetLanguage("en-US");
+        List<string?> changed = [];
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+        viewModel.SetLanguage("en-US");
         Assert.Equal("Video (WMV / DAT / MP4 / AVI / MPG / MKV)", viewModel.VideoLabel);
         Assert.Equal("Font subsetting (TTF / OTF)", viewModel.FontSubsetLabel);
         Assert.Equal("Animation (OGV / E-mote PSB)", viewModel.AnimationLabel);
@@ -43,6 +46,8 @@ public sealed class UiTests
         Assert.Equal("Project GitHub", viewModel.ProjectRepositoryLabel);
         Assert.Equal("Convert E-mote PSB textures to DXT5 (BC3)", viewModel.ConvertEmotePsbTexturesToDxt5Label);
         Assert.Equal("Detect resolution", viewModel.AutoScanResolutionLabel);
+        Assert.Equal("Only process game assets you are authorized to modify, and back up the original project first.", viewModel.AssetRightsBackupWarning);
+        Assert.Contains(nameof(MainViewModel.AssetRightsBackupWarning), changed);
     }
 
     [Fact]

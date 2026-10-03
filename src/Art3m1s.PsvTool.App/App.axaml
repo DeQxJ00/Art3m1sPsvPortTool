@@ -10,12 +10,16 @@
           <SolidColorBrush x:Key="CardBg">#101B2E</SolidColorBrush><SolidColorBrush x:Key="CardBorder">#253754</SolidColorBrush>
           <SolidColorBrush x:Key="PrimaryText">#F3F7FF</SolidColorBrush><SolidColorBrush x:Key="SecondaryText">#91A6C7</SolidColorBrush>
           <SolidColorBrush x:Key="SubtleBg">#0A1425</SolidColorBrush><SolidColorBrush x:Key="AccentBg">#082644</SolidColorBrush>
+          <SolidColorBrush x:Key="WarningBg">#332711</SolidColorBrush><SolidColorBrush x:Key="WarningBorder">#A87722</SolidColorBrush>
+          <SolidColorBrush x:Key="WarningText">#FFD58A</SolidColorBrush>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Light">
           <SolidColorBrush x:Key="WindowBg">#EEF3FA</SolidColorBrush><SolidColorBrush x:Key="HeaderBg">#FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="CardBg">#FFFFFF</SolidColorBrush><SolidColorBrush x:Key="CardBorder">#CDD8E8</SolidColorBrush>
           <SolidColorBrush x:Key="PrimaryText">#142033</SolidColorBrush><SolidColorBrush x:Key="SecondaryText">#586C88</SolidColorBrush>
           <SolidColorBrush x:Key="SubtleBg">#F3F6FA</SolidColorBrush><SolidColorBrush x:Key="AccentBg">#DCEEFF</SolidColorBrush>
+          <SolidColorBrush x:Key="WarningBg">#FFF3D9</SolidColorBrush><SolidColorBrush x:Key="WarningBorder">#C58A20</SolidColorBrush>
+          <SolidColorBrush x:Key="WarningText">#65400C</SolidColorBrush>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>
