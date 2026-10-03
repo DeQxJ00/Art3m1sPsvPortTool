@@ -178,11 +178,21 @@
       </Grid>
     </ScrollViewer>
 
-    <Border Grid.Row="2" Background="{DynamicResource HeaderBg}" Padding="28,16" BorderBrush="{DynamicResource CardBorder}" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-        <StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding Status}" /><ProgressBar Value="{Binding Progress}" Maximum="100" Height="5" Margin="0,7,20,0" /></StackPanel>
-        <Button Grid.Column="1" Content="{Binding CancelLabel}" Click="CancelClick" IsEnabled="{Binding IsBusy}" />
-        <Button Grid.Column="2" Content="{Binding StartLabel}" Click="StartClick" IsEnabled="{Binding CanStart}" Classes="primary" />
+    <Border Grid.Row="2" Background="{DynamicResource HeaderBg}" Padding="28,12" BorderBrush="{DynamicResource CardBorder}" BorderThickness="0,1,0,0">
+      <Grid RowDefinitions="Auto,Auto" RowSpacing="10">
+        <Border Grid.Row="0" Background="{DynamicResource WarningBg}" BorderBrush="{DynamicResource WarningBorder}"
+                BorderThickness="1" CornerRadius="7" Padding="12,8">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <TextBlock Text="!" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource WarningText}" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding AssetRightsBackupWarning}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource WarningText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+          <StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding Status}" /><ProgressBar Value="{Binding Progress}" Maximum="100" Height="5" Margin="0,7,20,0" /></StackPanel>
+          <Button Grid.Column="1" Content="{Binding CancelLabel}" Click="CancelClick" IsEnabled="{Binding IsBusy}" />
+          <Button Grid.Column="2" Content="{Binding StartLabel}" Click="StartClick" IsEnabled="{Binding CanStart}" Classes="primary" />
+        </Grid>
       </Grid>
     </Border>
   </Grid>
