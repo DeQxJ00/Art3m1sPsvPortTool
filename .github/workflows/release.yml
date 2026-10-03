@@ -43,6 +43,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      - name: Check changelog and release version
+        shell: pwsh
+        run: ./scripts/check-changelog.ps1
       - name: Resolve package version
         shell: pwsh
         run: |

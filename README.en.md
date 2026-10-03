@@ -1,6 +1,6 @@
 # art3m1s_psv_port_tool
 
-[简体中文](README.md) · [English](README.en.md)
+[简体中文](README.md) · [English](README.en.md) · [Changelog](CHANGELOG.md)
 
 [![CI](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml)
 [![Release](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml)
@@ -71,6 +71,8 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 ```
 
 `ci.yml` checks Release builds, tests, formatting, screenshot baselines, and multi-platform NativeAOT. For `v*` tags or manual runs, `release.yml` builds all four targets and publishes versioned `with-ffmpeg` / `no-ffmpeg` archives for each platform, plus checksums, SBOM, licenses, and FFmpeg build/source information.
+
+For each new version, update `CHANGELOG.md`, `Directory.Build.props`, and macOS `Info.plist` before creating the matching `v*` tag. CI/Release runs `scripts/check-changelog.ps1` to verify the versions and changelog entry.
 
 ## Known limitations
 
