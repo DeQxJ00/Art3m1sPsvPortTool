@@ -1,6 +1,6 @@
 # art3m1s_psv_port_tool
 
-[简体中文](README.md) · [English](README.en.md)
+[简体中文](README.md) · [English](README.en.md) · [更新日志](CHANGELOG.md)
 
 [![CI](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml)
 [![Release](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml)
@@ -98,6 +98,8 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 ```
 
 `ci.yml` 执行 Release 编译、测试、格式、截图基线与多平台 NativeAOT 检查；`release.yml` 在 `v*` 标签或手动触发时构建四个平台，并为每个平台发布带版本号的 `with-ffmpeg` / `no-ffmpeg` 压缩包、校验和、SBOM、许可与 FFmpeg 构建信息。
+
+发布新版本时同步更新 `CHANGELOG.md`、`Directory.Build.props` 和 macOS `Info.plist`，然后打相同版本的 `v*` 标签；CI/Release 会运行 `scripts/check-changelog.ps1` 检查版本与日志条目。
 
 ## 已知限制
 

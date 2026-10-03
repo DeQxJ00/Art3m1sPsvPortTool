@@ -64,6 +64,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Check changelog matches application version
+        shell: pwsh
+        run: ./scripts/check-changelog.ps1
       - run: |
-          test -f README.md && test -f README.en.md
+          test -f README.md && test -f README.en.md && test -f CHANGELOG.md
           for image in ui-zh-CN-dark.png ui-en-US-dark.png ui-zh-CN-light.png ui-en-US-light.png; do test -f "docs/screenshots/$image"; done
