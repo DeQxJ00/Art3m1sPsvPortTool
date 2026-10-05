@@ -239,9 +239,24 @@ public sealed class ConversionService : IConversionService
                     try
                     {
                         double psbRatio = options.Categories.HasFlag(AssetCategories.Animation) ? options.Ratio : 1;
+                        if (options.Categories.HasFlag(AssetCategories.Animation) && options.PsbTextures is not null)
+                        {
+                            try
+                            {
+                                PsbTextureInspection inspection = await PsbTextureScanner.InspectFileAsync(path, token);
+                                psbRatio = options.PsbTextures.RatioFor(inspection.Width, inspection.Height);
+                            }
+                            catch (Exception error) when (error is InvalidDataException or NotSupportedException or
+                                                          IndexOutOfRangeException or OverflowException or ArgumentException)
+                            {
+                                // Let the processor's existing validation/preservation path
+                                // handle unsupported PSBs rather than changing that behavior.
+                                psbRatio = 0.5;
+                            }
+                        }
                         PsbProcessingResult result = await _psb.ProcessAsync(path, psbRatio,
                             options.ConvertEmotePsbTexturesToDxt5, token);
-                        progressEntry = $"{relativePath} · {result.Message}";
+                        progressEntry = $"{relativePath} · Ratio {psbRatio:0.###} · {result.Message}";
                     }
                     finally { psbSlots.Release(); }
                 }

@@ -37,7 +37,8 @@ public sealed record ConversionOptions(
     FontSubsetProfile FontProfile = FontSubsetProfile.SimplifiedChinese,
     bool IgnorePfsVideos = true,
     bool ConvertEmotePsbTexturesToDxt5 = true,
-    NativeTextureOptions? NativeTextures = null)
+    NativeTextureOptions? NativeTextures = null,
+    PsbTextureOptions? PsbTextures = null)
 {
     public int EffectiveParallelism => MaxParallelism > 0
         ? MaxParallelism
@@ -45,6 +46,7 @@ public sealed record ConversionOptions(
 
     public void Validate()
     {
+        PsbTextures?.Validate();
         if (!Directory.Exists(InputDirectory))
             throw new DirectoryNotFoundException(InputDirectory);
         if (Ratio is <= 0 or > 1)

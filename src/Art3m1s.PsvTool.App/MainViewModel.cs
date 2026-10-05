@@ -11,6 +11,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 {
     private readonly ILocalizer _localizer;
     private readonly IProjectScanner _scanner;
+    private readonly IPsbTextureScanner _psbScanner;
     private readonly IConversionService _converter;
     private readonly ISettingsStore _settings;
     private CancellationTokenSource? _conversionCancellation;
@@ -35,10 +36,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private int _selectedParallel;
     private int _selectedEncoding;
 
-    public MainViewModel(ILocalizer? localizer = null, IProjectScanner? scanner = null, IConversionService? converter = null, ISettingsStore? settings = null)
+    public MainViewModel(ILocalizer? localizer = null, IProjectScanner? scanner = null, IConversionService? converter = null, ISettingsStore? settings = null,
+        IPsbTextureScanner? psbScanner = null)
     {
         _localizer = localizer ?? new Localizer();
         _scanner = scanner ?? new ProjectScanner();
+        _psbScanner = psbScanner ?? new PsbTextureScanner();
         _converter = converter ?? new ConversionService();
         _settings = settings ?? new LocalSettingsStore();
         AppSettings saved = _settings.Load();
@@ -46,6 +49,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         _convertEmotePsbTexturesToDxt5 = saved.ConvertEmotePsbTexturesToDxt5;
         _nativeTextures = saved.NativeTextures;
         _localizer.SetLanguage(saved.Language);
+        InitializePsb(saved.PsbRatios);
         if (Application.Current is not null)
             Application.Current.RequestedThemeVariant = IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
         _localizer.LanguageChanged += (_, _) => RaiseAllLocalized();
@@ -61,6 +65,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             if (Set(ref _inputDirectory, value))
             {
                 TextureCategories.Clear();
+                PsbCategories.Clear();
                 _resolutions = []; _selectedResolutionIndex = -1; _width = _height = null; _archiveCount = 0;
                 OnPropertyChanged(nameof(ResolutionChoices)); OnPropertyChanged(nameof(HasResolutionChoices));
                 OnPropertyChanged(nameof(SelectedResolutionIndex)); OnPropertyChanged(nameof(OriginalResolution));
@@ -150,19 +155,29 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
     private async Task ScanCoreAsync(bool resolutionOnly)
     {
+        if (IsBusy) return;
         if (!Directory.Exists(InputDirectory)) { Status = L("InvalidPaths"); return; }
+        string input = InputDirectory;
         IsBusy = true; Status = L("Scanning");
         try
         {
-            ScanResult result = await _scanner.ScanAsync(InputDirectory);
-            _archiveCount = result.Archives.Count; _width = result.Width; _height = result.Height;
-            _resolutions = result.Resolutions;
-            _selectedResolutionIndex = _resolutions.ToList().FindIndex(item =>
-                item.Width == result.Width && item.Height == result.Height);
+            ScanResult result = await _scanner.ScanAsync(input);
+            if (input != InputDirectory) { Status = L("ScanInputChanged"); return; }
+            _archiveCount = result.Archives.Count;
+            _resolutions = result.Resolutions.Where(item => item.Width > 0 && item.Height > 0).ToArray();
+            int preferred = _resolutions.Count == 0 ? -1 : _resolutions.ToList().FindIndex(item =>
+                item.Source == _resolutions[0].Source && item.Section.Equals("WINDOWS", StringComparison.OrdinalIgnoreCase));
+            if (preferred < 0 && _resolutions.Count > 0) preferred = 0;
+            _width = preferred < 0 ? result.Width : _resolutions[preferred].Width;
+            _height = preferred < 0 ? result.Height : _resolutions[preferred].Height;
+            _selectedResolutionIndex = -1;
             OnPropertyChanged(nameof(ResolutionChoices)); OnPropertyChanged(nameof(HasResolutionChoices));
+            SelectedResolutionIndex = preferred;
             OnPropertyChanged(nameof(SelectedResolutionIndex));
+            if (resolutionOnly && _width is > 0 && _height is > 0)
+                Ratio = Math.Min(1d, Math.Min(960d / _width.Value, 540d / _height.Value)).ToString(CultureInfo.InvariantCulture);
             Status = resolutionOnly
-                ? result.HasResolution
+                ? _width is > 0 && _height is > 0
                     ? string.Format(CultureInfo.CurrentUICulture, L("ResolutionDetected"), OriginalResolution)
                     : L("ResolutionNotFound")
                 : _archiveCount == 0 ? L("NoPfs") : ScanSummary;
@@ -177,6 +192,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     {
         if (!Directory.Exists(InputDirectory) || string.IsNullOrWhiteSpace(OutputDirectory) || !TryRatio(out double ratio))
         { Status = L("InvalidPaths"); return; }
+        if (ProcessAnimation && PsbCategories.Any(x => !x.TryRatio(out _)))
+        { Status = L("PsbInvalidRatio"); return; }
         if (Directory.Exists(OutputDirectory) && !_overwriteArmed)
         { _overwriteArmed = true; Status = L("Overwrite"); return; }
 
@@ -195,7 +212,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 Progress = value.Percent; Status = LocalizeStage(value.Stage);
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
             });
-            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()));
+            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(PsbRules));
             var token = _conversionCancellation.Token;
             await Task.Run(() => _converter.ConvertAsync(options, reporter, token), token);
             Status = L("Finished");
@@ -239,7 +256,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         "pack" => L("StagePack"),
         "loose" => L("StageLoose"),
         "resource" => L("StageResource"),
-        "texture-scan" => L("Scanning"),
+        "texture-scan" or "psb-scan" => L("Scanning"),
         "complete" => L("StageComplete"),
         _ => stage
     };
@@ -255,7 +272,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     }
     private void SaveSettings()
     {
-        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5, NativeTextures)); }
+        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5, NativeTextures, PsbRules)); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
@@ -264,6 +281,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private void RaiseAllLocalized()
     {
         RefreshTextures();
+        RefreshPsb();
         foreach (string name in new[] { nameof(NativeTexturesLabel), nameof(NativeTexturesHelp), nameof(ScanTexturesLabel), nameof(IgnoreBackgroundAlphaLabel), nameof(TextureHelp), nameof(TextureFormatsLabel) }) OnPropertyChanged(name);
         foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(AssetRightsBackupWarning), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(AutoScanResolutionLabel), nameof(ResolutionListLabel), nameof(ResolutionChoices), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(ConvertEmotePsbTexturesToDxt5Label), nameof(ConvertEmotePsbTexturesToDxt5Help), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ProjectRepositoryLabel), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
     }

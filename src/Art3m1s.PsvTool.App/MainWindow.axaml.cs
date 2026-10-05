@@ -20,6 +20,12 @@ public sealed partial class MainWindow : Window
         ViewModel = viewModel;
         InitializeComponent();
         DataContext = ViewModel;
+        // Background caret/selection updates stay inside their own viewport.
+        // Explicit keyboard focus still permits normal page navigation.
+        var log = this.FindControl<TextBox>("LogTextBox")!;
+        log.AddHandler(Control.RequestBringIntoViewEvent, (_, e) => { if (!log.IsKeyboardFocusWithin) e.Handled = true; });
+        var resolutions = this.FindControl<ListBox>("ResolutionListBox")!;
+        resolutions.AddHandler(Control.RequestBringIntoViewEvent, (_, e) => { if (!resolutions.IsKeyboardFocusWithin) e.Handled = true; });
     }
 
     private static void LogTextChanged(object? sender, TextChangedEventArgs e)
@@ -27,7 +33,6 @@ public sealed partial class MainWindow : Window
         if (sender is not TextBox textBox) return;
         Dispatcher.UIThread.Post(() =>
         {
-            textBox.CaretIndex = textBox.Text?.Length ?? 0;
             textBox.GetVisualDescendants()
                 .OfType<ScrollViewer>()
                 .FirstOrDefault()
@@ -52,6 +57,7 @@ public sealed partial class MainWindow : Window
         return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
     }
     private async void ScanTexturesClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanTexturesAsync();
+    private async void ScanPsbClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanPsbAsync();
     private async void ScanClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanAsync();
     private async void AutoScanResolutionClick(object? sender, RoutedEventArgs e) => await ViewModel.AutoScanResolutionAsync();
     private async void StartClick(object? sender, RoutedEventArgs e) => await ViewModel.StartAsync();
