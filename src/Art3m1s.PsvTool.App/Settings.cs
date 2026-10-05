@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Art3m1s.PsvTool.Core;
 
 namespace Art3m1s.PsvTool.App;
 
@@ -7,7 +8,8 @@ public sealed record AppSettings(
     string Language = "zh-CN",
     bool IsDark = true,
     bool ConvertEmotePsbTexturesToDxt5 = true,
-    bool NativeTextures = false);
+    bool NativeTextures = false,
+    PsbResolutionRule[]? PsbRatios = null);
 
 public interface ISettingsStore
 {

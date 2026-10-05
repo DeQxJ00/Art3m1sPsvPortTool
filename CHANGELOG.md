@@ -4,7 +4,16 @@
 
 This file records user-facing changes by application version. Dates use China Standard Time. Historical entries are based on repository commits and tags. Update this file and `Directory.Build.props` before tagging a release; CI and Release check for a matching entry and version.
 
-## 未发布 / Unreleased
+## [1.0.14] - 2026-10-06
+
+- 修复分辨率/PSB 扫描后的日志更新将主页面拉到底部的问题，保留日志框内部自动滚动；自动扫描分辨率按首个有效 INI 的 WINDOWS 或第一组宽高计算适配 960×540 的 Ratio（不放大）。
+- Resolution/PSB scans no longer pull the page down when updating logs; internal log auto-scroll remains. Resolution detection computes a non-upscaling Ratio to fit 960×540 from the first valid INI's WINDOWS section or first dimension pair.
+- PSB Ratio 列表在扫描前隐藏，扫描后仅显示实际发现的尺寸；切换目录或重新扫描会清除旧结果，已保存比例独立保留并按尺寸恢复。
+- PSB ratios are shown only for discovered dimensions after scanning; changing folders or rescanning replaces visible results while preserving saved ratios.
+- 增加 PFS 内及散装 PSB 贴图扫描，按最大图集的完整宽 × 高分类；每类独立配置 Ratio，默认 0.5，并保存设置。
+- Added scanning of loose/archived PSB texture dimensions, with persistent independent per-dimension resize ratios defaulting to 0.5.
+- PSB 分组实时显示缩放后最大图集的 RGBA8 / DXT5 分配估计及 DXT5 数据大小；软件和中英文 README 说明有损压缩、透明度、GXM 对齐及显存估算边界。
+- PSB groups now compare resized largest-atlas RGBA8 / DXT5 allocation estimates with DXT5 data size; bilingual UI/docs explain lossy compression, alpha, GXM alignment and estimate limitations.
 
 ## [1.0.13] - 2026-10-05
 

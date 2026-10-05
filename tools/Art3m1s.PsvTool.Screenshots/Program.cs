@@ -14,6 +14,11 @@ AppBuilder.Configure<App>()
 
 string output = args.Length == 0 ? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../docs/screenshots")) : Path.GetFullPath(args[0]);
 Directory.CreateDirectory(output);
+if (args.Contains("--scan-scroll-checks"))
+{
+    ScanScrollChecks.Run(output);
+    return;
+}
 if (args.Contains("--scroll-benchmark"))
 {
     ScrollBenchmark.Run(output);
@@ -36,6 +41,17 @@ foreach ((string language, bool dark, string fileName) in new[]
             new(null, "image/bg/mask.png", "image/bg", 1920, 1080, 310000, true, false, false, false),
             new("root.pfs.001", "image/fg/body.png", "image/fg", 1000, 1600, 1300000, false, true, true, false)
         }) window.ViewModel.TextureCategories.Add(new TextureCategoryViewModel([info], .5, false, language == "en-US"));
+        Dispatcher.UIThread.RunJobs();
+        window.FindControl<ScrollViewer>("MainScroll")!.Offset = new Vector(0, 430);
+        Dispatcher.UIThread.RunJobs();
+    }
+    if (args.Contains("--psb"))
+    {
+        Localizer localizer = new(); localizer.SetLanguage(language);
+        var row = new PsbCategoryViewModel(4096, 2048, .5, localizer);
+        row.SetFiles([new("root.pfs.010", "image/fg/hero.psb", 34000000,
+            new(true, [new("atlas0", 4096, 2048, "RGBA8"), new("atlas1", 512, 256, "DXT5")]))]);
+        window.ViewModel.PsbCategories.Add(row);
         Dispatcher.UIThread.RunJobs();
         window.FindControl<ScrollViewer>("MainScroll")!.Offset = new Vector(0, 430);
         Dispatcher.UIThread.RunJobs();
