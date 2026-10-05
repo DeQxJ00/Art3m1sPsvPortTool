@@ -6,6 +6,12 @@ This file records user-facing changes by application version. Dates use China St
 
 ## 未发布 / Unreleased
 
+## [1.0.13] - 2026-10-05
+
+- 修复 Shift_JIS/CP932 脚本含有无法解码的字节时转换中断的问题：原样保留这些字节，并继续缩放可识别的几何数值。
+- 字体削减的字符扫描保留此类脚本中可解码的文本；补充字节保留回归测试与可选的 NUKITASHI 归档验证。
+- Preserved undecodable Shift_JIS/CP932 bytes during text scaling instead of aborting conversion.
+- Font subsetting now collects readable characters from these scripts; added regression coverage and optional NUKITASHI archive validation.
 - 在主界面固定底栏显示游戏资源修改权限与备份提醒；中文、英文界面均可见。
 - Added a persistent bilingual reminder about asset rights and backing up the original project.
 

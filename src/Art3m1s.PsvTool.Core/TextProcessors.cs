@@ -167,21 +167,69 @@ public sealed partial class VitaIniProcessor : IVitaIniProcessor
 
 internal sealed record EncodedText(string Text, Encoding Encoding, byte[] Preamble)
 {
+    // Plane 15 is outside Shift_JIS. Each character in this range represents one
+    // original byte that CP932 cannot decode, so script edits can remain lossless.
+    private const int RawByteCharacterBase = 0xF0000;
+
     public static EncodedText Decode(byte[] bytes)
     {
         (Encoding encoding, bool hasBom) = TextEncoding.Detect(bytes);
         byte[] preamble = hasBom ? encoding.GetPreamble() : [];
         int offset = hasBom ? preamble.Length : 0;
-        return new EncodedText(encoding.GetString(bytes, offset, bytes.Length - offset), encoding, preamble);
+        string text = encoding.CodePage == 932
+            ? DecodeCp932PreservingInvalidBytes(bytes.AsSpan(offset), encoding)
+            : encoding.GetString(bytes, offset, bytes.Length - offset);
+        return new EncodedText(text, encoding, preamble);
     }
 
     public byte[] Encode(string text)
     {
-        byte[] body = Encoding.GetBytes(text);
+        byte[] body = Encoding.CodePage == 932 ? EncodeCp932PreservingInvalidBytes(text) : Encoding.GetBytes(text);
         if (Preamble.Length == 0) return body;
         byte[] result = new byte[Preamble.Length + body.Length];
         Preamble.CopyTo(result, 0);
         body.CopyTo(result, Preamble.Length);
         return result;
+    }
+
+    private static string DecodeCp932PreservingInvalidBytes(ReadOnlySpan<byte> bytes, Encoding encoding)
+    {
+        StringBuilder result = new(bytes.Length);
+        int position = 0;
+        while (position < bytes.Length)
+        {
+            try
+            {
+                result.Append(encoding.GetString(bytes[position..]));
+                break;
+            }
+            catch (DecoderFallbackException error)
+            {
+                if (error.Index < 0 || error.Index >= bytes.Length - position) throw;
+                result.Append(encoding.GetString(bytes.Slice(position, error.Index)));
+                int invalidAt = position + error.Index;
+                result.Append(char.ConvertFromUtf32(RawByteCharacterBase + bytes[invalidAt]));
+                // Consume only the malformed lead byte: the following byte may be
+                // ordinary script syntax (0x2F is '/' in the reported AST file).
+                position = invalidAt + 1;
+            }
+        }
+        return result.ToString();
+    }
+
+    private byte[] EncodeCp932PreservingInvalidBytes(string text)
+    {
+        using MemoryStream result = new();
+        int segmentStart = 0;
+        for (int i = 0; i + 1 < text.Length; i++)
+        {
+            if (text[i] != '\uDB80' || text[i + 1] is < '\uDC00' or > '\uDCFF') continue;
+            if (i > segmentStart) result.Write(Encoding.GetBytes(text.Substring(segmentStart, i - segmentStart)));
+            result.WriteByte((byte)(text[i + 1] - '\uDC00'));
+            i++;
+            segmentStart = i + 1;
+        }
+        if (segmentStart < text.Length) result.Write(Encoding.GetBytes(text[segmentStart..]));
+        return result.ToArray();
     }
 }

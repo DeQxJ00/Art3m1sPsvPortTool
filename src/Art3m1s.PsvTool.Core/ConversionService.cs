@@ -299,8 +299,9 @@ public sealed class ConversionService : IConversionService
             try
             {
                 byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken);
-                string text = TextEncoding.Detect(bytes).Encoding.GetString(bytes);
-                foreach (System.Text.Rune rune in text.EnumerateRunes()) result.Add(rune.Value);
+                string text = EncodedText.Decode(bytes).Text;
+                foreach (System.Text.Rune rune in text.EnumerateRunes())
+                    if (rune.Value is < 0xF0000 or > 0xF00FF) result.Add(rune.Value);
             }
             catch (DecoderFallbackException) { }
         }

@@ -113,5 +113,41 @@ public sealed class TextScalingTests : IDisposable
         Assert.Equal(source.Replace("width=1280}", "width=960}", StringComparison.Ordinal), await File.ReadAllTextAsync(path));
     }
 
+    [Fact]
+    public async Task ScalesMalformedCp932ScriptWithoutChangingOriginalDialogueBytes()
+    {
+        Directory.CreateDirectory(root);
+        string path = Path.Combine(root, "malformed.ast");
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        Encoding cp932 = Encoding.GetEncoding(932);
+        byte[] before = [.. cp932.GetBytes("local t={x=1280, text=\"早いところ"), 0x81, 0x2F,
+            .. cp932.GetBytes("忘れなければ\", y=720}\r\n")];
+        await File.WriteAllBytesAsync(path, before);
+
+        await new ArtemisTextProcessor().ProcessAsync(path, .5);
+
+        byte[] after = await File.ReadAllBytesAsync(path);
+        byte[] expected = [.. cp932.GetBytes("local t={x=640, text=\"早いところ"), 0x81, 0x2F,
+            .. cp932.GetBytes("忘れなければ\", y=360}\r\n")];
+        Assert.Equal(expected, after);
+    }
+
+    [Fact]
+    public async Task NukitashiMalformedAstCanBeConvertedWhenArchiveIsAvailable()
+    {
+        string? archive = Environment.GetEnvironmentVariable("ART3M1S_NUKITASHI_PFS");
+        if (string.IsNullOrWhiteSpace(archive) || !File.Exists(archive)) return;
+        byte[]? original = await new PfsCodec().ReadSmallEntryAsync(archive, "script/05_fk_17h.ast");
+        Assert.NotNull(original);
+        Directory.CreateDirectory(root);
+        string path = Path.Combine(root, "05_fk_17h.ast");
+        await File.WriteAllBytesAsync(path, original);
+
+        await new ArtemisTextProcessor().ProcessAsync(path, .5);
+
+        byte[] converted = await File.ReadAllBytesAsync(path);
+        Assert.True(converted.AsSpan().IndexOf(new byte[] { 0x81, 0x2F }) >= 0);
+    }
+
     public void Dispose() { if (Directory.Exists(root)) Directory.Delete(root, true); }
 }
