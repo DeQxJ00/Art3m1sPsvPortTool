@@ -4,6 +4,13 @@
 
 This file records user-facing changes by application version. Dates use China Standard Time. Historical entries are based on repository commits and tags. Update this file and `Directory.Build.props` before tagging a release; CI and Release check for a matching entry and version.
 
+## [1.0.15] - 2026-10-06
+
+- PSB 贴图独立缩放新增默认关闭的勾选项，每次启动不恢复开启状态；分类 Ratio 仍保存。坐标、origin、画布和动作几何改为跟随全局 Ratio。
+- Independent PSB resizing always starts unchecked, including with legacy enabled settings; per-resolution ratios remain saved.
+- 新增默认勾选的 PSB 渲染补偿，仅独立缩放且处理动画时输出游戏根目录配置；补偿为全局 Ratio ÷ 贴图 Ratio。精简 v2 配置每份 PSB 仅记录整体贴图比例、补偿倍数及资源匹配信息，全局比例只写一次，不输出部件/贴图宽高明细，需配套 GXM 引擎支持。
+- Added opt-in independent PSB texture resizing and global-ratio geometry. Optional render compensation (checked by default, active only with independent Animation resizing) exports a compact v2 game-root manifest: one texture ratio, compensation multiplier and resource identity per PSB, one global ratio, and no per-icon/atlas dimensions. Requires a compatible GXM engine.
+
 ## [1.0.14] - 2026-10-06
 
 - 修复分辨率/PSB 扫描后的日志更新将主页面拉到底部的问题，保留日志框内部自动滚动；自动扫描分辨率按首个有效 INI 的 WINDOWS 或第一组宽高计算适配 960×540 的 Ratio（不放大）。

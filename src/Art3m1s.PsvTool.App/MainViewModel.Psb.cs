@@ -15,6 +15,28 @@ public sealed partial class MainViewModel
     public string PsbHelp => L("PsbHelp");
     public string PsbDxt5Title => L("PsbDxt5Title");
     public string PsbDxt5Help => L("PsbDxt5Help");
+    public string IndependentPsbTextureScalingLabel => L("IndependentPsbTextureScaling");
+    public string PsbRenderCompensationLabel => L("PsbRenderCompensation");
+    public string PsbRenderCompensationHelp => L("PsbRenderCompensationHelp");
+    private bool _independentPsbTextureScaling;
+    private bool _psbRenderCompensation = true;
+    public bool IndependentPsbTextureScaling
+    {
+        get => _independentPsbTextureScaling;
+        set { if (Set(ref _independentPsbTextureScaling, value)) RefreshPsbRendering(); }
+    }
+    public bool PsbRenderCompensation
+    {
+        get => _psbRenderCompensation;
+        set { if (Set(ref _psbRenderCompensation, value)) { RefreshPsbRendering(); SaveSettings(); } }
+    }
+
+    private void RefreshPsbRendering()
+    {
+        foreach (var category in PsbCategories)
+            category.UpdateRendering(TryRatio(out double ratio) ? ratio : double.NaN,
+                IndependentPsbTextureScaling && PsbRenderCompensation && ProcessAnimation);
+    }
 
     private void InitializePsb(IReadOnlyList<PsbResolutionRule>? saved)
     {
@@ -27,6 +49,8 @@ public sealed partial class MainViewModel
     {
         double ratio = _savedPsbRatios.GetValueOrDefault((width, height), 0.5);
         var category = new PsbCategoryViewModel(width, height, ratio, _localizer);
+        category.UpdateRendering(TryRatio(out double geometryRatio) ? geometryRatio : double.NaN,
+            IndependentPsbTextureScaling && PsbRenderCompensation && ProcessAnimation);
         category.PropertyChanged += (sender, args) =>
         {
             if (args.PropertyName == nameof(PsbCategoryViewModel.Ratio) && category.TryRatio(out double updatedRatio))
@@ -60,6 +84,8 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(PsbTitle)); OnPropertyChanged(nameof(ScanPsbLabel)); OnPropertyChanged(nameof(PsbHelp));
         OnPropertyChanged(nameof(PsbDxt5Title)); OnPropertyChanged(nameof(PsbDxt5Help));
         OnPropertyChanged(nameof(PsbEmptyHelp));
+        OnPropertyChanged(nameof(IndependentPsbTextureScalingLabel));
+        OnPropertyChanged(nameof(PsbRenderCompensationLabel)); OnPropertyChanged(nameof(PsbRenderCompensationHelp));
     }
 
     public async Task ScanPsbAsync()

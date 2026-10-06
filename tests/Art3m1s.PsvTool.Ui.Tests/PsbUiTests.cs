@@ -7,6 +7,66 @@ namespace Art3m1s.PsvTool.Ui.Tests;
 public sealed class PsbUiTests
 {
     [Fact]
+    public void IndependentScalingResetsOnRestartWhileCompensationPersists()
+    {
+        var store = new MemoryStore(new());
+        var vm = new MainViewModel(settings: store);
+        Assert.False(vm.IndependentPsbTextureScaling); Assert.True(vm.PsbRenderCompensation);
+        vm.IndependentPsbTextureScaling = true; vm.PsbRenderCompensation = false;
+        Assert.True(vm.IndependentPsbTextureScaling); Assert.False(store.Value.PsbRenderCompensation);
+        var loaded = new MainViewModel(settings: store);
+        Assert.False(loaded.IndependentPsbTextureScaling); Assert.False(loaded.PsbRenderCompensation);
+        loaded.IndependentPsbTextureScaling = true;
+        loaded.SetLanguage("en-US");
+        Assert.False(new MainViewModel(settings: store).IndependentPsbTextureScaling);
+        Assert.Contains("independently", loaded.IndependentPsbTextureScalingLabel);
+        Assert.Contains("global Ratio ÷ texture Ratio", loaded.PsbRenderCompensationLabel);
+        Assert.Contains("compatible GXM", loaded.PsbRenderCompensationHelp);
+    }
+
+    [Fact]
+    public async Task LegacyEnabledSettingIsIgnoredWithoutLosingRatiosOrOtherPreferences()
+    {
+        using var folder = new ScanFolder();
+        string path = Path.Combine(folder.Path, "settings.json");
+        await File.WriteAllTextAsync(path, """
+            {"Language":"en-US","IsDark":false,"IndependentPsbTextureScaling":true,
+             "PsbRenderCompensation":false,"PsbRatios":[{"Width":4096,"Height":2048,"Ratio":0.25}]}
+            """);
+        var store = new LocalSettingsStore(path);
+        var vm = new MainViewModel(settings: store,
+            psbScanner: new PsbScannerStub { Files = [AtlasFile(4096, 2048)] })
+        { InputDirectory = folder.Path };
+        Assert.False(vm.IndependentPsbTextureScaling); Assert.False(vm.PsbRenderCompensation);
+        Assert.Equal("en-US", vm.Language); Assert.False(vm.IsDark);
+        await vm.ScanPsbAsync();
+        Assert.Equal("0.25", Assert.Single(vm.PsbCategories).Ratio);
+        vm.IndependentPsbTextureScaling = true;
+        vm.ToggleTheme(); // Saving another preference must not persist the per-run opt-in.
+        Assert.DoesNotContain("IndependentPsbTextureScaling", await File.ReadAllTextAsync(path));
+        var reopened = new MainViewModel(settings: store);
+        Assert.False(reopened.IndependentPsbTextureScaling); Assert.False(reopened.PsbRenderCompensation);
+        Assert.Equal(.25, Assert.Single(store.Load().PsbRatios!).Ratio);
+    }
+
+    [Fact]
+    public async Task CompensationPreviewTracksBothRatiosAndEnableFlags()
+    {
+        using var folder = new ScanFolder();
+        var vm = new MainViewModel(settings: new MemoryStore(new()), psbScanner: new PsbScannerStub { Files = [AtlasFile(4096, 2048)] })
+        { InputDirectory = folder.Path, Ratio = "0.5" };
+        await vm.ScanPsbAsync();
+        var row = Assert.Single(vm.PsbCategories);
+        Assert.Contains("未启用", row.RenderCompensation);
+        vm.IndependentPsbTextureScaling = true; row.Ratio = "0.25";
+        Assert.Contains("2×", row.RenderCompensation);
+        vm.Ratio = "0.75"; Assert.Contains("3×", row.RenderCompensation);
+        vm.PsbRenderCompensation = false; Assert.Contains("未启用", row.RenderCompensation);
+        vm.PsbRenderCompensation = true; vm.ProcessAnimation = false; Assert.Contains("未启用", row.RenderCompensation);
+        vm.ProcessAnimation = true; vm.SetLanguage("en-US"); Assert.Contains("Render compensation 3×", row.RenderCompensation);
+    }
+
+    [Fact]
     public async Task RatiosStayHiddenUntilScanAndRestoreOnlyDiscoveredDimensions()
     {
         using var folder = new ScanFolder();
@@ -114,7 +174,7 @@ public sealed class PsbUiTests
             var converter = new RecordingConverter();
             var vm = new MainViewModel(settings: new MemoryStore(new()), converter: converter,
                 psbScanner: new PsbScannerStub { Files = [AtlasFile(4096, 4096)] })
-            { InputDirectory = root, OutputDirectory = root + "-output", Ratio = "0.75" };
+            { InputDirectory = root, OutputDirectory = root + "-output", Ratio = "0.75", IndependentPsbTextureScaling = true };
             await vm.ScanPsbAsync();
             var row = Assert.Single(vm.PsbCategories, x => x.Width == 4096 && x.Height == 4096);
             row.Ratio = "0"; await vm.StartAsync();
@@ -124,6 +184,7 @@ public sealed class PsbUiTests
             Assert.Equal(.75, converter.Options.Ratio);
             Assert.Equal(.25, converter.Options.PsbTextures!.RatioFor(4096, 4096));
             Assert.Equal(.5, converter.Options.PsbTextures.RatioFor(4096, 2048));
+            Assert.True(converter.Options.PsbTextures.Enabled); Assert.True(converter.Options.PsbTextures.CompensateRendering);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -138,7 +199,8 @@ public sealed class PsbUiTests
             var store = new LocalSettingsStore(path);
             store.Save(new(PsbRatios: [new(4096, 2048, .333333333)]));
             var vm = new MainViewModel(settings: store,
-                psbScanner: new PsbScannerStub { Files = [AtlasFile(4096, 2048)] }) { InputDirectory = folder.Path };
+                psbScanner: new PsbScannerStub { Files = [AtlasFile(4096, 2048)] })
+            { InputDirectory = folder.Path };
             Assert.Empty(vm.PsbCategories);
             vm.ToggleTheme();
             Assert.Equal(.333333333, Assert.Single(store.Load().PsbRatios!).Ratio);

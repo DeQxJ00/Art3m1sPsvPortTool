@@ -57,6 +57,8 @@ public sealed class ConversionService : IConversionService
         CancellationToken cancellationToken = default)
     {
         options.Validate();
+        if (File.Exists(Path.Combine(options.InputDirectory, PsbRenderManifest.FileName)))
+            throw new InvalidDataException("Input already contains art3m1s_psb_render.json. Please convert the original game resources, not an already converted output.");
         ScanResult scan = await _scanner.ScanAsync(options.InputDirectory, cancellationToken);
         if (scan.Archives.Count == 0)
             throw new InvalidDataException("No valid PFS archives were found.");
@@ -76,6 +78,7 @@ public sealed class ConversionService : IConversionService
         string backup = Path.Combine(parent, $".{Path.GetFileName(outputFull)}.backup-{Guid.NewGuid():N}");
         Directory.CreateDirectory(staging);
         bool committed = false;
+        ConcurrentBag<PsbRenderModel> psbRenderModels = [];
 
         try
         {
@@ -88,12 +91,16 @@ public sealed class ConversionService : IConversionService
                 cancellationToken.ThrowIfCancellationRequested();
                 PfsFileInfo archive = scan.Archives[index];
                 progress?.Report(new ConversionProgress(100d * index / total, "extract", archive.FileName));
-                await ConvertArchiveAsync(archive, staging, options, progress, index, total, textureLookup, cancellationToken);
+                await ConvertArchiveAsync(archive, staging, options, progress, index, total, textureLookup, psbRenderModels, cancellationToken);
             }
 
             progress?.Report(new ConversionProgress(100d * scan.Archives.Count / total, "loose"));
-            await ProcessTreeAsync(staging, options, progress, cancellationToken, textureLookup, archiveName: null, skipPfs: true, preserveDat: false,
+            await ProcessTreeAsync(staging, options, progress, cancellationToken, textureLookup, psbRenderModels, archiveName: null, skipPfs: true, preserveDat: false,
                 progressStart: 100d * scan.Archives.Count / total, progressSpan: 100d / total);
+            if (!psbRenderModels.IsEmpty)
+                await new PsbRenderManifest(PsbRenderManifest.CurrentVersion, options.Ratio, psbRenderModels.OrderBy(x => x.Archive, StringComparer.Ordinal)
+                    .ThenBy(x => x.Path, StringComparer.Ordinal).ToArray()).WriteAsync(staging, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             CommitDirectory(staging, outputFull, backup, options.OverwriteExisting);
             committed = true;
             progress?.Report(new ConversionProgress(100, "complete"));
@@ -113,6 +120,7 @@ public sealed class ConversionService : IConversionService
         int archiveIndex,
         int totalUnits,
         IReadOnlyDictionary<string, TextureImageInfo> textureLookup,
+        ConcurrentBag<PsbRenderModel> psbRenderModels,
         CancellationToken cancellationToken)
     {
         string workParent = Path.Combine(staging, ".art3m1s-work");
@@ -122,7 +130,7 @@ public sealed class ConversionService : IConversionService
         try
         {
             ExtractedArchive extracted = await _pfs.ExtractAsync(archive.Path, work, options.NameEncoding, cancellationToken);
-            var renamed = await ProcessTreeAsync(work, options, progress, cancellationToken, textureLookup, archive.FileName, skipPfs: false, preserveDat: true,
+            var renamed = await ProcessTreeAsync(work, options, progress, cancellationToken, textureLookup, psbRenderModels, archive.FileName, skipPfs: false, preserveDat: true,
                 progressStart: 100d * (archiveIndex + 0.05) / totalUnits,
                 progressSpan: 100d * 0.85 / totalUnits);
             string destination = Path.Combine(staging, archive.FileName);
@@ -166,6 +174,7 @@ public sealed class ConversionService : IConversionService
         IProgress<ConversionProgress>? progress,
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, TextureImageInfo> textureLookup,
+        ConcurrentBag<PsbRenderModel> psbRenderModels,
         string? archiveName,
         bool skipPfs,
         bool preserveDat,
@@ -239,7 +248,7 @@ public sealed class ConversionService : IConversionService
                     try
                     {
                         double psbRatio = options.Categories.HasFlag(AssetCategories.Animation) ? options.Ratio : 1;
-                        if (options.Categories.HasFlag(AssetCategories.Animation) && options.PsbTextures is not null)
+                        if (options.Categories.HasFlag(AssetCategories.Animation) && options.PsbTextures?.Enabled == true)
                         {
                             try
                             {
@@ -254,9 +263,15 @@ public sealed class ConversionService : IConversionService
                                 psbRatio = 0.5;
                             }
                         }
-                        PsbProcessingResult result = await _psb.ProcessAsync(path, psbRatio,
+                        double geometryRatio = options.Categories.HasFlag(AssetCategories.Animation) ? options.Ratio : 1;
+                        PsbProcessingResult result = await _psb.ProcessWithRatiosAsync(path, psbRatio, geometryRatio,
                             options.ConvertEmotePsbTexturesToDxt5, token);
-                        progressEntry = $"{relativePath} · Ratio {psbRatio:0.###} · {result.Message}";
+                        if (options.Categories.HasFlag(AssetCategories.Animation) && options.PsbTextures is { Enabled: true, CompensateRendering: true }
+                            && result.IsEmoteMotion && result.Changed)
+                            psbRenderModels.Add(new(relativePath.Replace('\\', '/'), archiveName,
+                                await PsbRenderManifest.FingerprintFileAsync(path, token),
+                                psbRatio, geometryRatio / psbRatio));
+                        progressEntry = $"{relativePath} · Texture Ratio {psbRatio:0.###} · Geometry Ratio {geometryRatio:0.###} · {result.Message}";
                     }
                     finally { psbSlots.Release(); }
                 }

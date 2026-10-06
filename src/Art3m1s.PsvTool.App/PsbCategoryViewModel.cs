@@ -10,6 +10,8 @@ public sealed class PsbCategoryViewModel : INotifyPropertyChanged
     private readonly ILocalizer _localizer;
     private string _ratio;
     private IReadOnlyList<PsbTextureFileInfo> _files = [];
+    private double _geometryRatio = .5;
+    private bool _compensationEnabled;
     public PsbCategoryViewModel(int width, int height, double ratio, ILocalizer localizer)
     {
         Width = width; Height = height; _ratio = ratio.ToString(CultureInfo.InvariantCulture);
@@ -25,7 +27,7 @@ public sealed class PsbCategoryViewModel : INotifyPropertyChanged
         set
         {
             if (_ratio == value) return;
-            _ratio = value; Changed(); Changed(nameof(Preview)); Changed(nameof(Validation)); Changed(nameof(HasValidationError)); Changed(nameof(SelectedPreset)); Changed(nameof(MemoryComparison));
+            _ratio = value; Changed(); Changed(nameof(Preview)); Changed(nameof(Validation)); Changed(nameof(HasValidationError)); Changed(nameof(SelectedPreset)); Changed(nameof(MemoryComparison)); Changed(nameof(RenderCompensation));
         }
     }
     public IReadOnlyList<string> Presets { get; } = ["1", "0.75", "0.5", "0.375", "0.25"];
@@ -52,6 +54,15 @@ public sealed class PsbCategoryViewModel : INotifyPropertyChanged
         }
     }
     public bool HasValidationError => !TryRatio(out _);
+    public string RenderCompensation => !_compensationEnabled ? _localizer["PsbCompensationOff"] :
+        TryRatio(out double ratio) && double.IsFinite(_geometryRatio)
+            ? string.Format(CultureInfo.CurrentUICulture, _localizer["PsbCompensationPreview"],
+                (_geometryRatio / ratio).ToString("0.###", CultureInfo.InvariantCulture),
+                _geometryRatio.ToString("0.###", CultureInfo.InvariantCulture), Ratio) : "—";
+    public void UpdateRendering(double geometryRatio, bool enabled)
+    {
+        _geometryRatio = geometryRatio; _compensationEnabled = enabled; Changed(nameof(RenderCompensation));
+    }
     public int FileCount => _files.Count;
     public bool HasFiles => FileCount > 0;
     public string Count => string.Format(CultureInfo.CurrentUICulture, _localizer["PsbCount"], _files.Count,
@@ -63,7 +74,7 @@ public sealed class PsbCategoryViewModel : INotifyPropertyChanged
     public void SetFiles(IReadOnlyList<PsbTextureFileInfo> files) { _files = files; Refresh(); }
     public void Refresh()
     {
-        Changed(nameof(Count)); Changed(nameof(FileCount)); Changed(nameof(HasFiles)); Changed(nameof(DetailsLabel)); Changed(nameof(Validation)); Changed(nameof(FileRows)); Changed(nameof(MemoryComparison));
+        Changed(nameof(Count)); Changed(nameof(FileCount)); Changed(nameof(HasFiles)); Changed(nameof(DetailsLabel)); Changed(nameof(Validation)); Changed(nameof(FileRows)); Changed(nameof(MemoryComparison)); Changed(nameof(RenderCompensation));
     }
     private void Changed([CallerMemberName] string? property = null) => PropertyChanged?.Invoke(this, new(property));
 }

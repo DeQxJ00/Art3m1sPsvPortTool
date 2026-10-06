@@ -47,7 +47,7 @@ public sealed class PsbTextureTests : IDisposable
         await File.WriteAllBytesAsync(Path.Combine(input, "other.psb"), PsbFixture.Create((64, 128)));
         await new ConversionService().ConvertAsync(new(input, output, Ratio: .75,
             Categories: AssetCategories.Animation, ConvertEmotePsbTexturesToDxt5: false,
-            PsbTextures: new([new(128, 64, .25)])));
+            PsbTextures: new([new(128, 64, .25)], Enabled: true)));
 
         var unpacked = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(_root, "unpack"));
         var converted = await PsbTextureScanner.InspectFileAsync(Assert.Single(unpacked.Entries).ExtractedPath);
@@ -65,7 +65,7 @@ public sealed class PsbTextureTests : IDisposable
         await new PfsCodec().PackPf8Async(new('8', []), Path.Combine(input, "root.pfs"));
         string output = Path.Combine(_root, "output");
         await new ConversionService().ConvertAsync(new(input, output, Categories: AssetCategories.None,
-            PsbTextures: new([new(64, 32, .25)])));
+            PsbTextures: new([new(64, 32, .25)], Enabled: true)));
         var result = await PsbTextureScanner.InspectFileAsync(Path.Combine(output, "hero.psb"));
         Assert.Equal(64, result.Width); Assert.Equal(32, result.Height);
         Assert.Equal("DXT5", Assert.Single(result.Atlases).Format);
@@ -102,23 +102,62 @@ internal static class PsbFixture
             sources["atlas" + i] = new Dictionary<string, object>
             {
                 ["texture"] = new Dictionary<string, object>
-                { ["width"] = width, ["height"] = height, ["truncated_width"] = width, ["truncated_height"] = height,
-                  ["type"] = "RGBA8", ["pixel"] = new Resource(i) },
+                {
+                    ["width"] = width,
+                    ["height"] = height,
+                    ["truncated_width"] = width,
+                    ["truncated_height"] = height,
+                    ["type"] = "RGBA8",
+                    ["pixel"] = new Resource(i)
+                },
                 ["icon"] = new Dictionary<string, object>
-                { ["piece" + i] = new Dictionary<string, object>
-                  { ["left"] = 0, ["top"] = 0, ["width"] = width / 2, ["height"] = height / 2,
-                    ["originX"] = width / 4, ["originY"] = height / 4 } }
+                {
+                    ["piece" + i] = new Dictionary<string, object>
+                    {
+                        ["left"] = 0,
+                        ["top"] = 0,
+                        ["width"] = width / 2,
+                        ["height"] = height / 2,
+                        ["originX"] = width / 4,
+                        ["originY"] = height / 4,
+                        ["attr"] = 0
+                    }
+                }
             };
         }
         Dictionary<string, object> root = new()
-        { ["id"] = "motion", ["source"] = sources,
-          ["screenSize"] = new Dictionary<string, object> { ["width"] = 1280, ["height"] = 720 } };
+        {
+            ["id"] = "motion",
+            ["source"] = sources,
+            ["metadata"] = new Dictionary<string, object> { ["base"] = new Dictionary<string, object> { ["chara"] = "hero", ["motion"] = "idle" } },
+            ["object"] = new Dictionary<string, object>
+            {
+                ["hero"] = new Dictionary<string, object>
+                {
+                    ["motion"] = new Dictionary<string, object>
+                    {
+                        ["idle"] = new Dictionary<string, object>
+                        {
+                            ["lastTime"] = 60,
+                            ["loopTime"] = 0,
+                            ["layer"] = new object[] {
+              new Dictionary<string, object> { ["label"] = "part", ["type"] = 0, ["frameList"] = new object[] {
+                new Dictionary<string, object> { ["time"] = 0, ["type"] = 1, ["content"] = new Dictionary<string, object>
+                  { ["src"] = "atlas0", ["icon"] = "piece0", ["coord"] = new object[] { 100, 40, 0 }, ["opa"] = 255,
+                    ["bounds"] = new Dictionary<string, object> { ["left"] = -10, ["top"] = -20, ["right"] = 50, ["bottom"] = 80 } } } } } }
+                        }
+                    }
+                }
+            },
+            ["screenSize"] = new Dictionary<string, object> { ["width"] = 1280, ["height"] = 720 }
+        };
         List<string> names = [], strings = [];
         void Collect(object value)
         {
             if (value is Dictionary<string, object> map)
                 foreach (var (key, child) in map) { if (!names.Contains(key)) names.Add(key); Collect(child); }
             else if (value is string s && !strings.Contains(s)) strings.Add(s);
+            else if (value is object[] list) foreach (object child in list) Collect(child);
         }
         Collect(root);
         Dictionary<int, uint> charset = new() { [0] = 256 }, tree = [];
@@ -155,6 +194,12 @@ internal static class PsbFixture
                     stream.Write(Array(offsets)); foreach (byte[] child in children) stream.Write(child); break;
                 case string s: stream.WriteByte(0x18); Write32(stream, (uint)strings.IndexOf(s)); break;
                 case Resource r: stream.WriteByte(0x1c); Write32(stream, (uint)r.Index); break;
+                case object[] list:
+                    stream.WriteByte(0x20);
+                    byte[][] items = list.Select(Value).ToArray();
+                    uint itemOffset = 0; List<uint> itemOffsets = [];
+                    foreach (byte[] item in items) { itemOffsets.Add(itemOffset); itemOffset += (uint)item.Length; }
+                    stream.Write(Array(itemOffsets)); foreach (byte[] item in items) stream.Write(item); break;
                 case int n: stream.WriteByte(0x08); Write32(stream, (uint)n); break;
                 default: throw new InvalidOperationException();
             }

@@ -109,11 +109,14 @@
               <Button x:Name="ScanPsbButton" Grid.Column="1" Content="{Binding ScanPsbLabel}" Click="ScanPsbClick" />
             </Grid>
             <TextBlock Text="{Binding PsbHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
+            <CheckBox IsChecked="{Binding IndependentPsbTextureScaling}">
+              <TextBlock Text="{Binding IndependentPsbTextureScalingLabel}" TextWrapping="Wrap" />
+            </CheckBox>
             <TextBlock Text="{Binding PsbEmptyHelp}" IsVisible="{Binding !HasPsbCategories}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
             <Expander Header="{Binding PsbDxt5Title}">
               <TextBlock Text="{Binding PsbDxt5Help}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" FontSize="12" />
             </Expander>
-            <ItemsControl ItemsSource="{Binding PsbCategories}">
+            <ItemsControl ItemsSource="{Binding PsbCategories}" IsEnabled="{Binding IndependentPsbTextureScaling}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:PsbCategoryViewModel">
                   <Border Background="{DynamicResource SubtleBg}" Padding="10" Margin="0,0,0,6" CornerRadius="6">
@@ -127,6 +130,7 @@
                         <TextBlock Grid.Column="5" Text="{Binding Count}" VerticalAlignment="Center" />
                       </Grid>
                       <TextBlock Text="{Binding MemoryComparison}" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" FontSize="12" />
+                      <TextBlock Text="{Binding RenderCompensation}" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" FontSize="12" />
                       <TextBlock Text="{Binding Validation}" IsVisible="{Binding HasValidationError}" Foreground="{DynamicResource WarningText}" TextWrapping="Wrap" />
                       <Expander Header="{Binding DetailsLabel}" IsVisible="{Binding HasFiles}">
                         <ListBox ItemsSource="{Binding FileRows}" MaxHeight="180" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -204,6 +208,11 @@
                 <TextBlock Text="{Binding ConvertEmotePsbTexturesToDxt5Label}" TextWrapping="Wrap" />
               </CheckBox>
               <TextBlock Text="{Binding ConvertEmotePsbTexturesToDxt5Help}" TextWrapping="Wrap"
+                         Foreground="{DynamicResource SecondaryText}" FontSize="12" />
+              <CheckBox IsChecked="{Binding PsbRenderCompensation}" IsEnabled="{Binding IndependentPsbTextureScaling}">
+                <TextBlock Text="{Binding PsbRenderCompensationLabel}" TextWrapping="Wrap" />
+              </CheckBox>
+              <TextBlock Text="{Binding PsbRenderCompensationHelp}" TextWrapping="Wrap"
                          Foreground="{DynamicResource SecondaryText}" FontSize="12" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">
