@@ -21,7 +21,8 @@ public sealed record PsbTextureFileInfo(string? Archive, string Path, long Bytes
 
 public sealed record PsbResolutionRule(int Width, int Height, double Ratio = 0.5);
 
-public sealed record PsbTextureOptions(IReadOnlyList<PsbResolutionRule>? Rules = null)
+public sealed record PsbTextureOptions(IReadOnlyList<PsbResolutionRule>? Rules = null, bool Enabled = false,
+    bool CompensateRendering = true)
 {
     public double RatioFor(int width, int height) => Rules?.FirstOrDefault(x => x.Width == width && x.Height == height)?.Ratio ?? 0.5;
 

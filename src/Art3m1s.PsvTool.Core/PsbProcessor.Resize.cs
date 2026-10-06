@@ -11,13 +11,27 @@ namespace Art3m1s.PsvTool.Core;
 
 public sealed partial class PsbProcessor
 {
+    internal static double? InspectNumericMetadata(byte[] data, params string[] path)
+    {
+        Node? node = MutableDocument.Parse(data).Root;
+        foreach (string part in path)
+            node = node is ObjectNode value ? value.Get(part) :
+                node is ListNode list && int.TryParse(part, out int index) && index >= 0 && index < list.Values.Count ? list.Values[index] : null;
+        return (node as NumberNode)?.Value;
+    }
+
     public async Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default)
         => _ = await ProcessAsync(path, ratio, convertRgba8ToDxt5: false, cancellationToken);
 
     public async Task<PsbProcessingResult> ProcessAsync(string path, double ratio, bool convertRgba8ToDxt5,
         CancellationToken cancellationToken = default)
+        => await ProcessWithRatiosAsync(path, ratio, ratio, convertRgba8ToDxt5, cancellationToken);
+
+    public async Task<PsbProcessingResult> ProcessWithRatiosAsync(string path, double textureRatio, double geometryRatio,
+        bool convertRgba8ToDxt5, CancellationToken cancellationToken = default)
     {
-        if (ratio is <= 0 or > 1) throw new ArgumentOutOfRangeException(nameof(ratio));
+        if (!double.IsFinite(textureRatio) || textureRatio is <= 0 or > 1) throw new ArgumentOutOfRangeException(nameof(textureRatio));
+        if (!double.IsFinite(geometryRatio) || geometryRatio is <= 0 or > 1) throw new ArgumentOutOfRangeException(nameof(geometryRatio));
 
         byte[] data = await File.ReadAllBytesAsync(path, cancellationToken);
         MutableDocument document;
@@ -37,11 +51,11 @@ public sealed partial class PsbProcessor
             return new PsbProcessingResult(false, false, "non-E-mote motion PSB preserved");
 
         Dictionary<ResourceKey, byte[]> replacements = [];
-        ProcessingSummary summary = ProcessModel(document, ratio, convertRgba8ToDxt5, replacements, cancellationToken);
+        ProcessingSummary summary = ProcessModel(document, textureRatio, geometryRatio, convertRgba8ToDxt5, replacements, cancellationToken);
         if (summary.UnsupportedFormats.Count > 0)
             return new PsbProcessingResult(true, false,
                 $"unsupported PSB texture format(s) preserved: {string.Join(", ", summary.UnsupportedFormats.Order(StringComparer.OrdinalIgnoreCase))}");
-        if (replacements.Count == 0)
+        if (summary.SupportedTextureCount == 0 || (replacements.Count == 0 && geometryRatio == 1))
             return new PsbProcessingResult(true, false, summary.SupportedTextureCount == 0
                 ? "E-mote motion PSB has no supported embedded RGBA8/DXT5 texture; preserved"
                 : "E-mote PSB texture already DXT5; no resize required");
@@ -59,10 +73,10 @@ public sealed partial class PsbProcessor
         }
         return new PsbProcessingResult(true, true, summary.ConvertedToDxt5Count > 0
             ? $"converted {summary.ConvertedToDxt5Count} RGBA8 texture(s) to DXT5 (BC3)"
-            : $"resized {summary.SupportedTextureCount} E-mote texture(s)");
+            : $"processed {summary.SupportedTextureCount} E-mote texture(s)");
     }
 
-    private static ProcessingSummary ProcessModel(MutableDocument document, double ratio, bool convertRgba8ToDxt5,
+    private static ProcessingSummary ProcessModel(MutableDocument document, double ratio, double geometryRatio, bool convertRgba8ToDxt5,
         Dictionary<ResourceKey, byte[]> replacements, CancellationToken cancellationToken)
     {
         ObjectNode root = document.Root as ObjectNode ?? throw new InvalidDataException("PSB root is not an object.");
@@ -132,24 +146,43 @@ public sealed partial class PsbProcessor
                 heightNode.ScaleDimension(ratio);
                 texture.GetNumber("truncated_width")?.ScaleDimension(ratio);
                 texture.GetNumber("truncated_height")?.ScaleDimension(ratio);
-                if (source.GetObject("icon") is { } icons)
+            }
+            if (source.GetObject("icon") is { } icons)
+            {
+                foreach (Node iconNode in icons.Values.Values)
                 {
-                    foreach (Node iconNode in icons.Values.Values)
-                        if (iconNode is ObjectNode icon)
-                            foreach (string field in new[] { "left", "top", "width", "height", "originX", "originY" })
-                                icon.GetNumber(field)?.Scale(ratio);
+                    if (iconNode is not ObjectNode icon) continue;
+                    double logicalWidth = icon.GetNumber("width")?.ScaledValue(geometryRatio) ?? 0;
+                    double logicalHeight = icon.GetNumber("height")?.ScaledValue(geometryRatio) ?? 0;
+                    if (needsResize)
+                    {
+                        foreach (string field in new[] { "left", "top", "width", "height" })
+                            icon.GetNumber(field)?.Scale(ratio);
+                        // Independent downsampling must not erase a positive logical
+                        // part by rounding its sampling rectangle to zero pixels.
+                        if (geometryRatio != ratio && logicalWidth > 0 && logicalHeight > 0)
+                        {
+                            icon.GetNumber("left")?.Clamp(0, targetWidth - 1);
+                            icon.GetNumber("top")?.Clamp(0, targetHeight - 1);
+                            icon.GetNumber("width")?.Clamp(1, targetWidth - (icon.GetNumber("left")?.Value ?? 0));
+                            icon.GetNumber("height")?.Clamp(1, targetHeight - (icon.GetNumber("top")?.Value ?? 0));
+                        }
+                    }
+                    if (geometryRatio != 1)
+                        foreach (string field in new[] { "originX", "originY" })
+                            icon.GetNumber(field)?.Scale(geometryRatio);
                 }
             }
         }
 
-        if (ratio != 1 && root.GetObject("screenSize") is { } screen)
+        if (geometryRatio != 1 && root.GetObject("screenSize") is { } screen)
         {
-            screen.GetNumber("width")?.ScaleDimension(ratio);
-            screen.GetNumber("height")?.ScaleDimension(ratio);
+            screen.GetNumber("width")?.ScaleDimension(geometryRatio);
+            screen.GetNumber("height")?.ScaleDimension(geometryRatio);
         }
 
-        if (ratio != 1 && root.GetObject("object") is { } objects)
-            ScaleMotionGeometry(objects, ratio);
+        if (geometryRatio != 1 && root.GetObject("object") is { } objects)
+            ScaleMotionGeometry(objects, geometryRatio);
         return new ProcessingSummary(supportedTextureCount, convertedToDxt5Count, unsupportedFormats);
     }
 
@@ -253,8 +286,11 @@ public sealed partial class PsbProcessor
     private sealed class NumberNode(byte[] data, int offset, byte kind, double value) : Node
     {
         public double Value { get; private set; } = value;
+        public double ScaledValue(double ratio) => kind is >= 0x04 and <= 0x0c
+            ? Math.Truncate(Value * ratio) : kind == 0x1e ? (float)(Value * ratio) : Value * ratio;
 
         public void Scale(double ratio) => Write(Value * ratio, dimension: false);
+        public void Clamp(double minimum, double maximum) => Write(Math.Clamp(Value, minimum, maximum), dimension: false);
         public void ScaleDimension(double ratio) => Write(Math.Max(1, Math.Truncate(Value * ratio)), dimension: true);
 
         private void Write(double value, bool dimension)

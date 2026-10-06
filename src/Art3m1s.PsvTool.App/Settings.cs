@@ -9,7 +9,8 @@ public sealed record AppSettings(
     bool IsDark = true,
     bool ConvertEmotePsbTexturesToDxt5 = true,
     bool NativeTextures = false,
-    PsbResolutionRule[]? PsbRatios = null);
+    PsbResolutionRule[]? PsbRatios = null,
+    bool PsbRenderCompensation = true);
 
 public interface ISettingsStore
 {

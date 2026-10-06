@@ -19,6 +19,10 @@ public interface IPsbProcessor
     Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default);
     Task<PsbProcessingResult> ProcessAsync(string path, double ratio, bool convertRgba8ToDxt5,
         CancellationToken cancellationToken = default);
+    Task<PsbProcessingResult> ProcessWithRatiosAsync(string path, double textureRatio, double geometryRatio,
+        bool convertRgba8ToDxt5, CancellationToken cancellationToken = default)
+        => textureRatio == geometryRatio ? ProcessAsync(path, textureRatio, convertRgba8ToDxt5, cancellationToken)
+            : throw new NotSupportedException("This PSB processor does not support independent geometry scaling.");
 }
 
 /// <summary>

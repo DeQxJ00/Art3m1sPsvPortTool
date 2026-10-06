@@ -48,6 +48,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         IsDark = saved.IsDark;
         _convertEmotePsbTexturesToDxt5 = saved.ConvertEmotePsbTexturesToDxt5;
         _nativeTextures = saved.NativeTextures;
+        // Independent texture scaling is a per-run opt-in, never restored from settings.
+        _independentPsbTextureScaling = false;
+        _psbRenderCompensation = saved.PsbRenderCompensation;
         _localizer.SetLanguage(saved.Language);
         InitializePsb(saved.PsbRatios);
         if (Application.Current is not null)
@@ -75,10 +78,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         }
     }
     public string OutputDirectory { get => _outputDirectory; set { Set(ref _outputDirectory, value); _overwriteArmed = false; } }
-    public string Ratio { get => _ratio; set { if (Set(ref _ratio, value)) { OnPropertyChanged(nameof(TargetResolution)); RefreshTextures(); } } }
+    public string Ratio { get => _ratio; set { if (Set(ref _ratio, value)) { OnPropertyChanged(nameof(TargetResolution)); RefreshTextures(); RefreshPsbRendering(); } } }
     public bool ProcessText { get => _text; set => Set(ref _text, value); }
     public bool ProcessImages { get => _images; set => Set(ref _images, value); }
-    public bool ProcessAnimation { get => _animation; set => Set(ref _animation, value); }
+    public bool ProcessAnimation { get => _animation; set { if (Set(ref _animation, value)) RefreshPsbRendering(); } }
     public bool ProcessVideo { get => _video; set => Set(ref _video, value); }
     public bool IgnorePfsVideos { get => _ignorePfsVideos; set => Set(ref _ignorePfsVideos, value); }
     public bool ConvertEmotePsbTexturesToDxt5
@@ -192,7 +195,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     {
         if (!Directory.Exists(InputDirectory) || string.IsNullOrWhiteSpace(OutputDirectory) || !TryRatio(out double ratio))
         { Status = L("InvalidPaths"); return; }
-        if (ProcessAnimation && PsbCategories.Any(x => !x.TryRatio(out _)))
+        if (ProcessAnimation && IndependentPsbTextureScaling && PsbCategories.Any(x => !x.TryRatio(out _)))
         { Status = L("PsbInvalidRatio"); return; }
         if (Directory.Exists(OutputDirectory) && !_overwriteArmed)
         { _overwriteArmed = true; Status = L("Overwrite"); return; }
@@ -212,7 +215,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 Progress = value.Percent; Status = LocalizeStage(value.Stage);
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
             });
-            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(PsbRules));
+            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(PsbRules, IndependentPsbTextureScaling, PsbRenderCompensation));
             var token = _conversionCancellation.Token;
             await Task.Run(() => _converter.ConvertAsync(options, reporter, token), token);
             Status = L("Finished");
@@ -272,7 +275,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     }
     private void SaveSettings()
     {
-        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5, NativeTextures, PsbRules)); }
+        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5, NativeTextures, PsbRules, PsbRenderCompensation)); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
