@@ -24,7 +24,7 @@ public sealed class UiTests
         Assert.Equal("https://github.com/DeQxJ00/art3m1s_psv_port_tool", MainWindow.RepositoryUrl);
         Assert.True(viewModel.IgnorePfsVideos);
         Assert.True(viewModel.ConvertEmotePsbTexturesToDxt5);
-        Assert.Equal("E-mote PSB 纹理转 DXT5（BC3）", viewModel.ConvertEmotePsbTexturesToDxt5Label);
+        Assert.Equal("E-mote PSB 纹理格式转换", viewModel.ConvertEmotePsbTexturesToDxt5Label);
         Assert.Equal("自动扫描分辨率", viewModel.AutoScanResolutionLabel);
         Assert.Equal("请只处理你有权修改的游戏资源，并先备份原项目。", viewModel.AssetRightsBackupWarning);
         Assert.Contains("WMV / DAT / MP4 / AVI / MPG / MKV", viewModel.IgnorePfsVideosLabel);
@@ -44,7 +44,7 @@ public sealed class UiTests
         Assert.Equal("Ignore video inside PFS (WMV / DAT / MP4 / AVI / MPG / MKV)", viewModel.IgnorePfsVideosLabel);
         Assert.Equal("art3m1s PSV Port Tool", viewModel.Title);
         Assert.Equal("Project GitHub", viewModel.ProjectRepositoryLabel);
-        Assert.Equal("Convert E-mote PSB textures to DXT5 (BC3)", viewModel.ConvertEmotePsbTexturesToDxt5Label);
+        Assert.Equal("Convert E-mote PSB texture format", viewModel.ConvertEmotePsbTexturesToDxt5Label);
         Assert.Equal("Detect resolution", viewModel.AutoScanResolutionLabel);
         Assert.Equal("Only process game assets you are authorized to modify, and back up the original project first.", viewModel.AssetRightsBackupWarning);
         Assert.Contains(nameof(MainViewModel.AssetRightsBackupWarning), changed);

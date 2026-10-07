@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using PVRTexLib;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -68,9 +67,14 @@ public sealed class NativeTextureProcessor
             U(20, (uint)length); U(28, 1); U(76, 32); U(80, 4); U(108, 0x1000);
             string code = spec.Format switch
             {
-                NativeTextureFormat.Bc1 => "DXT1", NativeTextureFormat.Bc2 => "DXT3", NativeTextureFormat.Bc3 => "DXT5",
-                NativeTextureFormat.Bc4 => "ATI1", NativeTextureFormat.Bc4Signed => "BC4S",
-                NativeTextureFormat.Bc5 => "ATI2", NativeTextureFormat.Bc5Signed => "BC5S", _ => throw new InvalidOperationException()
+                NativeTextureFormat.Bc1 => "DXT1",
+                NativeTextureFormat.Bc2 => "DXT3",
+                NativeTextureFormat.Bc3 => "DXT5",
+                NativeTextureFormat.Bc4 => "ATI1",
+                NativeTextureFormat.Bc4Signed => "BC4S",
+                NativeTextureFormat.Bc5 => "ATI2",
+                NativeTextureFormat.Bc5Signed => "BC5S",
+                _ => throw new InvalidOperationException()
             };
             System.Text.Encoding.ASCII.GetBytes(code).CopyTo(header, 84);
         }
@@ -81,26 +85,11 @@ public sealed class NativeTextureProcessor
         }
         return header;
     }
-    private static unsafe void Encode(byte[] rgba, int width, int height, NativeFormatInfo spec, string output)
+    private static void Encode(byte[] rgba, int width, int height, NativeFormatInfo spec, string output)
     {
-        fixed (byte* pixels = rgba)
-        {
-            ulong pixelFormat = PVRDefine.PVRTGENPIXELID4('r', 'g', 'b', 'a', 8, 8, 8, 8);
-            using var header = new PVRTextureHeader(pixelFormat, (uint)width, (uint)height, 1, 1, 1, 1,
-                PVRTexLibColourSpace.Linear, PVRTexLibVariableType.UnsignedByteNorm, false);
-            using var texture = new PVRTexture(header, pixels);
-            var type = spec.Format is NativeTextureFormat.Bc4Signed or NativeTextureFormat.Bc5Signed
-                ? PVRTexLibVariableType.SignedByteNorm : PVRTexLibVariableType.UnsignedByteNorm;
-            if (!texture.Transcode((ulong)spec.PvrCode, type, PVRTexLibColourSpace.Linear, PVRTexLibCompressorQuality.PVRTCHigh))
-                throw new InvalidDataException("Native texture compression failed: " + spec.Name);
-            int length = checked((int)texture.GetTextureDataSize(0));
-            if (length != NativeTextureFormats.PayloadBytes(spec.Format, width, height))
-                throw new InvalidDataException("Encoder returned an unexpected block layout.");
-            // Write with managed Unicode-safe I/O: PVRTexLib SaveToFile uses a
-            // narrow native filename on Windows and cannot reliably write CJK paths.
-            byte[] payload = new ReadOnlySpan<byte>(texture.GetTextureDataPointer(0), length).ToArray();
-            using var file = File.Create(output);
-            file.Write(ContainerHeader(spec, width, height, length)); file.Write(payload);
-        }
+        byte[] payload = PvrTextureCodec.Encode(rgba, width, height, spec);
+        // Managed I/O keeps CJK filenames safe on Windows.
+        using var file = File.Create(output);
+        file.Write(ContainerHeader(spec, width, height, payload.Length)); file.Write(payload);
     }
 }

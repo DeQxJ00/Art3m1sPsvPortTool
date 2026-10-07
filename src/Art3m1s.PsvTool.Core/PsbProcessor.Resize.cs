@@ -11,6 +11,14 @@ namespace Art3m1s.PsvTool.Core;
 
 public sealed partial class PsbProcessor
 {
+    internal static byte[] InspectTextureResource(byte[] data, string sourceName)
+    {
+        var document = MutableDocument.Parse(data);
+        var texture = ((ObjectNode)document.Root).GetObject("source")?.GetObject(sourceName)?.GetObject("texture");
+        var resource = (texture?.Get("pixel") ?? texture?.Get("data") ?? texture?.Get("resource")) as ResourceNode
+            ?? throw new InvalidDataException("Missing texture resource.");
+        return document.GetResource(new(resource.Index, resource.Extra));
+    }
     internal static double? InspectNumericMetadata(byte[] data, params string[] path)
     {
         Node? node = MutableDocument.Parse(data).Root;
@@ -18,6 +26,13 @@ public sealed partial class PsbProcessor
             node = node is ObjectNode value ? value.Get(part) :
                 node is ListNode list && int.TryParse(part, out int index) && index >= 0 && index < list.Values.Count ? list.Values[index] : null;
         return (node as NumberNode)?.Value;
+    }
+
+    internal static string? InspectStringMetadata(byte[] data, params string[] path)
+    {
+        Node? node = MutableDocument.Parse(data).Root;
+        foreach (string part in path) node = (node as ObjectNode)?.Get(part);
+        return (node as StringNode)?.Value;
     }
 
     public async Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default)
@@ -29,7 +44,13 @@ public sealed partial class PsbProcessor
 
     public async Task<PsbProcessingResult> ProcessWithRatiosAsync(string path, double textureRatio, double geometryRatio,
         bool convertRgba8ToDxt5, CancellationToken cancellationToken = default)
+        => await ProcessWithFormatAsync(path, textureRatio, geometryRatio,
+            convertRgba8ToDxt5 ? PsbTextureFormat.Dxt5 : null, cancellationToken);
+
+    public async Task<PsbProcessingResult> ProcessWithFormatAsync(string path, double textureRatio, double geometryRatio,
+        PsbTextureFormat? outputFormat, CancellationToken cancellationToken = default)
     {
+        if (outputFormat.HasValue) _ = PsbTextureFormats.Name(outputFormat.Value);
         if (!double.IsFinite(textureRatio) || textureRatio is <= 0 or > 1) throw new ArgumentOutOfRangeException(nameof(textureRatio));
         if (!double.IsFinite(geometryRatio) || geometryRatio is <= 0 or > 1) throw new ArgumentOutOfRangeException(nameof(geometryRatio));
 
@@ -51,46 +72,47 @@ public sealed partial class PsbProcessor
             return new PsbProcessingResult(false, false, "non-E-mote motion PSB preserved");
 
         Dictionary<ResourceKey, byte[]> replacements = [];
-        ProcessingSummary summary = ProcessModel(document, textureRatio, geometryRatio, convertRgba8ToDxt5, replacements, cancellationToken);
+        ProcessingSummary summary = ProcessModel(document, textureRatio, geometryRatio, outputFormat, replacements, cancellationToken);
         if (summary.UnsupportedFormats.Count > 0)
             return new PsbProcessingResult(true, false,
                 $"unsupported PSB texture format(s) preserved: {string.Join(", ", summary.UnsupportedFormats.Order(StringComparer.OrdinalIgnoreCase))}");
         if (summary.SupportedTextureCount == 0 || (replacements.Count == 0 && geometryRatio == 1))
             return new PsbProcessingResult(true, false, summary.SupportedTextureCount == 0
-                ? "E-mote motion PSB has no supported embedded RGBA8/DXT5 texture; preserved"
-                : "E-mote PSB texture already DXT5; no resize required");
+                ? "E-mote motion PSB has no supported embedded texture; preserved"
+                : "E-mote PSB texture already in requested format; no resize required");
 
         byte[] rebuilt = document.RebuildResources(replacements);
         string temporary = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.psb");
         try
         {
             await File.WriteAllBytesAsync(temporary, rebuilt, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporary, path, true);
         }
         finally
         {
             if (File.Exists(temporary)) File.Delete(temporary);
         }
-        return new PsbProcessingResult(true, true, summary.ConvertedToDxt5Count > 0
-            ? $"converted {summary.ConvertedToDxt5Count} RGBA8 texture(s) to DXT5 (BC3)"
+        return new PsbProcessingResult(true, true, summary.ConvertedCount > 0
+            ? $"converted {summary.ConvertedCount} texture(s) to {PsbTextureFormats.Name(outputFormat!.Value)}"
             : $"processed {summary.SupportedTextureCount} E-mote texture(s)");
     }
 
-    private static ProcessingSummary ProcessModel(MutableDocument document, double ratio, double geometryRatio, bool convertRgba8ToDxt5,
+    private static ProcessingSummary ProcessModel(MutableDocument document, double ratio, double geometryRatio, PsbTextureFormat? outputFormat,
         Dictionary<ResourceKey, byte[]> replacements, CancellationToken cancellationToken)
     {
         ObjectNode root = document.Root as ObjectNode ?? throw new InvalidDataException("PSB root is not an object.");
         ObjectNode sources = root.GetObject("source") ?? throw new InvalidDataException(
             $"E-mote PSB has no source table (root keys: {string.Join(", ", root.Values.Keys)}).");
-        int supportedTextureCount = 0, convertedToDxt5Count = 0;
+        int supportedTextureCount = 0, convertedCount = 0;
         HashSet<string> unsupportedFormats = new(StringComparer.OrdinalIgnoreCase);
         foreach ((string sourceName, Node sourceNode) in sources.Values)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (sourceNode is not ObjectNode source || source.GetObject("texture") is not { } texture) continue;
-            string format = texture.GetString("type") ?? "unknown";
-            if (!format.Equals("DXT5", StringComparison.OrdinalIgnoreCase) &&
-                !format.Equals("RGBA8", StringComparison.OrdinalIgnoreCase))
+            string format = (texture.Get("type") as StringNode)?.OriginalValue ?? "unknown";
+            PsbTextureFormat? sourceFormat = PsbTextureFormats.ParseType(format);
+            if (sourceFormat is null && !format.Equals("RGBA8", StringComparison.OrdinalIgnoreCase))
             {
                 unsupportedFormats.Add(format);
                 continue;
@@ -104,17 +126,23 @@ public sealed partial class PsbProcessor
                 ?? throw new InvalidDataException($"PSB texture {sourceName} has no height.");
             int width = checked((int)widthNode.Value);
             int height = checked((int)heightNode.Value);
+            if (width <= 0 || height <= 0) throw new InvalidDataException("PSB texture dimensions must be positive.");
             int targetWidth = Math.Max(1, (int)(width * ratio));
             int targetHeight = Math.Max(1, (int)(height * ratio));
             ResourceKey key = new(resource.Index, resource.Extra);
             bool needsResize = targetWidth != width || targetHeight != height;
-            bool needsConversion = convertRgba8ToDxt5 && format.Equals("RGBA8", StringComparison.OrdinalIgnoreCase);
+            PsbTextureFormat? targetFormat = outputFormat ?? sourceFormat;
+            bool needsConversion = outputFormat.HasValue && outputFormat != sourceFormat;
             if ((needsResize || needsConversion) && !replacements.ContainsKey(key))
             {
                 byte[] compressed = document.GetResource(key);
-                byte[] rgba = format.Equals("DXT5", StringComparison.OrdinalIgnoreCase)
-                    ? DecodeDxt5(compressed, width, height)
-                    : DecodeBgra8(compressed, width, height);
+                byte[] rgba = sourceFormat switch
+                {
+                    PsbTextureFormat.Dxt5 => DecodeDxt5(compressed, width, height),
+                    PsbTextureFormat.Pvrtc2_4 or PsbTextureFormat.Pvrtc2_2 =>
+                        PvrTextureCodec.Decode(compressed, width, height, PsbTextureFormats.NativeFormat(sourceFormat.Value)),
+                    _ => DecodeBgra8(compressed, width, height)
+                };
                 if (needsResize)
                 {
                     using Image<Rgba32> image = Image.LoadPixelData<Rgba32>(rgba, width, height);
@@ -128,16 +156,20 @@ public sealed partial class PsbProcessor
                     rgba = new byte[targetWidth * targetHeight * 4];
                     image.CopyPixelDataTo(rgba);
                 }
-                bool targetDxt5 = format.Equals("DXT5", StringComparison.OrdinalIgnoreCase) || needsConversion;
-                replacements.Add(key, targetDxt5
-                    ? EncodeDxt5(rgba, targetWidth, targetHeight)
-                    : EncodeBgra8(rgba, targetWidth, targetHeight));
+                replacements.Add(key, targetFormat switch
+                {
+                    PsbTextureFormat.Dxt5 => EncodeDxt5(rgba, targetWidth, targetHeight),
+                    PsbTextureFormat.Pvrtc2_4 or PsbTextureFormat.Pvrtc2_2 =>
+                        PvrTextureCodec.Encode(rgba, targetWidth, targetHeight,
+                            NativeTextureFormats.Info(PsbTextureFormats.NativeFormat(targetFormat.Value))),
+                    _ => EncodeBgra8(rgba, targetWidth, targetHeight)
+                });
             }
 
             if (needsConversion)
             {
-                (texture.Get("type") as StringNode)?.Rewrite("DXT5");
-                convertedToDxt5Count++;
+                (texture.Get("type") as StringNode)?.Rewrite(PsbTextureFormats.TypeName(outputFormat!.Value));
+                convertedCount++;
             }
 
             if (needsResize)
@@ -183,10 +215,10 @@ public sealed partial class PsbProcessor
 
         if (geometryRatio != 1 && root.GetObject("object") is { } objects)
             ScaleMotionGeometry(objects, geometryRatio);
-        return new ProcessingSummary(supportedTextureCount, convertedToDxt5Count, unsupportedFormats);
+        return new ProcessingSummary(supportedTextureCount, convertedCount, unsupportedFormats);
     }
 
-    private sealed record ProcessingSummary(int SupportedTextureCount, int ConvertedToDxt5Count,
+    private sealed record ProcessingSummary(int SupportedTextureCount, int ConvertedCount,
         IReadOnlySet<string> UnsupportedFormats);
 
     private static void ScaleMotionGeometry(Node node, double ratio)
@@ -262,19 +294,13 @@ public sealed partial class PsbProcessor
         public string? GetString(string key) => (Get(key) as StringNode)?.Value;
     }
     private sealed class ListNode(List<Node> values) : Node { public List<Node> Values { get; } = values; }
-    private sealed class StringNode(byte[] data, int offset, int byteLength, string value) : Node
+    private sealed class StringNode(EncodedString encoded, int indexOffset, int indexWidth) : Node
     {
-        public string Value { get; private set; } = value;
-
-        public void Rewrite(string value)
-        {
-            byte[] encoded = Encoding.UTF8.GetBytes(value);
-            if (encoded.Length > byteLength)
-                throw new InvalidDataException("Scaled PSB string no longer fits its original string-table slot.");
-            data.AsSpan(offset, byteLength).Clear();
-            encoded.CopyTo(data.AsSpan(offset));
-            Value = value;
-        }
+        public string Value { get; private set; } = encoded.OriginalValue;
+        public string OriginalValue => encoded.OriginalValue;
+        public int IndexOffset { get; } = indexOffset;
+        public int IndexWidth { get; } = indexWidth;
+        public void Rewrite(string value) => Value = value;
     }
     private sealed class ResourceNode(int index, bool extra) : Node
     {
@@ -323,11 +349,12 @@ public sealed partial class PsbProcessor
         }
     }
 
-    private sealed class CompactArray(uint[] values, int itemOffset, int itemWidth)
+    private sealed class CompactArray(uint[] values, int itemOffset, int itemWidth, int start)
     {
         public uint[] Values { get; } = values;
         public int ItemOffset { get; } = itemOffset;
         public int ItemWidth { get; } = itemWidth;
+        public int Start { get; } = start;
     }
 
     private sealed class MutableDocument
@@ -344,14 +371,19 @@ public sealed partial class PsbProcessor
         private readonly CompactArray? _extraOffsets;
         private readonly CompactArray? _extraLengths;
         private readonly uint[] _sectionOffsets;
+        private readonly CompactArray _stringOffsets;
+        private readonly EncodedString[] _strings;
+        private readonly IReadOnlyList<StringNode> _stringNodes;
 
         private MutableDocument(byte[] data, byte[] header, uint? headerKey, ushort version, int headerLength,
             uint chunkData, uint extraData, CompactArray chunkOffsets, CompactArray chunkLengths,
-            CompactArray? extraOffsets, CompactArray? extraLengths, uint[] sectionOffsets, Node root)
+            CompactArray? extraOffsets, CompactArray? extraLengths, uint[] sectionOffsets, Node root,
+            CompactArray stringOffsets, EncodedString[] strings, IReadOnlyList<StringNode> stringNodes)
         {
             _data = data; _header = header; _headerKey = headerKey; _version = version; _headerLength = headerLength;
             _chunkData = chunkData; _extraData = extraData; _chunkOffsets = chunkOffsets; _chunkLengths = chunkLengths;
             _extraOffsets = extraOffsets; _extraLengths = extraLengths; _sectionOffsets = sectionOffsets; Root = root;
+            _stringOffsets = stringOffsets; _strings = strings; _stringNodes = stringNodes;
         }
 
         public Node Root { get; }
@@ -405,7 +437,8 @@ public sealed partial class PsbProcessor
                 ? [ReadUInt32(header, 12), ReadUInt32(header, 16), ReadUInt32(header, 20), chunkOffsetsAddress, chunkLengthsAddress, ReadUInt32(header, 32), ReadUInt32(header, 36), ReadUInt32(header, 44), ReadUInt32(header, 48), extraData]
                 : [ReadUInt32(header, 12), ReadUInt32(header, 16), ReadUInt32(header, 20), chunkOffsetsAddress, chunkLengthsAddress, ReadUInt32(header, 32), ReadUInt32(header, 36)];
             return new MutableDocument(data, header, key, version, headerLength, ReadUInt32(header, 32), extraData,
-                chunkOffsets, chunkLengths, extraOffsets, extraLengths, sections.Where(value => value != 0).ToArray(), root);
+                chunkOffsets, chunkLengths, extraOffsets, extraLengths, sections.Where(value => value != 0).ToArray(), root,
+                stringOffsets, strings, parser.StringNodes);
         }
 
         public byte[] GetResource(ResourceKey key)
@@ -420,9 +453,50 @@ public sealed partial class PsbProcessor
         public byte[] RebuildResources(Dictionary<ResourceKey, byte[]> replacements)
         {
             List<ResourceRegion> regions = [];
-            regions.Add(BuildRegion(false, _chunkData, _chunkOffsets, _chunkLengths, replacements));
+            regions.Add(BuildRegion(false, _chunkData, _chunkOffsets, _chunkLengths, replacements, regions));
             if (_extraOffsets is not null && _extraLengths is not null)
-                regions.Add(BuildRegion(true, _extraData, _extraOffsets, _extraLengths, replacements));
+                regions.Add(BuildRegion(true, _extraData, _extraOffsets, _extraLengths, replacements, regions));
+            if (_stringNodes.Any(node => node.Value != node.OriginalValue))
+            {
+                // Preserve existing strings and indexes, append new values and patch
+                // only changed references. A shared "RGBA8" in unrelated metadata
+                // must not be rewritten along with the texture's format field.
+                List<string> values = _strings.Select(value => value.OriginalValue).ToList();
+                HashSet<string> referenced = _stringNodes.Select(node => node.Value).ToHashSet(StringComparer.Ordinal);
+                foreach (StringNode node in _stringNodes.Where(node => node.Value != node.OriginalValue).OrderBy(node => node.IndexWidth))
+                {
+                    int maximumIndex = node.IndexWidth >= 4 ? int.MaxValue : (1 << (node.IndexWidth * 8)) - 1;
+                    int index = values.FindIndex(value => value == node.Value);
+                    if (index < 0 || index > maximumIndex)
+                    {
+                        if (values.Count <= maximumIndex) { index = values.Count; values.Add(node.Value); }
+                        else
+                        {
+                            // Reuse an unreferenced short-index slot at a width boundary.
+                            // Otherwise fail atomically instead of corrupting root offsets.
+                            index = values.FindIndex(0, Math.Min(values.Count, maximumIndex + 1), value => !referenced.Contains(value));
+                            if (index < 0) throw new InvalidDataException("PSB string table has no free index of the required width.");
+                            values[index] = node.Value;
+                        }
+                    }
+                    WriteCompact(_data, node.IndexOffset, node.IndexWidth, checked((uint)index));
+                }
+                using MemoryStream strings = new();
+                byte[] offsets = new byte[checked(6 + values.Count * 4)];
+                offsets[0] = 0x10;
+                BinaryPrimitives.WriteUInt32LittleEndian(offsets.AsSpan(1), (uint)values.Count);
+                offsets[5] = 0x10;
+                for (int index = 0; index < values.Count; index++)
+                {
+                    BinaryPrimitives.WriteUInt32LittleEndian(offsets.AsSpan(6 + index * 4), checked((uint)strings.Position));
+                    strings.Write(Encoding.UTF8.GetBytes(values[index])); strings.WriteByte(0);
+                }
+                int tableStart = checked((int)ReadUInt32(_header, 16));
+                regions.Add(new(tableStart, _stringOffsets.ItemOffset + _strings.Length * _stringOffsets.ItemWidth, offsets));
+                int stringStart = checked((int)ReadUInt32(_header, 20));
+                int stringEnd = _strings.Max(value => value.Offset + value.ByteLength + 1);
+                regions.Add(new(stringStart, stringEnd, strings.ToArray()));
+            }
             regions = regions.Where(region => region.NewBytes is not null).OrderBy(region => region.Start).ToList();
             using MemoryStream output = new(_data.Length);
             int cursor = 0;
@@ -454,7 +528,7 @@ public sealed partial class PsbProcessor
         }
 
         private ResourceRegion BuildRegion(bool extra, uint baseOffset, CompactArray offsets, CompactArray lengths,
-            Dictionary<ResourceKey, byte[]> replacements)
+            Dictionary<ResourceKey, byte[]> replacements, List<ResourceRegion> regions)
         {
             int regionEnd = checked((int)_sectionOffsets.Where(value => value > baseOffset).DefaultIfEmpty((uint)_data.Length).Min());
             List<(int Index, int Start, int Length)> items = offsets.Values.Select((offset, index) =>
@@ -473,12 +547,21 @@ public sealed partial class PsbProcessor
                 oldCursor = start + length;
             }
             bytes.Write(_data.AsSpan(oldCursor, regionEnd - oldCursor));
-            for (int index = 0; index < newOffsets.Length; index++)
-            {
-                WriteCompact(_data, offsets.ItemOffset + index * offsets.ItemWidth, offsets.ItemWidth, newOffsets[index]);
-                WriteCompact(_data, lengths.ItemOffset + index * lengths.ItemWidth, lengths.ItemWidth, newLengths[index]);
-            }
+            // A PVRTC2 input can grow when converted back to BC3. Widen resource
+            // arrays instead of requiring offsets/lengths to fit their old widths.
+            regions.Add(RebuildArray(offsets, newOffsets));
+            regions.Add(RebuildArray(lengths, newLengths));
             return new ResourceRegion(checked((int)baseOffset), regionEnd, bytes.ToArray());
+        }
+
+        private static ResourceRegion RebuildArray(CompactArray original, uint[] values)
+        {
+            byte[] bytes = new byte[checked(6 + values.Length * 4)];
+            bytes[0] = bytes[5] = 0x10;
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(1), (uint)values.Length);
+            for (int i = 0; i < values.Length; i++)
+                BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(6 + i * 4), values[i]);
+            return new(original.Start, original.ItemOffset + original.Values.Length * original.ItemWidth, bytes);
         }
 
         private static int MapPosition(uint position, List<ResourceRegion> regions)
@@ -495,10 +578,16 @@ public sealed partial class PsbProcessor
 
     private sealed record ResourceRegion(int Start, int End, byte[]? NewBytes);
 
-    private readonly record struct EncodedString(string Value, int Offset, int ByteLength);
+    private sealed class EncodedString(string value, int offset, int byteLength)
+    {
+        public string OriginalValue { get; } = value;
+        public int Offset { get; } = offset;
+        public int ByteLength { get; } = byteLength;
+    }
 
     private sealed class ValueParser(byte[] data, string[] names, EncodedString[] strings)
     {
+        public List<StringNode> StringNodes { get; } = [];
         public Node Parse(int offset, int depth)
         {
             if (depth > 512) throw new InvalidDataException("PSB object nesting is too deep.");
@@ -509,7 +598,7 @@ public sealed partial class PsbProcessor
                 0x04 => new NumberNode(data, offset, kind, 0),
                 >= 0x05 and <= 0x0c => new NumberNode(data, offset, kind, SignExtend(ReadCompact(data.AsSpan(offset + 1, kind - 0x04)), kind - 0x04)),
                 >= 0x0d and <= 0x14 => new ScalarNode(),
-                >= 0x15 and <= 0x18 => CreateStringNode(checked((int)ReadCompact(data.AsSpan(offset + 1, kind - 0x14)))),
+                >= 0x15 and <= 0x18 => CreateStringNode(checked((int)ReadCompact(data.AsSpan(offset + 1, kind - 0x14))), offset + 1, kind - 0x14),
                 >= 0x19 and <= 0x1c => new ResourceNode(checked((int)ReadCompact(data.AsSpan(offset + 1, kind - 0x18))), false),
                 0x1d => new NumberNode(data, offset, kind, 0),
                 0x1e => new NumberNode(data, offset, kind, BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset + 1))),
@@ -521,10 +610,12 @@ public sealed partial class PsbProcessor
             };
         }
 
-        private StringNode CreateStringNode(int index)
+        private StringNode CreateStringNode(int index, int indexOffset, int indexWidth)
         {
             EncodedString value = strings[index];
-            return new StringNode(data, value.Offset, value.ByteLength, value.Value);
+            var node = new StringNode(value, indexOffset, indexWidth);
+            StringNodes.Add(node);
+            return node;
         }
 
         private Node ParseList(int offset, int depth)
@@ -562,7 +653,7 @@ public sealed partial class PsbProcessor
         int itemOffset = offset + 2 + countWidth;
         uint[] values = new uint[count];
         for (int index = 0; index < count; index++) values[index] = checked((uint)ReadCompact(data.AsSpan(itemOffset + index * itemWidth, itemWidth)));
-        return new CompactArray(values, itemOffset, itemWidth);
+        return new CompactArray(values, itemOffset, itemWidth, offset);
     }
 
     private static string[] DecodeNames(uint[] charset, uint[] tree, uint[] indexes)

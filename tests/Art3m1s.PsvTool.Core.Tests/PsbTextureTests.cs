@@ -90,14 +90,28 @@ internal static class PsbFixture
 {
     private sealed record Resource(int Index);
     public static byte[] Create(params (int Width, int Height)[] sizes)
+        => CreateWithPixels((_, _) => (180, 90, 40, 255), sizes);
+
+    public static byte[] CreateWithPixels(Func<int, int, (byte R, byte G, byte B, byte A)> color,
+        params (int Width, int Height)[] sizes)
+        => CreateWithOptions(3, false, color, sizes);
+
+    public static byte[] CreateWithOptions(ushort version, bool compact,
+        Func<int, int, (byte R, byte G, byte B, byte A)> color, params (int Width, int Height)[] sizes)
     {
+        byte[] Array(IEnumerable<uint> values) => EncodeArray(values, compact);
         Dictionary<string, object> sources = [];
         List<byte[]> pixels = [];
         for (int i = 0; i < sizes.Length; i++)
         {
             var (width, height) = sizes[i];
             byte[] bgra = new byte[width * height * 4];
-            for (int p = 0; p < bgra.Length; p += 4) { bgra[p] = 40; bgra[p + 1] = 90; bgra[p + 2] = 180; bgra[p + 3] = 255; }
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                {
+                    var pixel = color(x, y); int p = (y * width + x) * 4;
+                    bgra[p] = pixel.B; bgra[p + 1] = pixel.G; bgra[p + 2] = pixel.R; bgra[p + 3] = pixel.A;
+                }
             pixels.Add(bgra);
             sources["atlas" + i] = new Dictionary<string, object>
             {
@@ -129,7 +143,7 @@ internal static class PsbFixture
         {
             ["id"] = "motion",
             ["source"] = sources,
-            ["metadata"] = new Dictionary<string, object> { ["base"] = new Dictionary<string, object> { ["chara"] = "hero", ["motion"] = "idle" } },
+            ["metadata"] = new Dictionary<string, object> { ["formatDescription"] = "RGBA8", ["base"] = new Dictionary<string, object> { ["chara"] = "hero", ["motion"] = "idle" } },
             ["object"] = new Dictionary<string, object>
             {
                 ["hero"] = new Dictionary<string, object>
@@ -192,7 +206,9 @@ internal static class PsbFixture
                     uint relative = 0; List<uint> offsets = [];
                     foreach (byte[] child in children) { offsets.Add(relative); relative += (uint)child.Length; }
                     stream.Write(Array(offsets)); foreach (byte[] child in children) stream.Write(child); break;
-                case string s: stream.WriteByte(0x18); Write32(stream, (uint)strings.IndexOf(s)); break;
+                case string s:
+                    uint index = (uint)strings.IndexOf(s); int width = compact ? Width(index) : 4;
+                    stream.WriteByte((byte)(0x14 + width)); WriteInteger(stream, index, width); break;
                 case Resource r: stream.WriteByte(0x1c); Write32(stream, (uint)r.Index); break;
                 case object[] list:
                     stream.WriteByte(0x20);
@@ -205,10 +221,11 @@ internal static class PsbFixture
             }
             return stream.ToArray();
         }
-        using MemoryStream output = new(); output.Write(new byte[44]);
-        byte[] header = new byte[44]; "PSB\0"u8.CopyTo(header); BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(4), 3);
+        int headerLength = version switch { 2 => 40, 3 => 44, 4 => 56, _ => throw new ArgumentException("Invalid fixture version.") };
+        using MemoryStream output = new(); output.Write(new byte[headerLength]);
+        byte[] header = new byte[headerLength]; "PSB\0"u8.CopyTo(header); BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(4), version);
         void Address(int field) => BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(field), (uint)output.Position);
-        BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), 44);
+        BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), (uint)headerLength);
         Address(12); output.Write(Array(charArray)); output.Write(Array(treeArray)); output.Write(Array(nameIndexes));
         Address(16); uint stringOffset = 0; List<uint> stringOffsets = [];
         foreach (string s in strings) { stringOffsets.Add(stringOffset); stringOffset += (uint)Encoding.UTF8.GetByteCount(s) + 1; }
@@ -220,16 +237,21 @@ internal static class PsbFixture
         Address(24); output.Write(Array(pixelOffsets)); Address(28); output.Write(Array(pixels.Select(p => (uint)p.Length)));
         Address(32); foreach (byte[] p in pixels) output.Write(p);
         uint a = 1, bsum = 0; foreach (byte b in header.AsSpan(8, 32)) { a = (a + b) % 65521; bsum = (bsum + a) % 65521; }
-        BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(40), (bsum << 16) | a);
+        if (version == 4) foreach (byte b in header.AsSpan(44, 12)) { a = (a + b) % 65521; bsum = (bsum + a) % 65521; }
+        if (version >= 3) BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(40), (bsum << 16) | a);
         byte[] result = output.ToArray(); header.CopyTo(result, 0); return result;
     }
-    private static byte[] Array(IEnumerable<uint> source)
+    private static byte[] EncodeArray(IEnumerable<uint> source, bool compact)
     {
         uint[] values = source.ToArray(); using MemoryStream stream = new();
-        stream.WriteByte(0x10); Write32(stream, (uint)values.Length); stream.WriteByte(0x10);
-        foreach (uint value in values) Write32(stream, value);
+        int width = compact ? Width(values.DefaultIfEmpty(0u).Max()) : 4;
+        stream.WriteByte(0x10); Write32(stream, (uint)values.Length); stream.WriteByte((byte)(0x0c + width));
+        foreach (uint value in values) WriteInteger(stream, value, width);
         return stream.ToArray();
     }
+    private static int Width(uint value) => value <= byte.MaxValue ? 1 : value <= ushort.MaxValue ? 2 : value <= 0xffffff ? 3 : 4;
+    private static void WriteInteger(Stream stream, uint value, int width)
+    { for (int i = 0; i < width; i++) stream.WriteByte((byte)(value >> (8 * i))); }
     private static void Write32(Stream stream, uint value)
     { Span<byte> bytes = stackalloc byte[4]; BinaryPrimitives.WriteUInt32LittleEndian(bytes, value); stream.Write(bytes); }
 }

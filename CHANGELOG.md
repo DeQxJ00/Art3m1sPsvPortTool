@@ -4,6 +4,19 @@
 
 This file records user-facing changes by application version. Dates use China Standard Time. Historical entries are based on repository commits and tags. Update this file and `Directory.Build.props` before tagging a release; CI and Release check for a matching entry and version.
 
+## [Unreleased]
+
+## [1.0.16] - 2026-10-07
+
+- PSB 纹理转换新增 PVRTC2 4bpp / 2bpp 选择，默认仍为 DXT5（BC3）；保存格式设置，支持内嵌 RGBA8、DXT5 与两种 PVRTC2 互转，全局 Ratio 和禁用的独立比例功能保持不变。使用随包 PVRTexLib 编码并校验资源长度，重建字符串及资源表，不影响共享字符串的其他引用；附引擎格式接入说明，当前 GXM E-mote PSB 路径需另行支持 PVRTC2。
+- Added PVRTC2 4bpp / 2bpp PSB output choices, retaining DXT5 (BC3) as the default and saving the selection. Embedded RGBA8, DXT5 and PVRTC2 can be converted while global Ratio behavior remains unchanged. PVRTexLib encoding validates raw payload lengths; rebuilt string/resource tables preserve unrelated shared-string references. Includes an engine format contract; the current GXM E-mote PSB loader still needs PVRTC2 support.
+- 独立缩放未勾选时，渲染补偿也保持未勾选；旧配置中的开启偏好不会显示为有效勾选。
+- Render compensation remains unchecked whenever independent resizing is off, including with old enabled preferences.
+- PSB 区块整体使用灰色禁用样式，移到页面最底部，并将渲染补偿比例和说明从高级设置移入同一个框。
+- Applied a grey disabled style to the entire PSB panel, moved it to the bottom of the page, and grouped render compensation and its explanation inside it.
+- 禁用并置灰 PSB 扫描按钮、独立 Ratio 开关及分类比例控件，标题改为灰色；PSB 统一跟随全局 Ratio，关联渲染补偿不可用且不输出配置。保留旧分类参数和 DXT5 压缩功能，自动扫描游戏分辨率不受影响。
+- Disabled PSB scanning and independent Ratio controls, with a grey section title. PSBs use the global Ratio; compensation is unavailable and no manifest is emitted. Saved group parameters and DXT5 compression are retained; automatic game-resolution detection is unaffected.
+
 ## [1.0.15] - 2026-10-06
 
 - PSB 贴图独立缩放新增默认关闭的勾选项，每次启动不恢复开启状态；分类 Ratio 仍保存。坐标、origin、画布和动作几何改为跟随全局 Ratio。

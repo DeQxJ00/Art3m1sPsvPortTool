@@ -1,5 +1,9 @@
 # PSB 渲染配置 / PSB render configuration
 
+> 当前软件已禁用独立 Ratio 和补偿控件（置灰），PSB 统一跟随全局 Ratio，不输出此配置。以下为原接口参考，不代表当前可启用的功能。
+>
+> The current app disables independent Ratio and compensation controls. PSBs follow the global Ratio and this manifest is not emitted. The following documents the previous interface for reference, not an available feature.
+
 启用 **PSB 贴图分辨率单独缩放**（默认关闭）、**PSB 渲染补偿**（默认勾选）和动画处理后，成功处理的 E-mote PSB 会记录在输出游戏根目录的 `art3m1s_psb_render.json`。配置与 PFS 一起复制，不放在工具程序目录，也不需要塞入 PFS。散装 PSB 和 PFS 内 PSB 使用同一规则。
 
 With independent PSB resizing (off by default), render compensation (checked by default) and Animation processing enabled, successfully processed E-mote PSBs are recorded in `art3m1s_psb_render.json` at the output game root. Copy it alongside the PFS files, not alongside the conversion executable. Loose and archived PSBs use the same rules.

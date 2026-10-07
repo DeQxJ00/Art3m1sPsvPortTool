@@ -7,13 +7,41 @@ namespace Art3m1s.PsvTool.Ui.Tests;
 public sealed class PsbUiTests
 {
     [Fact]
-    public void IndependentScalingResetsOnRestartWhileCompensationPersists()
+    public async Task PsbFormatDefaultsToBc3PersistsAndReachesConverter()
+    {
+        using var folder = new ScanFolder();
+        var store = new LocalSettingsStore(Path.Combine(folder.Path, "settings.json"));
+        var converter = new RecordingConverter();
+        var vm = new MainViewModel(settings: store, converter: converter) { InputDirectory = folder.Path, OutputDirectory = folder.Path + "-output" };
+        Assert.Equal(0, vm.SelectedPsbFormat);
+        Assert.Equal(new[] { "DXT5 (BC3)", "PVRTC2 4bpp", "PVRTC2 2bpp" }, vm.PsbFormatChoices);
+        foreach (int index in new[] { 1, 2, 0 })
+        {
+            vm.SelectedPsbFormat = index;
+            Assert.Equal(index, new MainViewModel(settings: store).SelectedPsbFormat);
+            await vm.StartAsync();
+            Assert.Equal((PsbTextureFormat)index, converter.Options!.PsbOutputFormat);
+            Assert.False(converter.Options.PsbTextures!.Enabled);
+        }
+        vm.SelectedPsbFormat = -1; vm.SelectedPsbFormat = 3;
+        Assert.Equal(0, vm.SelectedPsbFormat);
+        vm.SetLanguage("en-US");
+        Assert.Contains("default DXT5", vm.PsbFormatLabel);
+        Assert.Contains("does not support PVRTC2", vm.ConvertEmotePsbTexturesToDxt5Help);
+        vm.ConvertEmotePsbTexturesToDxt5 = false; await vm.StartAsync();
+        Assert.False(converter.Options!.ConvertEmotePsbTexturesToDxt5);
+        store.Save(new(PsbOutputFormat: (PsbTextureFormat)999));
+        Assert.Equal(0, new MainViewModel(settings: store).SelectedPsbFormat);
+    }
+    [Fact]
+    public void IndependentScalingCannotBeEnabledWhileCompensationPreferencePersists()
     {
         var store = new MemoryStore(new());
         var vm = new MainViewModel(settings: store);
-        Assert.False(vm.IndependentPsbTextureScaling); Assert.True(vm.PsbRenderCompensation);
+        Assert.False(vm.IndependentPsbTextureScaling); Assert.False(vm.PsbRenderCompensation);
         vm.IndependentPsbTextureScaling = true; vm.PsbRenderCompensation = false;
-        Assert.True(vm.IndependentPsbTextureScaling); Assert.False(store.Value.PsbRenderCompensation);
+        Assert.False(vm.CanUseIndependentPsbTextureScaling); Assert.False(vm.IndependentPsbTextureScaling);
+        Assert.False(store.Value.PsbRenderCompensation);
         var loaded = new MainViewModel(settings: store);
         Assert.False(loaded.IndependentPsbTextureScaling); Assert.False(loaded.PsbRenderCompensation);
         loaded.IndependentPsbTextureScaling = true;
@@ -21,7 +49,23 @@ public sealed class PsbUiTests
         Assert.False(new MainViewModel(settings: store).IndependentPsbTextureScaling);
         Assert.Contains("independently", loaded.IndependentPsbTextureScalingLabel);
         Assert.Contains("global Ratio ÷ texture Ratio", loaded.PsbRenderCompensationLabel);
-        Assert.Contains("compatible GXM", loaded.PsbRenderCompensationHelp);
+        Assert.Contains("disabled", loaded.IndependentPsbTextureScalingLabel);
+        Assert.Contains("Unavailable", loaded.PsbRenderCompensationHelp);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CompensationCannotBeCheckedWithoutIndependentScalingEvenWithSavedPreference(bool savedCompensation)
+    {
+        var store = new MemoryStore(new(PsbRenderCompensation: savedCompensation));
+        var vm = new MainViewModel(settings: store);
+        Assert.False(vm.IndependentPsbTextureScaling); Assert.False(vm.PsbRenderCompensation);
+        vm.PsbRenderCompensation = true;
+        Assert.False(vm.PsbRenderCompensation);
+        vm.ToggleTheme();
+        Assert.False(store.Value.PsbRenderCompensation);
+        Assert.False(new MainViewModel(settings: store).PsbRenderCompensation);
     }
 
     [Fact]
@@ -50,7 +94,7 @@ public sealed class PsbUiTests
     }
 
     [Fact]
-    public async Task CompensationPreviewTracksBothRatiosAndEnableFlags()
+    public async Task CompensationPreviewStaysInactiveWhenIndependentScalingIsDisabled()
     {
         using var folder = new ScanFolder();
         var vm = new MainViewModel(settings: new MemoryStore(new()), psbScanner: new PsbScannerStub { Files = [AtlasFile(4096, 2048)] })
@@ -59,11 +103,11 @@ public sealed class PsbUiTests
         var row = Assert.Single(vm.PsbCategories);
         Assert.Contains("未启用", row.RenderCompensation);
         vm.IndependentPsbTextureScaling = true; row.Ratio = "0.25";
-        Assert.Contains("2×", row.RenderCompensation);
-        vm.Ratio = "0.75"; Assert.Contains("3×", row.RenderCompensation);
+        Assert.False(vm.IndependentPsbTextureScaling); Assert.Contains("未启用", row.RenderCompensation);
+        vm.Ratio = "0.75"; Assert.Contains("未启用", row.RenderCompensation);
         vm.PsbRenderCompensation = false; Assert.Contains("未启用", row.RenderCompensation);
         vm.PsbRenderCompensation = true; vm.ProcessAnimation = false; Assert.Contains("未启用", row.RenderCompensation);
-        vm.ProcessAnimation = true; vm.SetLanguage("en-US"); Assert.Contains("Render compensation 3×", row.RenderCompensation);
+        vm.ProcessAnimation = true; vm.SetLanguage("en-US"); Assert.Contains("inactive", row.RenderCompensation);
     }
 
     [Fact]
@@ -97,7 +141,7 @@ public sealed class PsbUiTests
         vm.SetLanguage("en-US");
         Assert.Equal("Scan PSB textures", vm.ScanPsbLabel);
         Assert.Contains("independent", vm.PsbTitle);
-        Assert.Contains("discovered", vm.PsbEmptyHelp);
+        Assert.Contains("disabled", vm.PsbEmptyHelp);
     }
 
     [Fact]
@@ -165,7 +209,7 @@ public sealed class PsbUiTests
     }
 
     [Fact]
-    public async Task StartPassesIndependentPsbRulesAndBlocksInvalidRatioBeforeConversion()
+    public async Task StartAlwaysUsesGlobalRatioAndIgnoresDisabledCategoryRules()
     {
         string root = Path.Combine(Path.GetTempPath(), "psb-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -178,13 +222,12 @@ public sealed class PsbUiTests
             await vm.ScanPsbAsync();
             var row = Assert.Single(vm.PsbCategories, x => x.Width == 4096 && x.Height == 4096);
             row.Ratio = "0"; await vm.StartAsync();
-            Assert.Null(converter.Options); Assert.Contains("PSB Ratio", vm.Status);
-            row.Ratio = "0.25"; await vm.StartAsync();
             Assert.NotNull(converter.Options);
             Assert.Equal(.75, converter.Options.Ratio);
-            Assert.Equal(.25, converter.Options.PsbTextures!.RatioFor(4096, 4096));
-            Assert.Equal(.5, converter.Options.PsbTextures.RatioFor(4096, 2048));
-            Assert.True(converter.Options.PsbTextures.Enabled); Assert.True(converter.Options.PsbTextures.CompensateRendering);
+            Assert.False(converter.Options.PsbTextures!.Enabled);
+            Assert.False(converter.Options.PsbTextures.CompensateRendering); Assert.Null(converter.Options.PsbTextures.Rules);
+            row.Ratio = "0.25"; await vm.StartAsync();
+            Assert.Equal(.75, converter.Options.Ratio); Assert.False(converter.Options.PsbTextures.Enabled);
         }
         finally { Directory.Delete(root, true); }
     }

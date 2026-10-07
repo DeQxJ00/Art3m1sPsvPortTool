@@ -57,7 +57,10 @@ public sealed partial class MainWindow : Window
         return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
     }
     private async void ScanTexturesClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanTexturesAsync();
-    private async void ScanPsbClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanPsbAsync();
+    private async void ScanPsbClick(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel.CanUseIndependentPsbTextureScaling) await ViewModel.ScanPsbAsync();
+    }
     private async void ScanClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanAsync();
     private async void AutoScanResolutionClick(object? sender, RoutedEventArgs e) => await ViewModel.AutoScanResolutionAsync();
     private async void StartClick(object? sender, RoutedEventArgs e) => await ViewModel.StartAsync();

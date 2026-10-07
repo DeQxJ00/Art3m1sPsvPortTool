@@ -10,7 +10,8 @@ public sealed record AppSettings(
     bool ConvertEmotePsbTexturesToDxt5 = true,
     bool NativeTextures = false,
     PsbResolutionRule[]? PsbRatios = null,
-    bool PsbRenderCompensation = true);
+    bool PsbRenderCompensation = true,
+    PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5);
 
 public interface ISettingsStore
 {
