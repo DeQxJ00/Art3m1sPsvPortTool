@@ -48,8 +48,10 @@ public sealed partial class PsbProcessor
             convertRgba8ToDxt5 ? PsbTextureFormat.Dxt5 : null, cancellationToken);
 
     public async Task<PsbProcessingResult> ProcessWithFormatAsync(string path, double textureRatio, double geometryRatio,
-        PsbTextureFormat? outputFormat, CancellationToken cancellationToken = default)
+        PsbTextureFormat? outputFormat, CancellationToken cancellationToken = default,
+        PsbDxt5Layout dxt5Layout = PsbDxt5Layout.Linear)
     {
+        if (!Enum.IsDefined(dxt5Layout)) throw new ArgumentOutOfRangeException(nameof(dxt5Layout));
         if (outputFormat.HasValue) _ = PsbTextureFormats.Name(outputFormat.Value);
         if (!double.IsFinite(textureRatio) || textureRatio is <= 0 or > 1) throw new ArgumentOutOfRangeException(nameof(textureRatio));
         if (!double.IsFinite(geometryRatio) || geometryRatio is <= 0 or > 1) throw new ArgumentOutOfRangeException(nameof(geometryRatio));
@@ -72,7 +74,7 @@ public sealed partial class PsbProcessor
             return new PsbProcessingResult(false, false, "non-E-mote motion PSB preserved");
 
         Dictionary<ResourceKey, byte[]> replacements = [];
-        ProcessingSummary summary = ProcessModel(document, textureRatio, geometryRatio, outputFormat, replacements, cancellationToken);
+        ProcessingSummary summary = ProcessModel(document, textureRatio, geometryRatio, outputFormat, dxt5Layout, replacements, cancellationToken);
         if (summary.UnsupportedFormats.Count > 0)
             return new PsbProcessingResult(true, false,
                 $"unsupported PSB texture format(s) preserved: {string.Join(", ", summary.UnsupportedFormats.Order(StringComparer.OrdinalIgnoreCase))}");
@@ -94,11 +96,13 @@ public sealed partial class PsbProcessor
             if (File.Exists(temporary)) File.Delete(temporary);
         }
         return new PsbProcessingResult(true, true, summary.ConvertedCount > 0
-            ? $"converted {summary.ConvertedCount} texture(s) to {PsbTextureFormats.Name(outputFormat!.Value)}"
+            ? $"converted {summary.ConvertedCount} texture(s) to {PsbTextureFormats.Name(outputFormat!.Value)}" +
+              (outputFormat == PsbTextureFormat.Dxt5 ? $" / {dxt5Layout}" : string.Empty)
             : $"processed {summary.SupportedTextureCount} E-mote texture(s)");
     }
 
     private static ProcessingSummary ProcessModel(MutableDocument document, double ratio, double geometryRatio, PsbTextureFormat? outputFormat,
+        PsbDxt5Layout outputLayout,
         Dictionary<ResourceKey, byte[]> replacements, CancellationToken cancellationToken)
     {
         ObjectNode root = document.Root as ObjectNode ?? throw new InvalidDataException("PSB root is not an object.");
@@ -112,6 +116,7 @@ public sealed partial class PsbProcessor
             if (sourceNode is not ObjectNode source || source.GetObject("texture") is not { } texture) continue;
             string format = (texture.Get("type") as StringNode)?.OriginalValue ?? "unknown";
             PsbTextureFormat? sourceFormat = PsbTextureFormats.ParseType(format);
+            PsbDxt5Layout sourceLayout = PsbTextureFormats.ParseDxt5Layout(format);
             if (sourceFormat is null && !format.Equals("RGBA8", StringComparison.OrdinalIgnoreCase))
             {
                 unsupportedFormats.Add(format);
@@ -132,43 +137,59 @@ public sealed partial class PsbProcessor
             ResourceKey key = new(resource.Index, resource.Extra);
             bool needsResize = targetWidth != width || targetHeight != height;
             PsbTextureFormat? targetFormat = outputFormat ?? sourceFormat;
-            bool needsConversion = outputFormat.HasValue && outputFormat != sourceFormat;
+            PsbDxt5Layout targetLayout = outputFormat.HasValue ? outputLayout : sourceLayout;
+            bool needsConversion = outputFormat.HasValue && (outputFormat != sourceFormat ||
+                outputFormat == PsbTextureFormat.Dxt5 && sourceLayout != targetLayout);
             if ((needsResize || needsConversion) && !replacements.ContainsKey(key))
             {
                 byte[] compressed = document.GetResource(key);
-                byte[] rgba = sourceFormat switch
+                if (sourceFormat == PsbTextureFormat.Dxt5 && sourceLayout == PsbDxt5Layout.Swizzled)
+                    compressed = PsbDxt5Storage.Unswizzle(compressed, width, height);
+                if (!needsResize && sourceFormat == PsbTextureFormat.Dxt5 && targetFormat == PsbTextureFormat.Dxt5)
                 {
-                    PsbTextureFormat.Dxt5 => DecodeDxt5(compressed, width, height),
-                    PsbTextureFormat.Pvrtc2_4 or PsbTextureFormat.Pvrtc2_2 =>
-                        PvrTextureCodec.Decode(compressed, width, height, PsbTextureFormats.NativeFormat(sourceFormat.Value)),
-                    _ => DecodeBgra8(compressed, width, height)
-                };
-                if (needsResize)
-                {
-                    using Image<Rgba32> image = Image.LoadPixelData<Rgba32>(rgba, width, height);
-                    image.Mutate(context => context.Resize(new ResizeOptions
-                    {
-                        Size = new Size(targetWidth, targetHeight),
-                        Mode = ResizeMode.Stretch,
-                        Sampler = KnownResamplers.Bicubic,
-                        Compand = false
-                    }));
-                    rgba = new byte[targetWidth * targetHeight * 4];
-                    image.CopyPixelDataTo(rgba);
+                    // Pure layout changes are lossless block moves, not recompression.
+                    replacements.Add(key, targetLayout == PsbDxt5Layout.Swizzled
+                        ? PsbDxt5Storage.Swizzle(compressed, width, height) : compressed);
                 }
-                replacements.Add(key, targetFormat switch
+                else
                 {
-                    PsbTextureFormat.Dxt5 => EncodeDxt5(rgba, targetWidth, targetHeight),
-                    PsbTextureFormat.Pvrtc2_4 or PsbTextureFormat.Pvrtc2_2 =>
-                        PvrTextureCodec.Encode(rgba, targetWidth, targetHeight,
-                            NativeTextureFormats.Info(PsbTextureFormats.NativeFormat(targetFormat.Value))),
-                    _ => EncodeBgra8(rgba, targetWidth, targetHeight)
-                });
+                    byte[] rgba = sourceFormat switch
+                    {
+                        PsbTextureFormat.Dxt5 => DecodeDxt5(compressed, width, height),
+                        PsbTextureFormat.Pvrtc2_4 or PsbTextureFormat.Pvrtc2_2 =>
+                            PvrTextureCodec.Decode(compressed, width, height, PsbTextureFormats.NativeFormat(sourceFormat.Value)),
+                        _ => DecodeBgra8(compressed, width, height)
+                    };
+                    if (needsResize)
+                    {
+                        using Image<Rgba32> image = Image.LoadPixelData<Rgba32>(rgba, width, height);
+                        image.Mutate(context => context.Resize(new ResizeOptions
+                        {
+                            Size = new Size(targetWidth, targetHeight),
+                            Mode = ResizeMode.Stretch,
+                            Sampler = KnownResamplers.Bicubic,
+                            Compand = false
+                        }));
+                        rgba = new byte[targetWidth * targetHeight * 4];
+                        image.CopyPixelDataTo(rgba);
+                    }
+                    byte[] encoded = targetFormat switch
+                    {
+                        PsbTextureFormat.Dxt5 => EncodeDxt5(rgba, targetWidth, targetHeight),
+                        PsbTextureFormat.Pvrtc2_4 or PsbTextureFormat.Pvrtc2_2 =>
+                            PvrTextureCodec.Encode(rgba, targetWidth, targetHeight,
+                                NativeTextureFormats.Info(PsbTextureFormats.NativeFormat(targetFormat.Value))),
+                        _ => EncodeBgra8(rgba, targetWidth, targetHeight)
+                    };
+                    if (targetFormat == PsbTextureFormat.Dxt5 && targetLayout == PsbDxt5Layout.Swizzled)
+                        encoded = PsbDxt5Storage.Swizzle(encoded, targetWidth, targetHeight);
+                    replacements.Add(key, encoded);
+                }
             }
 
             if (needsConversion)
             {
-                (texture.Get("type") as StringNode)?.Rewrite(PsbTextureFormats.TypeName(outputFormat!.Value));
+                (texture.Get("type") as StringNode)?.Rewrite(PsbTextureFormats.TypeName(outputFormat!.Value, targetLayout));
                 convertedCount++;
             }
 

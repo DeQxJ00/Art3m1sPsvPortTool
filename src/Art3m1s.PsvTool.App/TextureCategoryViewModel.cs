@@ -12,6 +12,7 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
     private bool _ignoreAlpha;
     private bool _english;
     private IReadOnlyList<string>? _choices;
+    private IReadOnlyList<TextureFormatChoice>? _formatItems;
     private string? _summary;
     private IReadOnlyList<string>? _fileRows;
     private bool _detailsExpanded;
@@ -33,6 +34,9 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
     }
     public NativeTextureRule Rule => new(Key, Enabled, NativeTextureFormats.All[SelectedFormat].Format);
     public IReadOnlyList<string> Choices => _choices ??= NativeTextureFormats.All.Select(f => Choice(f)).ToArray();
+    // Keep item identities stable while translated labels and suitability
+    // reasons change, so the bound ComboBox does not lose its selection.
+    public IReadOnlyList<TextureFormatChoice> FormatItems => _formatItems ??= Choices.Select(label => new TextureFormatChoice(label)).ToArray();
     public bool DetailsExpanded
     {
         get => _detailsExpanded;
@@ -50,10 +54,11 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
                 return NativeTextureFormats.Unsuitable(image, f.Format, _ratio, _ignoreAlpha) == null
                     ? recommended : NativeTextureFormat.Preserve;
             }).OrderBy(group => group.Key).ToArray();
-            string prefix = f.Format == NativeTextureFormat.AutoWithoutMetadata
+            string layout = f.Format is NativeTextureFormat.AutoLinear or NativeTextureFormat.AutoWithoutMetadataLinear ? "Linear" : "Swizzled";
+            string prefix = NativeTextureFormats.IsManualAutomatic(f.Format)
                 ? (_english ? "AUTO conversion excluding offset metadata (manual only) → " : "除带偏移信息外的 AUTO 转换（仅手动） → ")
                 : (_english ? "AUTO → " : "AUTO 自动 → ");
-            name = prefix + string.Join(" + ", formats.Select(group =>
+            name = prefix.Replace(" → ", $" · {layout} → ") + string.Join(" + ", formats.Select(group =>
             {
                 string label = group.Key == NativeTextureFormat.Preserve
                     ? (_english ? "Keep original" : "保留原格式") : NativeTextureFormats.Info(group.Key).Name;
@@ -102,8 +107,21 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
     {
         _ratio = ratio; _ignoreAlpha = ignoreAlpha; _english = english;
         _choices = null; _summary = null; _fileRows = null;
-        foreach (string n in new[] { nameof(Label), nameof(Choices), nameof(Summary), nameof(FileRows), nameof(DetailsLabel) }) Changed(n);
+        if (_formatItems != null)
+            for (int i = 0; i < _formatItems.Count; i++) _formatItems[i].Update(Choices[i]);
+        foreach (string n in new[] { nameof(Label), nameof(Choices), nameof(Summary), nameof(FileRows), nameof(DetailsLabel), nameof(SelectedFormat) }) Changed(n);
     }
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new(name));
+}
+
+public sealed class TextureFormatChoice(string label) : INotifyPropertyChanged
+{
+    public string Label { get; private set; } = label;
+    public event PropertyChangedEventHandler? PropertyChanged;
+    internal void Update(string value)
+    {
+        if (Label == value) return;
+        Label = value; PropertyChanged?.Invoke(this, new(nameof(Label)));
+    }
 }

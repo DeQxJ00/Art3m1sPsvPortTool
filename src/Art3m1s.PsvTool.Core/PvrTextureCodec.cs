@@ -13,18 +13,28 @@ internal static class PvrTextureCodec
         if (rgba.Length != checked(width * height * 4)) throw new InvalidDataException("Invalid RGBA pixel length.");
         lock (Gate)
         {
-            return Transcode(rgba, width, height, RgbaFormat, (ulong)spec.PvrCode,
+            // The native encoder always returns row-major BC blocks. Reorder
+            // afterwards, using the same GXM layout as embedded PSB textures.
+            var encoderFormat = NativeTextureFormats.LinearFormat(spec.Format);
+            byte[] payload = Transcode(rgba, width, height, RgbaFormat, (ulong)spec.PvrCode,
                 spec.Format is NativeTextureFormat.Bc4Signed or NativeTextureFormat.Bc5Signed
                     ? PVRTexLibVariableType.SignedByteNorm : PVRTexLibVariableType.UnsignedByteNorm,
-                checked((int)NativeTextureFormats.PayloadBytes(spec.Format, width, height)));
+                checked((int)NativeTextureFormats.PayloadBytes(encoderFormat, width, height)));
+            return NativeTextureFormats.IsSwizzled(spec.Format)
+                ? GxmBlockTextureStorage.Swizzle(payload, width, height, spec.BitsPerPixel == 4 ? 8 : 16) : payload;
         }
     }
 
     public static byte[] Decode(byte[] payload, int width, int height, NativeTextureFormat format)
     {
+        if (NativeTextureFormats.IsSwizzled(format))
+        {
+            payload = GxmBlockTextureStorage.Unswizzle(payload, width, height, format == NativeTextureFormat.Bc1Swizzled ? 8 : 16);
+            format = NativeTextureFormats.LinearFormat(format);
+        }
         var spec = NativeTextureFormats.Info(format);
         if (payload.Length != NativeTextureFormats.PayloadBytes(format, width, height))
-            throw new InvalidDataException("Compressed PSB texture length does not match its dimensions.");
+            throw new InvalidDataException("Compressed texture length does not match its dimensions.");
         lock (Gate)
             return Transcode(payload, width, height, (ulong)spec.PvrCode, RgbaFormat,
                 PVRTexLibVariableType.UnsignedByteNorm, checked(width * height * 4));

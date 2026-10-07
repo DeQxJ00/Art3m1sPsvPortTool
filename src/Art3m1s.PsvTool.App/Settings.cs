@@ -11,7 +11,8 @@ public sealed record AppSettings(
     bool NativeTextures = false,
     PsbResolutionRule[]? PsbRatios = null,
     bool PsbRenderCompensation = true,
-    PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5);
+    PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5,
+    PsbDxt5Layout Dxt5Layout = PsbDxt5Layout.Swizzled);
 
 public interface ISettingsStore
 {

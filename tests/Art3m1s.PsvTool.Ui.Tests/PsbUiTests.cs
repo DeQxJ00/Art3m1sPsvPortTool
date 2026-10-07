@@ -7,6 +7,47 @@ namespace Art3m1s.PsvTool.Ui.Tests;
 public sealed class PsbUiTests
 {
     [Fact]
+    public async Task Dxt5LayoutDefaultsToSwizzledPersistsAndReachesConverter()
+    {
+        using var folder = new ScanFolder();
+        var store = new LocalSettingsStore(Path.Combine(folder.Path, "settings.json"));
+        var converter = new RecordingConverter();
+        var vm = new MainViewModel(settings: store, converter: converter) { InputDirectory = folder.Path, OutputDirectory = folder.Path + "-out" };
+        Assert.Equal(0, vm.SelectedPsbDxt5Layout); Assert.True(vm.CanSelectPsbDxt5Layout);
+        Assert.Contains("默认", vm.PsbDxt5LayoutChoices[0].Label);
+        foreach (int index in new[] { 0, 1, 0 })
+        {
+            vm.SelectedPsbDxt5Layout = index; await vm.StartAsync();
+            Assert.Equal((PsbDxt5Layout)index, converter.Options!.Dxt5Layout);
+            Assert.Equal(index, new MainViewModel(settings: store).SelectedPsbDxt5Layout);
+        }
+        vm.SelectedPsbDxt5Layout = 1;
+        vm.SelectedPsbFormat = 1; Assert.False(vm.CanSelectPsbDxt5Layout);
+        vm.SelectedPsbFormat = 2; Assert.False(vm.CanSelectPsbDxt5Layout);
+        vm.SelectedPsbFormat = 0; Assert.True(vm.CanSelectPsbDxt5Layout);
+        Assert.Equal(1, vm.SelectedPsbDxt5Layout);
+        vm.ConvertEmotePsbTexturesToDxt5 = false; Assert.False(vm.CanSelectPsbDxt5Layout);
+        vm.ConvertEmotePsbTexturesToDxt5 = true; Assert.True(vm.CanSelectPsbDxt5Layout);
+        vm.SelectedPsbDxt5Layout = -1; vm.SelectedPsbDxt5Layout = 2;
+        Assert.Equal(1, vm.SelectedPsbDxt5Layout);
+        vm.SetLanguage("en-US");
+        Assert.Contains("default", vm.PsbDxt5LayoutChoices[0].Label);
+        Assert.Contains("DXT5_SWIZZLED", vm.PsbDxt5LayoutHelp);
+        Assert.Equal(1, vm.SelectedPsbDxt5Layout);
+        store.Save(new(Dxt5Layout: (PsbDxt5Layout)999));
+        Assert.Equal(0, new MainViewModel(settings: store).SelectedPsbDxt5Layout);
+    }
+
+    [Fact]
+    public async Task LegacySettingsWithoutLayoutUseSwizzledByDefault()
+    {
+        using var folder = new ScanFolder();
+        string path = Path.Combine(folder.Path, "settings.json");
+        await File.WriteAllTextAsync(path, """{"PsbOutputFormat":0,"Language":"zh-CN"}""");
+        Assert.Equal(PsbDxt5Layout.Swizzled, new LocalSettingsStore(path).Load().Dxt5Layout);
+        Assert.Equal(0, new MainViewModel(settings: new LocalSettingsStore(path)).SelectedPsbDxt5Layout);
+    }
+    [Fact]
     public async Task PsbFormatDefaultsToBc3PersistsAndReachesConverter()
     {
         using var folder = new ScanFolder();

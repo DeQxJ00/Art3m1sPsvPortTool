@@ -68,7 +68,7 @@ public sealed class PsbTextureTests : IDisposable
             PsbTextures: new([new(64, 32, .25)], Enabled: true)));
         var result = await PsbTextureScanner.InspectFileAsync(Path.Combine(output, "hero.psb"));
         Assert.Equal(64, result.Width); Assert.Equal(32, result.Height);
-        Assert.Equal("DXT5", Assert.Single(result.Atlases).Format);
+        Assert.Equal("DXT5_SWIZZLED", Assert.Single(result.Atlases).Format);
     }
 
     [Fact]

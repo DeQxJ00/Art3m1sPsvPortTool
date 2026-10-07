@@ -46,19 +46,32 @@ foreach ((string language, bool dark, string fileName) in new[]
     if (Grid.GetRow(psbCard) != 4)
         throw new InvalidOperationException("The disabled PSB card must be the last section.");
     var psbFormat = window.FindControl<ComboBox>("PsbFormatComboBox")!;
+    var dxt5Layout = window.FindControl<ComboBox>("PsbDxt5LayoutComboBox")!;
     if (!psbFormat.IsEffectivelyEnabled || psbFormat.SelectedIndex != 0 || psbFormat.Items.Count != 3)
         throw new InvalidOperationException("PSB format selection must remain active and default to DXT5 (BC3).");
+    if (!dxt5Layout.IsEffectivelyEnabled || dxt5Layout.SelectedIndex != 0 || dxt5Layout.Items.Count != 2)
+        throw new InvalidOperationException("PSB DXT5 layout must default to Swizzled.");
+    dxt5Layout.SelectedIndex = 1; Dispatcher.UIThread.RunJobs();
+    window.ViewModel.SetLanguage(language == "en-US" ? "zh-CN" : "en-US"); Dispatcher.UIThread.RunJobs();
+    window.ViewModel.SetLanguage(language); Dispatcher.UIThread.RunJobs();
+    if (window.ViewModel.SelectedPsbDxt5Layout != 1 || dxt5Layout.SelectedIndex != 1)
+        throw new InvalidOperationException("Switching language lost the DXT5 layout selection.");
+    dxt5Layout.SelectedIndex = 0; Dispatcher.UIThread.RunJobs();
     foreach (int index in new[] { 1, 2, 0 })
     {
         psbFormat.SelectedIndex = index; Dispatcher.UIThread.RunJobs();
         if (window.ViewModel.SelectedPsbFormat != index)
             throw new InvalidOperationException("PSB format selection does not update the ViewModel.");
+        if (dxt5Layout.IsEffectivelyEnabled != (index == 0))
+            throw new InvalidOperationException("DXT5 layout must be unavailable for PVRTC2.");
     }
     window.ViewModel.ConvertEmotePsbTexturesToDxt5 = false; Dispatcher.UIThread.RunJobs();
     if (psbFormat.IsEffectivelyEnabled) throw new InvalidOperationException("Disabling PSB conversion must disable its format selector.");
+    if (dxt5Layout.IsEffectivelyEnabled) throw new InvalidOperationException("Disabling PSB conversion must disable its layout selector.");
     window.ViewModel.ConvertEmotePsbTexturesToDxt5 = true; Dispatcher.UIThread.RunJobs();
     if (args.Contains("--textures"))
     {
+        window.ViewModel.NativeTextures = true;
         foreach (var info in new TextureImageInfo[]
         {
             new(null, "image/bg/room.png", "image/bg", 1920, 1080, 2100000, false, false, false, false),
@@ -66,6 +79,24 @@ foreach ((string language, bool dark, string fileName) in new[]
             new("root.pfs.001", "image/fg/body.png", "image/fg", 1000, 1600, 1300000, false, true, true, false)
         }) window.ViewModel.TextureCategories.Add(new TextureCategoryViewModel([info], .5, false, language == "en-US"));
         Dispatcher.UIThread.RunJobs();
+        var category = window.ViewModel.TextureCategories[0];
+        var imageFormat = window.GetVisualDescendants().OfType<ComboBox>().Single(control => ReferenceEquals(control.DataContext, category));
+        if (!imageFormat.IsEffectivelyEnabled || category.Rule.Format != NativeTextureFormat.Auto || imageFormat.SelectedIndex != NativeTextureFormats.IndexOf(NativeTextureFormat.Auto))
+            throw new InvalidOperationException("Image categories must default to Swizzled AUTO when enabled.");
+        foreach (var selected in new[] { NativeTextureFormat.Bc1Swizzled, NativeTextureFormat.Bc1,
+            NativeTextureFormat.Bc3Swizzled, NativeTextureFormat.Bc3,
+            NativeTextureFormat.Auto, NativeTextureFormat.AutoLinear,
+            NativeTextureFormat.AutoWithoutMetadata, NativeTextureFormat.AutoWithoutMetadataLinear })
+        {
+            int index = NativeTextureFormats.IndexOf(selected);
+            imageFormat.SelectedIndex = index; Dispatcher.UIThread.RunJobs();
+            if (category.Rule.Format != selected) throw new InvalidOperationException("Image format selection used enum numbers as UI indices.");
+            window.ViewModel.SetLanguage(language == "en-US" ? "zh-CN" : "en-US"); Dispatcher.UIThread.RunJobs();
+            window.ViewModel.SetLanguage(language); Dispatcher.UIThread.RunJobs();
+            if (category.Rule.Format != selected || imageFormat.SelectedIndex != index)
+                throw new InvalidOperationException("Switching language lost the image format/layout selection.");
+        }
+        imageFormat.SelectedIndex = NativeTextureFormats.IndexOf(NativeTextureFormat.Auto); Dispatcher.UIThread.RunJobs();
         window.FindControl<ScrollViewer>("MainScroll")!.Offset = new Vector(0, 430);
         Dispatcher.UIThread.RunJobs();
     }

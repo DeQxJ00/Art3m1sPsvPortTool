@@ -18,8 +18,9 @@ public static class PsbTextureFormats
     };
 
     // Explicit PSB type identifiers: the E-mote loader must recognize these.
-    public static string TypeName(PsbTextureFormat format) => format switch
+    public static string TypeName(PsbTextureFormat format, PsbDxt5Layout layout = PsbDxt5Layout.Linear) => format switch
     {
+        PsbTextureFormat.Dxt5 when layout == PsbDxt5Layout.Swizzled => "DXT5_SWIZZLED",
         PsbTextureFormat.Dxt5 => "DXT5",
         PsbTextureFormat.Pvrtc2_4 => "PVRTC2_4BPP",
         PsbTextureFormat.Pvrtc2_2 => "PVRTC2_2BPP",
@@ -36,9 +37,12 @@ public static class PsbTextureFormats
 
     public static PsbTextureFormat? ParseType(string type) => type.ToUpperInvariant() switch
     {
-        "DXT5" => PsbTextureFormat.Dxt5,
+        "DXT5" or "DXT5_SWIZZLED" => PsbTextureFormat.Dxt5,
         "PVRTC2_4BPP" => PsbTextureFormat.Pvrtc2_4,
         "PVRTC2_2BPP" => PsbTextureFormat.Pvrtc2_2,
         _ => null
     };
+
+    public static PsbDxt5Layout ParseDxt5Layout(string type) =>
+        type.Equals("DXT5_SWIZZLED", StringComparison.OrdinalIgnoreCase) ? PsbDxt5Layout.Swizzled : PsbDxt5Layout.Linear;
 }

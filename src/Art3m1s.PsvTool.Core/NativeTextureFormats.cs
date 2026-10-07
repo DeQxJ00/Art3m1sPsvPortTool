@@ -4,7 +4,9 @@ public enum NativeTextureFormat
 {
     Preserve, Auto, Bc1, Bc2, Bc3, Bc4, Bc4Signed, Bc5, Bc5Signed,
     PvrtcRgb2, PvrtcRgba2, PvrtcRgb4, PvrtcRgba4, Pvrtc2_2, Pvrtc2_4, Etc1,
-    AutoWithoutMetadata
+    AutoWithoutMetadata,
+    // Append values to keep existing serialized format numbers stable.
+    Bc3Swizzled, AutoLinear, AutoWithoutMetadataLinear, Bc1Swizzled
 }
 
 public sealed record NativeTextureRule(string Category, bool Enabled, NativeTextureFormat Format = NativeTextureFormat.Auto);
@@ -14,7 +16,7 @@ public sealed record NativeFormatInfo(NativeTextureFormat Format, string Name, i
     int PvrCode, string Channels, string Description, string Extension = ".pvr")
 {
     public bool IsPvrtc1 => PvrCode is >= 0 and <= 3;
-    public bool HasAlpha => Format is NativeTextureFormat.Bc1 or NativeTextureFormat.Bc2 or NativeTextureFormat.Bc3
+    public bool HasAlpha => Format is NativeTextureFormat.Bc1 or NativeTextureFormat.Bc1Swizzled or NativeTextureFormat.Bc2 or NativeTextureFormat.Bc3 or NativeTextureFormat.Bc3Swizzled
         or NativeTextureFormat.PvrtcRgba2 or NativeTextureFormat.PvrtcRgba4 or NativeTextureFormat.Pvrtc2_2 or NativeTextureFormat.Pvrtc2_4;
 }
 
@@ -22,10 +24,13 @@ public static class NativeTextureFormats
 {
     public static readonly IReadOnlyList<NativeFormatInfo> All = [
         new(NativeTextureFormat.Preserve, "保留原格式 / Keep original", 0, -1, "原通道 / Original", "灰度、文字、UI 推荐保留 / Recommended for grayscale, text and UI"),
-        new(NativeTextureFormat.Auto, "自动推荐 / Automatic", 0, -1, "按图片选择 / Per image", "灰度/UI 保留；彩色不透明 BC1，透明 BC3 / Keep gray/UI; opaque BC1, alpha BC3"),
-        new(NativeTextureFormat.Bc1, "BC1 / DXT1", 4, 7, "RGB + 1-bit A", "背景、CG；仅二值透明 / Backgrounds; binary alpha only", ".dds"),
+        new(NativeTextureFormat.Auto, "自动推荐 · Swizzled（默认） / Automatic · Swizzled (default)", 0, -1, "按图片选择 / Per image", "灰度/UI 保留；不透明 BC1、透明 BC3 均 Swizzled / Keep gray/UI; opaque BC1 / alpha BC3, both Swizzled"),
+        new(NativeTextureFormat.AutoLinear, "自动推荐 · Linear / Automatic · Linear", 0, -1, "按图片选择 / Per image", "灰度/UI 保留；不透明 BC1、透明 BC3 均 Linear / Keep gray/UI; opaque BC1 / alpha BC3, both Linear"),
+        new(NativeTextureFormat.Bc1Swizzled, "BC1 / DXT1 · Swizzled", 4, 7, "RGB + 1-bit A", "GXM Morton 排列；GXMSW 标记 / GXM Morton; GXMSW marker", ".dds"),
+        new(NativeTextureFormat.Bc1, "BC1 / DXT1 · Linear", 4, 7, "RGB + 1-bit A", "普通 DDS 线性块排列；仅二值透明 / Standard DDS row-major; binary alpha only", ".dds"),
         new(NativeTextureFormat.Bc2, "BC2 / DXT3", 8, 9, "RGB + 4-bit A", "透明层级较少 / Explicit alpha levels", ".dds"),
-        new(NativeTextureFormat.Bc3, "BC3 / DXT5", 8, 11, "RGB + 插值 A / interpolated A", "立绘、渐变透明 / Sprites, smooth alpha", ".dds"),
+        new(NativeTextureFormat.Bc3Swizzled, "BC3 / DXT5 · Swizzled", 8, 11, "RGB + 插值 A / interpolated A", "GXM Morton 排列；GXMSW 标记 / GXM Morton; GXMSW marker", ".dds"),
+        new(NativeTextureFormat.Bc3, "BC3 / DXT5 · Linear", 8, 11, "RGB + 插值 A / interpolated A", "普通 DDS 线性块排列 / Standard DDS row-major blocks", ".dds"),
         new(NativeTextureFormat.Bc4, "BC4 UNORM", 4, 12, "R", "单通道数据；灰度默认仍保留 / Single channel; keep grayscale by default", ".dds"),
         new(NativeTextureFormat.Bc4Signed, "BC4 SNORM", 4, 12, "R (signed)", "有符号数据，不推荐普通图片 / Signed data, not ordinary images", ".dds"),
         new(NativeTextureFormat.Bc5, "BC5 UNORM", 8, 13, "RG", "双通道数据，不保留蓝色与 Alpha / No blue or alpha", ".dds"),
@@ -37,16 +42,28 @@ public static class NativeTextureFormats
         new(NativeTextureFormat.Pvrtc2_2, "PVRTC2 2bpp", 2, 4, "RGBA", "较小，但可能损失细节 / Small, lower detail"),
         new(NativeTextureFormat.Pvrtc2_4, "PVRTC2 4bpp", 4, 5, "RGBA", "透明彩色图片 / Color with alpha"),
         new(NativeTextureFormat.Etc1, "ETC1", 4, 6, "RGB", "无 Alpha；目前 Vita3K 不兼容 / No alpha; current Vita3K incompatible"),
-        new(NativeTextureFormat.AutoWithoutMetadata, "除带偏移信息外的 AUTO 转换（仅手动） / AUTO conversion excluding offset metadata (manual only)", 0, -1,
-            "按图片选择 / Per image", "所选分类跳过 metadata 和灰度；其余不透明 BC1、透明 BC3 / Selected category: keep metadata and gray; opaque BC1, alpha BC3")
+        new(NativeTextureFormat.AutoWithoutMetadata, "除带偏移信息外的 AUTO 转换（仅手动） · Swizzled / AUTO conversion excluding offset metadata (manual only) · Swizzled", 0, -1,
+            "按图片选择 / Per image", "所选分类跳过 metadata 和灰度；不透明 BC1、透明 BC3 均 Swizzled / Selected category: keep metadata and gray; opaque BC1 / alpha BC3, both Swizzled"),
+        new(NativeTextureFormat.AutoWithoutMetadataLinear, "除带偏移信息外的 AUTO 转换（仅手动） · Linear / AUTO conversion excluding offset metadata (manual only) · Linear", 0, -1,
+            "按图片选择 / Per image", "所选分类跳过 metadata 和灰度；不透明 BC1、透明 BC3 均 Linear / Selected category: keep metadata and gray; opaque BC1 / alpha BC3, both Linear")
     ];
     public static NativeFormatInfo Info(NativeTextureFormat f) => All.Single(x => x.Format == f);
+    public static int IndexOf(NativeTextureFormat format)
+    {
+        for (int i = 0; i < All.Count; i++) if (All[i].Format == format) return i;
+        throw new ArgumentOutOfRangeException(nameof(format));
+    }
     public static bool IsAutomatic(NativeTextureFormat format) =>
-        format is NativeTextureFormat.Auto or NativeTextureFormat.AutoWithoutMetadata;
+        format is NativeTextureFormat.Auto or NativeTextureFormat.AutoLinear
+            or NativeTextureFormat.AutoWithoutMetadata or NativeTextureFormat.AutoWithoutMetadataLinear;
+    public static bool IsManualAutomatic(NativeTextureFormat format) =>
+        format is NativeTextureFormat.AutoWithoutMetadata or NativeTextureFormat.AutoWithoutMetadataLinear;
     public static NativeTextureFormat Resolve(TextureImageInfo image, NativeTextureFormat requested, bool ignoreAlpha) => requested switch
     {
         NativeTextureFormat.Auto => Recommend(image, ignoreAlpha),
         NativeTextureFormat.AutoWithoutMetadata => RecommendColor(image, ignoreAlpha),
+        NativeTextureFormat.AutoLinear => LinearRecommendation(Recommend(image, ignoreAlpha)),
+        NativeTextureFormat.AutoWithoutMetadataLinear => LinearRecommendation(RecommendColor(image, ignoreAlpha)),
         _ => requested
     };
     public static NativeTextureFormat Recommend(TextureImageInfo image, bool ignoreAlpha) =>
@@ -54,7 +71,16 @@ public static class NativeTextureFormats
     private static NativeTextureFormat RecommendColor(TextureImageInfo image, bool ignoreAlpha) =>
         image.IsGray || image.IsNative || image.HasMetadata || image.Error != null
             ? NativeTextureFormat.Preserve
-            : image.HasAlpha && !(ignoreAlpha && image.IsBackground) ? NativeTextureFormat.Bc3 : NativeTextureFormat.Bc1;
+            : image.HasAlpha && !(ignoreAlpha && image.IsBackground) ? NativeTextureFormat.Bc3Swizzled : NativeTextureFormat.Bc1Swizzled;
+    public static bool IsSwizzled(NativeTextureFormat format) =>
+        format is NativeTextureFormat.Bc1Swizzled or NativeTextureFormat.Bc3Swizzled;
+    public static NativeTextureFormat LinearFormat(NativeTextureFormat format) => format switch
+    {
+        NativeTextureFormat.Bc1Swizzled => NativeTextureFormat.Bc1,
+        NativeTextureFormat.Bc3Swizzled => NativeTextureFormat.Bc3,
+        _ => format
+    };
+    private static NativeTextureFormat LinearRecommendation(NativeTextureFormat format) => LinearFormat(format);
     private static bool IsConservative(string category) => !category.Split('/').Any(x =>
         x is "bg" or "fg" or "cg" or "event" or "ev" or "background" or "backgrounds" or "character" or "characters");
     public static bool DefaultEnabled(TextureImageInfo image) => image.IsBackground && !image.IsGray;
@@ -90,7 +116,7 @@ public static class NativeTextureFormats
         if (f.IsPvrtc1 && ((w & (w - 1)) != 0 || (h & (h - 1)) != 0)) return "输出尺寸不是二次幂 / Output not power-of-two";
         bool alpha = image.HasAlpha && !(image.IsBackground && ignoreAlpha);
         if (alpha && !f.HasAlpha) return "不能保留透明度 / Cannot preserve alpha";
-        if (alpha && (image.HasSmoothAlpha || ratio != 1) && format == NativeTextureFormat.Bc1) return "含半透明像素 / Contains smooth alpha";
+        if (alpha && (image.HasSmoothAlpha || ratio != 1) && format is NativeTextureFormat.Bc1 or NativeTextureFormat.Bc1Swizzled) return "含半透明像素 / Contains smooth alpha";
         if (format is NativeTextureFormat.Bc4Signed or NativeTextureFormat.Bc5Signed) return "普通图片不是有符号数据 / Image is not signed data";
         if (format == NativeTextureFormat.Bc4 && !image.IsGray) return "会丢失彩色通道 / Loses color channels";
         if (format == NativeTextureFormat.Bc5) return "普通图片需要完整 RGB / Full RGB required";
@@ -100,6 +126,7 @@ public static class NativeTextureFormats
     }
     public static long PayloadBytes(NativeTextureFormat format, int width, int height)
     {
+        if (IsSwizzled(format)) return GxmBlockTextureStorage.SwizzledBytes(width, height, format == NativeTextureFormat.Bc1Swizzled ? 8 : 16);
         NativeFormatInfo f = Info(format);
         if (f.PvrCode < 0) return 0;
         int bw = f.BitsPerPixel == 2 ? 8 : 4;

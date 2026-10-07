@@ -33,9 +33,9 @@ public sealed class NativeTextureTests : IDisposable
         var alpha = await Info(await Png("alpha.png", alpha: true));
         var gray = await Info(await Png("gray.png", gray: true));
         var metadata = await Info(await Png("metadata.png", metadata: true));
-        Assert.Equal(NativeTextureFormat.Bc1, NativeTextureFormats.Recommend(color, false));
-        Assert.Equal(NativeTextureFormat.Bc3, NativeTextureFormats.Recommend(alpha, false));
-        Assert.Equal(NativeTextureFormat.Bc1, NativeTextureFormats.Recommend(alpha, true));
+        Assert.Equal(NativeTextureFormat.Bc1Swizzled, NativeTextureFormats.Recommend(color, false));
+        Assert.Equal(NativeTextureFormat.Bc3Swizzled, NativeTextureFormats.Recommend(alpha, false));
+        Assert.Equal(NativeTextureFormat.Bc1Swizzled, NativeTextureFormats.Recommend(alpha, true));
         Assert.Equal(NativeTextureFormat.Preserve, NativeTextureFormats.Recommend(gray, false));
         Assert.False(NativeTextureFormats.DefaultEnabled(gray));
         Assert.True(metadata.HasMetadata);
@@ -98,7 +98,7 @@ public sealed class NativeTextureTests : IDisposable
     [MemberData(nameof(SupportedColorFormats))]
     public async Task NativeEncoderWritesValidatedContainers(NativeTextureFormat format)
     {
-        string input = await Png("input.png", alpha: NativeTextureFormats.Info(format).HasAlpha && format != NativeTextureFormat.Bc1);
+        string input = await Png("input.png", alpha: NativeTextureFormats.Info(format).HasAlpha && format is not (NativeTextureFormat.Bc1 or NativeTextureFormat.Bc1Swizzled));
         var info = await Info(input);
         var result = await new NativeTextureProcessor().ConvertAsync(input, info,
             new(Rules: [new(info.GroupKey, true, format)]), 1);
@@ -119,7 +119,7 @@ public sealed class NativeTextureTests : IDisposable
         using Image<Rgba32> before = Image.Load<Rgba32>(p);
         var result = await new NativeTextureProcessor().ConvertAsync(p, await Info(p), new(), 1);
         byte[] dds = await File.ReadAllBytesAsync(result.OutputPath);
-        byte[] pixels = PsbProcessor.DecodeDxt5ForTest(dds[128..], 32, 16);
+        byte[] pixels = PsbProcessor.DecodeDxt5ForTest(PsbDxt5Storage.Unswizzle(dds[128..], 32, 16), 32, 16);
         for (int y = 0; y < 16; y++) for (int x = 0; x < 32; x++)
         {
             int at = (y * 32 + x) * 4;
@@ -207,7 +207,7 @@ public sealed class NativeTextureTests : IDisposable
                 Assert.Equal(suffix == ".10" ? "DXT5" : "DXT1", Encoding.ASCII.GetString(data.AsSpan(84, 4)));
                 if (suffix == ".10")
                 {
-                    byte[] pixels = PsbProcessor.DecodeDxt5ForTest(data[128..], 32, 16);
+                    byte[] pixels = PsbProcessor.DecodeDxt5ForTest(PsbDxt5Storage.Unswizzle(data[128..], 32, 16), 32, 16);
                     Assert.Equal(0, pixels[3]); Assert.Equal(255, pixels[31 * 4 + 3]);
                 }
             }

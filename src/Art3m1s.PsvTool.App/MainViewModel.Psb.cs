@@ -90,6 +90,9 @@ public sealed partial class MainViewModel
     private void RefreshPsb()
     {
         OnPropertyChanged(nameof(PsbFormatLabel));
+        OnPropertyChanged(nameof(PsbDxt5LayoutLabel)); OnPropertyChanged(nameof(PsbDxt5LayoutHelp));
+        foreach (var choice in PsbDxt5LayoutChoices) choice.Refresh();
+        OnPropertyChanged(nameof(SelectedPsbDxt5Layout));
         foreach (var category in PsbCategories) category.Refresh();
         OnPropertyChanged(nameof(PsbTitle)); OnPropertyChanged(nameof(ScanPsbLabel)); OnPropertyChanged(nameof(PsbHelp));
         OnPropertyChanged(nameof(PsbDxt5Title)); OnPropertyChanged(nameof(PsbDxt5Help));
