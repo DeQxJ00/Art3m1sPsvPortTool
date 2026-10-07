@@ -7,6 +7,80 @@ namespace Art3m1s.PsvTool.Ui.Tests;
 public sealed class PsbUiTests
 {
     [Fact]
+    public async Task SizeEstimateUpdatesWithOptionsAndIncludesAllAtlasesWithoutIndependentControls()
+    {
+        using var folder = new ScanFolder();
+        var vm = new MainViewModel(settings: new MemoryStore(new()), psbScanner: new PsbScannerStub
+        {
+            Files = [new("root.pfs.010", "image/hero.psb", 100,
+                new(true, [new("a", 4096, 2048, "RGBA8"), new("b", 512, 256, "RGBA8")]))]
+        })
+        { InputDirectory = folder.Path };
+        Assert.False(vm.HasPsbSizeEstimate);
+        await vm.CalculatePsbSizeAsync();
+        Assert.True(vm.HasPsbSizeEstimate); Assert.False(vm.IsBusy); Assert.Equal(100, vm.Progress);
+        Assert.Contains("2 张贴图", vm.PsbSizeSummary); Assert.Contains("2,129,920 B", vm.PsbSizeSummary);
+        Assert.Contains("4096 × 2048 RGBA8 → 2048 × 1024 DXT5_SWIZZLED", vm.PsbSizeDetails);
+        Assert.Empty(vm.PsbCategories); Assert.False(vm.CanUseIndependentPsbTextureScaling);
+        vm.Ratio = "0.75"; Assert.Contains("8,519,680 B", vm.PsbSizeSummary);
+        vm.SelectedPsbDxt5Layout = 1; Assert.Contains("4,792,320 B", vm.PsbSizeSummary);
+        vm.SelectedPsbFormat = 1; Assert.Contains("2,396,160 B", vm.PsbSizeSummary);
+        vm.SelectedPsbFormat = 2; Assert.Contains("1,198,080 B", vm.PsbSizeSummary);
+        vm.Ratio = "invalid"; Assert.Contains("Ratio 必须", vm.PsbSizeSummary);
+        vm.ProcessAnimation = false; Assert.Contains("Ratio 1", vm.PsbSizeSummary); Assert.Contains("2,129,920 B", vm.PsbSizeSummary);
+        vm.ConvertEmotePsbTexturesToDxt5 = false; Assert.Contains("34,078,720 B", vm.PsbSizeSummary);
+        vm.SetLanguage("en-US"); Assert.Equal("Estimate size", vm.CalculatePsbSizeLabel);
+        Assert.Contains("Keep source format", vm.PsbSizeSummary); Assert.Contains("whole PSB", vm.PsbSizeHelp);
+        vm.InputDirectory = folder.Path + "-different";
+        Assert.False(vm.HasPsbSizeEstimate); Assert.Empty(vm.PsbSizeSummary);
+    }
+
+    [Fact]
+    public async Task SizeEstimateReportsFailingArchiveAndFileAndCanScanAgain()
+    {
+        using var folder = new ScanFolder();
+        var scanner = new PsbScannerStub { Files = [new("root.pfs.010", "image/bad.psb", 100, null, "bad header")] };
+        var vm = new MainViewModel(settings: new MemoryStore(new()), psbScanner: scanner) { InputDirectory = folder.Path };
+        await vm.CalculatePsbSizeAsync();
+        Assert.Contains("未计入：1", vm.PsbSizeSummary); Assert.Contains("root.pfs.010 / image/bad.psb", vm.Log);
+        scanner.Files = [AtlasFile(32, 16)];
+        await vm.CalculatePsbSizeAsync(); Assert.Contains("128 B", vm.PsbSizeSummary);
+        vm.SelectedEncoding = 1; Assert.False(vm.HasPsbSizeEstimate);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SizeScanIsAsynchronousCancellableAndRejectsStaleDirectory(bool cancel)
+    {
+        using var folder = new ScanFolder();
+        var scanner = new DelayedSizeScanner();
+        var vm = new MainViewModel(settings: new MemoryStore(new()), psbScanner: scanner) { InputDirectory = folder.Path };
+        var task = vm.CalculatePsbSizeAsync();
+        Assert.True(vm.IsBusy); Assert.False(task.IsCompleted); Assert.False(vm.CanStart);
+        await scanner.Entered.Task;
+        await vm.CalculatePsbSizeAsync(); Assert.Equal(1, scanner.Calls);
+        if (cancel) vm.Cancel(); else vm.InputDirectory = folder.Path + "-other";
+        scanner.Release.TrySetResult([AtlasFile(32, 16)]);
+        await task;
+        Assert.False(vm.IsBusy); Assert.False(vm.HasPsbSizeEstimate);
+        Assert.Contains(cancel ? "取消" : "输入目录已改变", vm.Status);
+    }
+
+    private sealed class DelayedSizeScanner : IPsbTextureScanner
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<IReadOnlyList<PsbTextureFileInfo>> Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Calls { get; private set; }
+        public async Task<IReadOnlyList<PsbTextureFileInfo>> ScanAsync(string input, PfsNameEncoding encoding = PfsNameEncoding.Auto,
+            IProgress<ConversionProgress>? progress = null, CancellationToken token = default)
+        {
+            Calls++; Entered.SetResult();
+            return await Release.Task.WaitAsync(token);
+        }
+    }
+
+    [Fact]
     public async Task Dxt5LayoutDefaultsToSwizzledPersistsAndReachesConverter()
     {
         using var folder = new ScanFolder();

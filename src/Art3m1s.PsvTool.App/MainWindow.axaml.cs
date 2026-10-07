@@ -64,6 +64,7 @@ public sealed partial class MainWindow : Window
     private async void ScanClick(object? sender, RoutedEventArgs e) => await ViewModel.ScanAsync();
     private async void AutoScanResolutionClick(object? sender, RoutedEventArgs e) => await ViewModel.AutoScanResolutionAsync();
     private async void StartClick(object? sender, RoutedEventArgs e) => await ViewModel.StartAsync();
+    private async void CalculatePsbSizeClick(object? sender, RoutedEventArgs e) => await ViewModel.CalculatePsbSizeAsync();
     private void CancelClick(object? sender, RoutedEventArgs e) => ViewModel.Cancel();
     private void ChineseClick(object? sender, RoutedEventArgs e) => ViewModel.SetLanguage("zh-CN");
     private void EnglishClick(object? sender, RoutedEventArgs e) => ViewModel.SetLanguage("en-US");

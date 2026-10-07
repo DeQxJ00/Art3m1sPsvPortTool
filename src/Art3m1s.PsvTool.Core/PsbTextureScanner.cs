@@ -2,7 +2,8 @@ using System.Buffers.Binary;
 
 namespace Art3m1s.PsvTool.Core;
 
-public sealed record PsbAtlasInfo(string Source, int Width, int Height, string Format);
+public sealed record PsbAtlasInfo(string Source, int Width, int Height, string Format,
+    int? ResourceIndex = null, bool ExtraResource = false);
 
 public sealed record PsbTextureInspection(bool IsEmoteMotion, IReadOnlyList<PsbAtlasInfo> Atlases)
 {
@@ -146,7 +147,8 @@ public sealed partial class PsbProcessor
             int width = checked((int)(texture.GetNumber("width")?.Value ?? 0));
             int height = checked((int)(texture.GetNumber("height")?.Value ?? 0));
             if (width <= 0 || height <= 0) throw new InvalidDataException($"Invalid PSB texture size: {name}.");
-            atlases.Add(new(name, width, height, texture.GetString("type") ?? "unknown"));
+            var resource = (texture.Get("pixel") ?? texture.Get("data") ?? texture.Get("resource")) as ResourceNode;
+            atlases.Add(new(name, width, height, texture.GetString("type") ?? "unknown", resource?.Index, resource?.Extra ?? false));
         }
         return new(true, atlases);
     }

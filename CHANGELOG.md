@@ -6,6 +6,11 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.18] - 2026-10-08
+
+- PSB 纹理格式旁新增异步“计算大小”，按全局 Ratio、DXT5 排列和 PVRTC2 格式统计 PFS 内外全部图集的原/目标数据大小，按宽 × 高列明细；共享资源去重，异常及不支持资源明确排除。扫描后选项变更即时重算，不修改文件、不启用独立缩放、不改变主页面滚动位置；补充实际编码长度与 UI 验证。
+- Added asynchronous PSB texture size estimates beside the format selector, accounting for global Ratio, DXT5 layout and PVRTC2 blocks across archived/loose atlases. Groups by width × height, deduplicates shared resources, excludes errors explicitly, and updates immediately when options change. Metadata-only, without enabling independent scaling or moving the viewport; verified against encoded payloads and UI checks.
+
 ## [1.0.17] - 2026-10-07
 
 - 普通图片的 BC1 / DXT1（不透明）与 BC3 / DXT5（渐变透明）新增 Swizzled / Linear 两种；普通 AUTO 和手动排除偏移信息 AUTO 均提供两种排列，默认优先 Swizzled。DDS FourCC 保持 DXT1 / DXT5，真正保留区开头（0x20–0x24）写 GXMSW，未标记仍按线性处理，不增加标记版本。共享 GXM Y-first Morton 块重排，补齐存储但不改逻辑尺寸，更新文件大小估计及中英文说明；已有原生资源和定位 metadata 保持保护，PFS 与散装使用同一规则。需配套引擎识别，不直接修改引擎。

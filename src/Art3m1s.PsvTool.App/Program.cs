@@ -55,6 +55,22 @@ internal static class Program
         try
         {
             Directory.CreateDirectory(input);
+            var psbSizeFiles = new PsbTextureFileInfo[]
+            {
+                new(null, "size-check.psb", 100, new(true,
+                    [new("atlas0", 34, 22, "RGBA8", 0), new("alias", 34, 22, "RGBA8", 0), new("atlas1", 7, 3, "RGBA8", 1)]))
+            };
+            foreach (var (format, layout, bytes) in new[]
+            {
+                (PsbTextureFormat.Dxt5, PsbDxt5Layout.Swizzled, 528L),
+                (PsbTextureFormat.Dxt5, PsbDxt5Layout.Linear, 256L),
+                (PsbTextureFormat.Pvrtc2_4, PsbDxt5Layout.Swizzled, 128L),
+                (PsbTextureFormat.Pvrtc2_2, PsbDxt5Layout.Swizzled, 80L)
+            })
+            {
+                var estimate = PsbTextureSizeEstimator.Estimate(psbSizeFiles, .5, format, layout);
+                if (estimate.TargetBytes != bytes || estimate.Textures.Count != 2 || estimate.Issues.Count != 0) return 16;
+            }
             await File.WriteAllBytesAsync(payload, [1, 3, 3, 7]);
             PfsCodec codec = new();
             ExtractedArchive archive = new('8', [new PfsEntry(Encoding.UTF8.GetBytes("data/payload.bin"), "data/payload.bin", 0, 4, payload)]);
