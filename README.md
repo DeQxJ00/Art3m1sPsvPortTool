@@ -52,7 +52,7 @@ Release 为 `win-x64`、`linux-x64`、`osx-x64` 和 `osx-arm64` 各提供两种�
 
 - 文本：INI / TBL / IPT / AST / LUA 严格复刻 VisualNovelUpscaler 的 Artemis 匹配、取整、编码与输出行为；IET 原样复制。E-mote 会额外同步缩放 TBL 姿态表中的 X/Y 偏移与画布宽高、AST 坐标以及 LUA 的固定 `mulpos()` 坐标；人物缩放倍率、动作、表情、口型采样和资源名保持不变。
 - 图片：PNG 使用 ImageSharp 的 Alpha 预乘高质量 Bicubic，默认缩放；保留 PNG 时不进行 PNG 优化、调色板压缩或 waifu2x。下方 PSV 纹理选项可启用有损压缩。
-- 动画：OGV 使用 FFmpeg Bicubic；目标宽高与 VisualNovelUpscaler 一样分别按 `int(原尺寸 × Ratio)` 截断，保持帧率与音频。Artemis／E-mote 动态立绘 PSB（v1–v4）支持内嵌 `RGBA8` / `DXT5` / `PVRTC2_4BPP` / `PVRTC2_2BPP` atlas，以 Bicubic 按 Ratio 缩小并重建资源表，同时缩放 texture 尺寸、裁切尺寸、icon 矩形、origin、screenSize、动作坐标、偏移、运动路径与空白网格域；角度、动作时间、缩放倍率、曲线和参数范围保持不变。高级设置的“E-mote PSB 纹理格式转换”默认开启，格式默认 `DXT5 (BC3)`，可改为 `PVRTC2 4bpp` / `PVRTC2 2bpp`；关闭则保留原纹理格式，动画勾选项仍控制是否缩放。已有目标格式且无需缩放时不会重复编码。散装及 PFS 内 PSB 使用相同逻辑，固定逐个处理以控制峰值内存。
+- 动画：OGV 使用 FFmpeg Bicubic；目标宽高与 VisualNovelUpscaler 一样分别按 `int(原尺寸 × Ratio)` 截断，保持帧率与音频。Artemis／E-mote 动态立绘 PSB（v1–v4）支持内嵌 `RGBA8` / `DXT5` / `DXT5_SWIZZLED` / `PVRTC2_4BPP` / `PVRTC2_2BPP` atlas，以 Bicubic 按 Ratio 缩小并重建资源表，同时缩放 texture 尺寸、裁切尺寸、icon 矩形、origin、screenSize、动作坐标、偏移、运动路径与空白网格域；角度、动作时间、缩放倍率、曲线和参数范围保持不变。高级设置的“E-mote PSB 纹理格式转换”默认开启，格式默认 `DXT5 (BC3)`，可改为 `PVRTC2 4bpp` / `PVRTC2 2bpp`；关闭则保留原纹理格式，动画勾选项仍控制是否缩放。已有目标格式且无需缩放时不会重复编码。散装及 PFS 内 PSB 使用相同逻辑，固定逐个处理以控制峰值内存。
 - 视频：默认勾选“忽略 PFS 内的视频（WMV / DAT / MP4 / AVI / MPG / MKV）”，这些 PFS 条目保持原文件名和原始字节，不交给 FFmpeg；OGV 不在此忽略范围内，仍按动画规则处理。取消勾选后可处理 PFS 内受支持的视频，但 PFS 内 DAT 仍因可能是字体缓存等普通数据而原样保留。PFS 外散装目录中的 WMV / DAT / MP4 / AVI / MPG / MKV 视频统一输出为同名 MP4（H.264 Main@3.1、AAC）；除 DAT 固定为 960×544 外，其余格式使用 Ratio 尺寸截断规则。无法检测到视频流的普通数据 DAT 原样保留。
 - 字体（可选）：支持 TTF 与 OTF。TrueType `glyf` 字体使用内置保守削减器，CFF OpenType 字体使用 HarfBuzz 子集器；按简体中文、日文或繁体中文常用范围裁剪，同时始终保留脚本中实际出现的字符、ASCII、常用标点与全角/半角符号。TTC 为避免损坏会原样保留。
 - 未勾选类型按字节复制，不执行转换。
@@ -65,13 +65,16 @@ Release 为 `win-x64`、`linux-x64`、`osx-x64` 和 `osx-arm64` 各提供两种�
 
 | 输出格式 | 位率 | 像素资源长度（不含 mipmap） | PSB `texture.type` |
 | --- | --- | --- | --- |
-| DXT5 (BC3，默认) | 8bpp | `ceil(宽/4) × ceil(高/4) × 16` | `DXT5` |
+| DXT5 (BC3) · Swizzled（默认） | 8bpp | `P(宽) × P(高)`，`P(n)` 为不小于 `max(4,n)` 的最小 2 的幂 | `DXT5_SWIZZLED` |
+| DXT5 (BC3) · Linear | 8bpp | `ceil(宽/4) × ceil(高/4) × 16` | `DXT5` |
 | PVRTC2 4bpp | 4bpp | `ceil(宽/4) × ceil(高/4) × 8` | `PVRTC2_4BPP` |
 | PVRTC2 2bpp | 2bpp | `ceil(宽/8) × ceil(高/4) × 8` | `PVRTC2_2BPP` |
 
-三种格式均支持 Alpha，但都是有损压缩，2bpp 更容易丢失颜色、边缘与透明度细节。PVRTC2 由随包 PVRTexLib 编码，PSB 像素资源只嵌入原始压缩块，不带 DDS / PVR 头、不进行 PSV swizzle；更新字符串表、资源长度及偏移，保留逻辑宽高和其他字符串。[PVRTC2 存储格式](https://github.com/KhronosGroup/DataFormat/blob/main/pvrtc.txt)。
+三种格式均支持 Alpha，但都是有损压缩，2bpp 更容易丢失颜色、边缘与透明度细节。PVRTC2 由随包 PVRTexLib 编码，保持原始线性块排列。PSB 像素资源不带 DDS / PVR 头；更新字符串表、资源长度及偏移，保留逻辑宽高和其他字符串。[PVRTC2 存储格式](https://github.com/KhronosGroup/DataFormat/blob/main/pvrtc.txt)。
 
-**兼容性：当前 GXM 的 E-mote PSB 加载器只识别 RGBA8 / DXT5；PNG/PVR 路径支持 PVRTC2 不等于 PSB 支持。PVRTC2 输出需要引擎另行识别上述类型和原始数据，否则无法显示。本项目不直接修改引擎，正常使用当前引擎请保持默认 DXT5。** 引擎接入说明见 [PSB PVRTC2 格式约定](docs/psb-pvrtc2-format.md)。
+DXT5 的“排列模式”默认 **Swizzled · GXM Morton**，也可选 **Linear**；未保存过该项的旧配置同样默认 Swizzled。按整个 16 字节 BC3 块重排，Y 位先交织、X 位后交织，矩形的较短边位用尽后继续较长边。存储宽高各自向上补至 2 的幂，最小 4；补齐块为零，逻辑尺寸、icon 和几何不因排列再缩放。仅切换排列时不解码或重新压缩，支持精确反重排。Swizzled 支持逻辑宽高 1–4096；超过范围会明确失败。该选项只作用于 PSB DXT5，选择 PVRTC2 或关闭格式转换后不可用，不改变普通 DDS/PVR 输出。关闭格式转换会保留原 PSB 的格式和排列。
+
+**兼容性：当前 GXM 的 E-mote PSB 加载器只识别 RGBA8 / 线性 DXT5；`DXT5_SWIZZLED` 和 PVRTC2 均需引擎另行支持。不能把 Swizzled 数据伪装成 `DXT5`，也不能由引擎再次重排。本项目不直接修改引擎；配套支持完成前请手动选择 DXT5 + Linear。** 接入说明见 [DXT5 排列约定](docs/psb-dxt5-layout.md) 和 [PVRTC2 格式约定](docs/psb-pvrtc2-format.md)。
 
 ### PSB DXT5 显存占用与压缩原因
 
@@ -79,7 +82,7 @@ RGBA8 每像素 4 字节；DXT5（BC3）每个 `4×4` 像素块占 16 字节，�
 
 这不仅是缩小磁盘文件：当前 Art3m1sPSV 的原生 BC3 路径直接上传压缩块并由 GPU 采样，不保存完整 RGBA 像素副本，主要为节省纹理显存和传输量。与缩小分辨率结合后收益更大，但不保证提高帧率；不支持原生 BC3 而回退为 RGBA 解码时，显存收益可能消失。
 
-| 图集尺寸 / Ratio | RGBA8 数据 | DXT5 数据 | 当前 GXM DXT5 分配估计 |
+| 图集尺寸 / Ratio | RGBA8 数据 | DXT5 Linear 数据 | 当前 GXM DXT5 分配估计 |
 | --- | ---: | ---: | ---: |
 | 4096 × 2048 / 1 | 32 MiB | 8 MiB | 8 MiB |
 | 3072 × 1536 / 0.75 | 18 MiB | 4.5 MiB | 8 MiB |
@@ -87,6 +90,8 @@ RGBA8 每像素 4 字节；DXT5（BC3）每个 `4×4` 像素块占 16 字节，�
 | 1024 × 512 / 0.25 | 2 MiB | 0.5 MiB | 0.5 MiB |
 
 以上 Ratio 均相对于 `4096 × 2048` 原图。当前引擎的 BC3 存储宽高分别向上补至 2 的幂（最小 4），RGBA 行宽对齐到 8 像素，单次纹理内存分配均向上对齐到 **256 KiB**。因此非 2 的幂尺寸不能直接按“每像素 1 字节”当作实际显存；小贴图的 RGBA8 和 DXT5 都可能至少分配 0.25 MiB，格式压缩不一定减少分配量。
+
+表中“DXT5 数据”及禁用分类区块的旧数据比较按 **Linear** 统计。Swizzled PSB 提前包含 2 的幂存储补齐，例如 3072×1536 的像素资源为 8 MiB，而不是 Linear 的 4.5 MiB；不包含额外的 256 KiB GPU 分配对齐，重排本身不会降低显存。
 
 软件分组行显示的是所选 Ratio 下**单张最大图集**的 RGBA8 / DXT5 对比，不是所选输出格式的实测显存，也不是整份 PSB 或所有扫描文件的总占用。多图集只按实际同时加载的纹理逐张累加，缓存、渲染目标和临时内存等另计。此估算针对当前原生 GXM 路径、尺寸不超过 4096 且不含 mipmap 的图集；其他引擎或回退路径可能不同。`1 MiB = 1024 × 1024` 字节。
 
@@ -96,13 +101,13 @@ RGBA8 每像素 4 字节；DXT5（BC3）每个 `4×4` 像素块占 16 字节，�
 
 点击“扫描图片分类”读取全部有效 `.pfs` / `.pfs.xxx`（含子目录）及散装 PNG/JPEG/DDS/PVR。按真实目录生成分类，列出数量、透明度、文件和估计大小。只有彩色 BG 默认勾选；灰度独立归类、不勾选并推荐保留，其他分类默认不勾选。每类可选自动、保留或具体格式。下拉框按实际图片及缩放后的尺寸标注“不适合 X/N 张”和原因；这些图片在转换时保留并记录原因，不强制丢弃通道。
 
-自动策略：彩色背景/CG/立绘不透明用 BC1，有透明用 BC3；灰度、UI、未知目录和已有原生纹理保留。“转换 BG 时忽略透明度”独立可选，默认关闭；开启会丢弃 BG 的 Alpha。与引擎运行时设置不同，它会改变输出资源本身。
+自动策略：普通 AUTO 和“除带偏移信息外的 AUTO 转换（仅手动）”均提供 **Swizzled（优先/默认）** 与 **Linear**。Swizzled AUTO 对不透明彩色图使用 BC1 Swizzled，透明图使用 BC3 Swizzled；Linear AUTO 使用相应的线性格式。普通 AUTO 保留灰度、UI、未知目录和已有原生纹理；手动模式仅放宽所选分类的目录限制，仍保护灰度和 metadata。“转换 BG 时忽略透明度”独立可选，默认关闭；开启会丢弃 BG 的 Alpha。与引擎运行时设置不同，它会改变输出资源本身。
 
 | 格式 | 位/像素 | 通道/透明度 |
 | --- | ---: | --- |
-| BC1 / DXT1 | 4 | RGB + 二值 Alpha |
+| BC1 / DXT1 · Swizzled / Linear | 4 | RGB + 二值 Alpha |
 | BC2 / DXT3 | 8 | RGB + 4-bit Alpha |
-| BC3 / DXT5 | 8 | RGB + 插值 Alpha |
+| BC3 / DXT5 · Swizzled / Linear | 8 | RGB + 插值 Alpha |
 | BC4 UNORM / SNORM | 4 | 单通道 R，无独立 Alpha |
 | BC5 UNORM / SNORM | 8 | RG，无蓝色或独立 Alpha |
 | PVRTC1 RGB / RGBA 2bpp | 2 | RGB 或 RGBA |
@@ -115,6 +120,8 @@ BC4 只适合显式选择的无透明灰度数据；普通图片的 BC5/有符�
 转换后 BC 使用 DDS、PVRTC/ETC1 使用 PVR，更新 PFS 原始名称的后缀而保留编码，脚本的 PNG 引用由引擎同名查找兼容。重复虚拟路径、同名后缀冲突、已存在的目标和无法检查的图片会保留。带 PNG 文本、偏移、裁剪或未知附加块的图片保留为 PNG，并沿用原 PNG 缩放规则，不丢弃定位信息。PSB 的内嵌图集继续由独立 E-mote 选项处理。
 
 发布包须保留随附的 PVRTexLib 原生库（Windows `PVRTexLib.dll`、Linux `libPVRTexLib.so`、macOS `libPVRTexLib.dylib`）和许可文件。
+
+DDS Swizzled 为 PSV GXM 私有排列：FourCC 保持 `DXT1` / `DXT5`，`DDS_HEADER.dwReserved1` 开头五字节（整个文件 `0x20`–`0x24`）写 ASCII `GXMSW`；无标记按普通 Linear 处理，不增加标记版本或额外头。按 4×4 压缩块 Y-first Morton 重排并向上补齐 2 的幂存储，逻辑尺寸仍跟随 Ratio，补齐不扩大绘制尺寸。Swizzled 文件可能比 Linear 大，预先重排不等于更高压缩率；估计大小已计入存储补齐。**必须使用识别 GXMSW 的配套引擎，旧引擎和普通 DDS 查看器请选 Linear，不能再次 swizzle。** 接入及精确偏移见 [DDS GXMSW 排列约定](docs/dds-gxm-swizzled.md)。本项目不直接修改引擎；PSB 排列独立设置，BC2 / BC4 / BC5 / PVR 不受影响。
 
 ## PNG 颜色表与透明度保证
 
@@ -143,7 +150,7 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 - macOS 首版不签名、不公证。
 - 无法由容器和原编码支持的音视频流会报告 FFmpeg 原始诊断并停止，不会静默降级。
 - pf2/pf6 可读取，但重新打包统一输出 pf8；超 4 GiB 的单个 PFS 条目不支持。
-- 当前 PSB 重建支持明文正文以及可自动推导密钥的加密头；加密正文、外置纹理和 `RGBA8` / `DXT5` / `PVRTC2_4BPP` / `PVRTC2_2BPP` 以外的 atlas 格式会明确报错，不会静默复制成“已转换”。块压缩重新编码有损；若新增字符串无法装入原节点索引位宽且没有可复用索引，则明确失败而不破坏输出。
+- 当前 PSB 重建支持明文正文以及可自动推导密钥的加密头；加密正文、外置纹理和 `RGBA8` / `DXT5` / `DXT5_SWIZZLED` / `PVRTC2_4BPP` / `PVRTC2_2BPP` 以外的 atlas 格式会明确报错，不会静默复制成“已转换”。块压缩重新编码有损；若新增字符串无法装入原节点索引位宽且没有可复用索引，则明确失败而不破坏输出。
 - 自动文本规则面向常见 Artemis 脚本，发布前仍应在真实游戏中检查字幕、点击区域与动画坐标。
 
 ## Credits

@@ -67,9 +67,9 @@ public sealed class NativeTextureProcessor
             U(20, (uint)length); U(28, 1); U(76, 32); U(80, 4); U(108, 0x1000);
             string code = spec.Format switch
             {
-                NativeTextureFormat.Bc1 => "DXT1",
+                NativeTextureFormat.Bc1 or NativeTextureFormat.Bc1Swizzled => "DXT1",
                 NativeTextureFormat.Bc2 => "DXT3",
-                NativeTextureFormat.Bc3 => "DXT5",
+                NativeTextureFormat.Bc3 or NativeTextureFormat.Bc3Swizzled => "DXT5",
                 NativeTextureFormat.Bc4 => "ATI1",
                 NativeTextureFormat.Bc4Signed => "BC4S",
                 NativeTextureFormat.Bc5 => "ATI2",
@@ -77,6 +77,8 @@ public sealed class NativeTextureProcessor
                 _ => throw new InvalidOperationException()
             };
             System.Text.Encoding.ASCII.GetBytes(code).CopyTo(header, 84);
+            if (NativeTextureFormats.IsSwizzled(spec.Format))
+                "GXMSW"u8.CopyTo(header.AsSpan(NativeDdsLayout.GxmSwizzledMarkerOffset));
         }
         else
         {

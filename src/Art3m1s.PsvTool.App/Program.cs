@@ -24,12 +24,14 @@ internal static class Program
         {
             PsbTextureFormat? format = args[4].ToLowerInvariant() switch
             {
-                "dxt5" => PsbTextureFormat.Dxt5,
+                "dxt5" or "dxt5-swizzled" or "dxt5-linear" => PsbTextureFormat.Dxt5,
                 "pvrtc2-4" => PsbTextureFormat.Pvrtc2_4,
                 "pvrtc2-2" => PsbTextureFormat.Pvrtc2_2,
                 _ => null
             };
-            return format.HasValue ? RunPsbBc3TestAsync(args[1], args[2], args[3], format.Value).GetAwaiter().GetResult() : 12;
+            var layout = args[4].Equals("dxt5-linear", StringComparison.OrdinalIgnoreCase)
+                ? PsbDxt5Layout.Linear : PsbDxt5Layout.Swizzled;
+            return format.HasValue ? RunPsbBc3TestAsync(args[1], args[2], args[3], format.Value, layout).GetAwaiter().GetResult() : 12;
         }
         if (args.Length == 3 && args[0].Equals("--psb-pfs-self-test", StringComparison.Ordinal))
             return RunPsbPfsSelfTestAsync(args[1], args[2]).GetAwaiter().GetResult();
@@ -66,7 +68,27 @@ internal static class Program
                 await SixLabors.ImageSharp.ImageExtensions.SaveAsPngAsync(image, texturePath);
             var info = TextureScanner.InspectBytes(await File.ReadAllBytesAsync(texturePath), "image/bg/test.png");
             var converted = await new NativeTextureProcessor().ConvertAsync(texturePath, info, new(), 1);
-            if (!converted.Converted || !File.ReadAllBytes(converted.OutputPath).AsSpan().StartsWith("DDS "u8)) return 12;
+            byte[] defaultDds = await File.ReadAllBytesAsync(converted.OutputPath);
+            if (!converted.Converted || !NativeDdsLayout.IsGxmSwizzled(defaultDds)
+                || defaultDds.Length != 128 + NativeTextureFormats.PayloadBytes(NativeTextureFormat.Bc3Swizzled, 32, 16)) return 12;
+            foreach (var format in new[] { NativeTextureFormat.Bc1Swizzled, NativeTextureFormat.Bc1,
+                NativeTextureFormat.Bc3Swizzled, NativeTextureFormat.Bc3,
+                NativeTextureFormat.Auto, NativeTextureFormat.AutoLinear,
+                NativeTextureFormat.AutoWithoutMetadata, NativeTextureFormat.AutoWithoutMetadataLinear })
+            {
+                texturePath = Path.Combine(root, format + ".png");
+                using (var image = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(17, 11,
+                    new SixLabors.ImageSharp.PixelFormats.Rgba32(40, 120, 210,
+                        format is NativeTextureFormat.Bc1 or NativeTextureFormat.Bc1Swizzled ? (byte)255 : (byte)128)))
+                    await SixLabors.ImageSharp.ImageExtensions.SaveAsPngAsync(image, texturePath);
+                info = TextureScanner.InspectBytes(await File.ReadAllBytesAsync(texturePath), "image/bg/test.png");
+                converted = await new NativeTextureProcessor().ConvertAsync(texturePath, info,
+                    new(Rules: [new(info.GroupKey, true, format)]), 1);
+                var resolved = NativeTextureFormats.Resolve(info, format, false);
+                byte[] dds = await File.ReadAllBytesAsync(converted.OutputPath);
+                if (!converted.Converted || NativeDdsLayout.IsGxmSwizzled(dds) != NativeTextureFormats.IsSwizzled(resolved)
+                    || dds.Length != 128 + NativeTextureFormats.PayloadBytes(resolved, 17, 11)) return 17;
+            }
             foreach (var format in new[] { NativeTextureFormat.Pvrtc2_4, NativeTextureFormat.Pvrtc2_2 })
             {
                 texturePath = Path.Combine(root, format + ".png");
@@ -129,7 +151,7 @@ internal static class Program
     }
 
     private static async Task<int> RunPsbBc3TestAsync(string source, string destination, string ratioText,
-        PsbTextureFormat format = PsbTextureFormat.Dxt5)
+        PsbTextureFormat format = PsbTextureFormat.Dxt5, PsbDxt5Layout layout = PsbDxt5Layout.Swizzled)
     {
         try
         {
@@ -137,7 +159,7 @@ internal static class Program
             if (File.Exists(destination)) return 13;
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destination))!);
             File.Copy(source, destination);
-            PsbProcessingResult result = await new PsbProcessor().ProcessWithFormatAsync(destination, ratio, ratio, format);
+            PsbProcessingResult result = await new PsbProcessor().ProcessWithFormatAsync(destination, ratio, ratio, format, dxt5Layout: layout);
             Console.WriteLine(result.Message);
             await new PsbProcessor().InspectAsync(destination);
             return result.IsEmoteMotion && result.Changed ? 0 : 14;

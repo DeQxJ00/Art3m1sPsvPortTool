@@ -163,8 +163,8 @@
                       <StackPanel Spacing="5">
                         <Grid ColumnDefinitions="220,*" ColumnSpacing="8">
                           <CheckBox Content="{Binding Label}" IsChecked="{Binding Enabled}" />
-                          <ComboBox Grid.Column="1" ItemsSource="{Binding Choices}" SelectedIndex="{Binding SelectedFormat}" HorizontalAlignment="Stretch">
-                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" MaxWidth="720" /></DataTemplate></ComboBox.ItemTemplate>
+                          <ComboBox Grid.Column="1" ItemsSource="{Binding FormatItems}" SelectedIndex="{Binding SelectedFormat}" HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:TextureFormatChoice"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" MaxWidth="720" /></DataTemplate></ComboBox.ItemTemplate>
                           </ComboBox>
                         </Grid>
                         <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
@@ -217,6 +217,17 @@
                           SelectedIndex="{Binding SelectedPsbFormat}" HorizontalAlignment="Stretch" />
               </StackPanel>
               <TextBlock Text="{Binding ConvertEmotePsbTexturesToDxt5Help}" TextWrapping="Wrap"
+                         Foreground="{DynamicResource SecondaryText}" FontSize="12" />
+              <StackPanel Spacing="5" IsEnabled="{Binding CanSelectPsbDxt5Layout}">
+                <TextBlock Text="{Binding PsbDxt5LayoutLabel}" TextWrapping="Wrap" />
+                <ComboBox x:Name="PsbDxt5LayoutComboBox" ItemsSource="{Binding PsbDxt5LayoutChoices}"
+                          SelectedIndex="{Binding SelectedPsbDxt5Layout}" HorizontalAlignment="Stretch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PsbLayoutChoice"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /></DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <TextBlock Text="{Binding PsbDxt5LayoutHelp}" TextWrapping="Wrap"
                          Foreground="{DynamicResource SecondaryText}" FontSize="12" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">

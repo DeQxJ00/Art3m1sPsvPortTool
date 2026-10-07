@@ -676,6 +676,7 @@ public sealed class CoreTests : IDisposable
         Assert.Single(psbProcessor.Paths);
         Assert.Equal(0.5, psbProcessor.Paths[0].Ratio);
         Assert.True(psbProcessor.Paths[0].ConvertToDxt5);
+        Assert.Equal(PsbDxt5Layout.Swizzled, Assert.Single(psbProcessor.Layouts));
         ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"),
             Path.Combine(_root, "psb-verify"));
         Assert.Equal(original, await File.ReadAllBytesAsync(Assert.Single(rebuilt.Entries).ExtractedPath));
@@ -863,6 +864,14 @@ public sealed class CoreTests : IDisposable
     private sealed class RecordingPsbProcessor : IPsbProcessor
     {
         public List<(string Path, double Ratio, bool ConvertToDxt5)> Paths { get; } = [];
+        public List<PsbDxt5Layout> Layouts { get; } = [];
+        public Task<PsbProcessingResult> ProcessWithFormatAsync(string path, double textureRatio, double geometryRatio,
+            PsbTextureFormat? outputFormat, CancellationToken cancellationToken = default,
+            PsbDxt5Layout dxt5Layout = PsbDxt5Layout.Linear)
+        {
+            Layouts.Add(dxt5Layout);
+            return ProcessAsync(path, textureRatio, outputFormat == PsbTextureFormat.Dxt5, cancellationToken);
+        }
         public Task<PsbInspection> InspectAsync(string path, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PsbInspection(3, 0, 0, 0, false));
         public Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default)

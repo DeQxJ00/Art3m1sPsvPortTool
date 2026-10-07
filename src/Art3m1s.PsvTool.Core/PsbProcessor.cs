@@ -16,10 +16,11 @@ public sealed record PsbProcessingResult(bool IsEmoteMotion, bool Changed, strin
 public interface IPsbProcessor
 {
     Task<PsbProcessingResult> ProcessWithFormatAsync(string path, double textureRatio, double geometryRatio,
-        PsbTextureFormat? outputFormat, CancellationToken cancellationToken = default)
-        => outputFormat is null or PsbTextureFormat.Dxt5
+        PsbTextureFormat? outputFormat, CancellationToken cancellationToken = default,
+        PsbDxt5Layout dxt5Layout = PsbDxt5Layout.Linear)
+        => outputFormat is null || outputFormat == PsbTextureFormat.Dxt5 && dxt5Layout == PsbDxt5Layout.Linear
             ? ProcessWithRatiosAsync(path, textureRatio, geometryRatio, outputFormat.HasValue, cancellationToken)
-            : throw new NotSupportedException("This PSB processor does not support PVRTC2 conversion.");
+            : throw new NotSupportedException("This PSB processor does not support the requested texture format/layout.");
     Task<PsbInspection> InspectAsync(string path, CancellationToken cancellationToken = default);
     Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default);
     Task<PsbProcessingResult> ProcessAsync(string path, double ratio, bool convertRgba8ToDxt5,

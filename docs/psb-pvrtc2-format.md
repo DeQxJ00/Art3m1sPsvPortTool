@@ -9,11 +9,12 @@ This is a handoff specification, not an engine implementation. The current GXM E
 | PSB `source.*.texture.type` | PVRTexLib / PVR pixel code | 原始数据长度 / Raw length |
 | --- | --- | --- |
 | `DXT5` | 11 (BC3) | `ceil(width/4) × ceil(height/4) × 16` |
+| `DXT5_SWIZZLED` | 11 (BC3), custom PSB layout marker | `P(width) × P(height)`; see [layout contract](psb-dxt5-layout.md) |
 | `PVRTC2_4BPP` | 5 (PVRTCII 4bpp) | `ceil(width/4) × ceil(height/4) × 8` |
 | `PVRTC2_2BPP` | 4 (PVRTCII 2bpp) | `ceil(width/8) × ceil(height/4) × 8` |
 
 - `width` / `height` 是逻辑尺寸；不足整块时仅压缩存储向上补齐，不改逻辑尺寸。
-- `pixel` / `data` / `resource` 仍为 PSB 内资源索引。资源内容是 PVRTexLib 输出的原始压缩块，无 DDS/PVR 头、无 mipmap、未执行 PSV swizzle。
+- `pixel` / `data` / `resource` 仍为 PSB 内资源索引。PVRTC2 资源内容是 PVRTexLib 输出的原始压缩块，无 DDS/PVR 头、无 mipmap、未执行 PSV swizzle；只有单独选择的 DXT5 Swizzled 会按新约定重排。
 - RGBA 线性色彩空间、非预乘 Alpha；保留 Alpha 通道，但块编码是有损近似。
 - PVRTCII 使用标准线性块顺序，不是 PVRTCI 的 Morton 排列；GPU 上传应依据平台格式要求，不能直接套 DXT5 块布局。
 - 纹理、icon 采样矩形、origin、画布与动作几何统一跟随全局 Ratio。无需渲染补偿配置或第二次几何缩放。

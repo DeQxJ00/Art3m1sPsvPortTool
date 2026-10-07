@@ -48,6 +48,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         IsDark = saved.IsDark;
         _convertEmotePsbTexturesToDxt5 = saved.ConvertEmotePsbTexturesToDxt5;
         _selectedPsbFormat = Enum.IsDefined(saved.PsbOutputFormat) ? (int)saved.PsbOutputFormat : 0;
+        _selectedPsbDxt5Layout = Enum.IsDefined(saved.Dxt5Layout) ? (int)saved.Dxt5Layout : 0;
         _nativeTextures = saved.NativeTextures;
         // Independent texture scaling is a per-run opt-in, never restored from settings.
         _independentPsbTextureScaling = false;
@@ -88,7 +89,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     public bool ConvertEmotePsbTexturesToDxt5
     {
         get => _convertEmotePsbTexturesToDxt5;
-        set { if (Set(ref _convertEmotePsbTexturesToDxt5, value)) SaveSettings(); }
+        set { if (Set(ref _convertEmotePsbTexturesToDxt5, value)) { OnPropertyChanged(nameof(CanSelectPsbDxt5Layout)); SaveSettings(); } }
     }
     public bool SubsetFonts { get => _subsetFonts; set => Set(ref _subsetFonts, value); }
     public int FontProfile { get => _fontProfile; set => Set(ref _fontProfile, value); }
@@ -216,7 +217,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 Progress = value.Percent; Status = LocalizeStage(value.Stage);
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
             });
-            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(Enabled: false, CompensateRendering: false), (PsbTextureFormat)SelectedPsbFormat);
+            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(Enabled: false, CompensateRendering: false), (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout);
             var token = _conversionCancellation.Token;
             await Task.Run(() => _converter.ConvertAsync(options, reporter, token), token);
             Status = L("Finished");
@@ -276,7 +277,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     }
     private void SaveSettings()
     {
-        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5, NativeTextures, PsbRules, PsbRenderCompensation, (PsbTextureFormat)SelectedPsbFormat)); }
+        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5, NativeTextures, PsbRules, PsbRenderCompensation, (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout)); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)

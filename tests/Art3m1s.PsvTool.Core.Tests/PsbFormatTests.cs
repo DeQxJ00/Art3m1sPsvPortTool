@@ -11,10 +11,11 @@ public sealed class PsbFormatTests : IDisposable
     public PsbFormatTests() => Directory.CreateDirectory(_root);
 
     [Theory]
-    [InlineData(PsbTextureFormat.Dxt5)]
-    [InlineData(PsbTextureFormat.Pvrtc2_4)]
-    [InlineData(PsbTextureFormat.Pvrtc2_2)]
-    public async Task FormatsConvertLooseAndArchivedMultiAtlasPsbWithoutChangingInput(PsbTextureFormat format)
+    [InlineData(PsbTextureFormat.Dxt5, PsbDxt5Layout.Linear)]
+    [InlineData(PsbTextureFormat.Dxt5, PsbDxt5Layout.Swizzled)]
+    [InlineData(PsbTextureFormat.Pvrtc2_4, PsbDxt5Layout.Swizzled)]
+    [InlineData(PsbTextureFormat.Pvrtc2_2, PsbDxt5Layout.Swizzled)]
+    public async Task FormatsConvertLooseAndArchivedMultiAtlasPsbWithoutChangingInput(PsbTextureFormat format, PsbDxt5Layout layout)
     {
         string input = Path.Combine(_root, "input"), output = Path.Combine(_root, "output");
         Directory.CreateDirectory(input);
@@ -24,18 +25,23 @@ public sealed class PsbFormatTests : IDisposable
         await codec.PackPf8Async(new('8', [new(Encoding.UTF8.GetBytes("image/hero.psb"), "image/hero.psb", 0,
             (uint)original.Length, source)]), Path.Combine(input, "root.pfs.010"));
         await new ConversionService().ConvertAsync(new(input, output, Ratio: .5,
-            Categories: AssetCategories.Animation, PsbOutputFormat: format));
+            Categories: AssetCategories.Animation, PsbOutputFormat: format, Dxt5Layout: layout));
         var archive = await codec.ExtractAsync(Path.Combine(output, "root.pfs.010"), Path.Combine(_root, "unpacked"));
         foreach (string path in new[] { Path.Combine(output, "hero.psb"), Assert.Single(archive.Entries).ExtractedPath })
         {
             byte[] bytes = await File.ReadAllBytesAsync(path);
             var inspection = await PsbTextureScanner.InspectFileAsync(path);
             Assert.Equal(new[] { (32, 16), (16, 8) }, inspection.Atlases.Select(x => (x.Width, x.Height)));
-            Assert.All(inspection.Atlases, atlas => Assert.Equal(PsbTextureFormats.TypeName(format), atlas.Format));
+            Assert.All(inspection.Atlases, atlas => Assert.Equal(PsbTextureFormats.TypeName(format, layout), atlas.Format));
             Assert.Equal("RGBA8", PsbProcessor.InspectStringMetadata(bytes, "metadata", "formatDescription"));
             foreach (var atlas in inspection.Atlases)
             {
                 byte[] payload = PsbProcessor.InspectTextureResource(bytes, atlas.Source);
+                if (format == PsbTextureFormat.Dxt5 && layout == PsbDxt5Layout.Swizzled)
+                {
+                    Assert.Equal(PsbDxt5Storage.SwizzledBytes(atlas.Width, atlas.Height), payload.Length);
+                    payload = PsbDxt5Storage.Unswizzle(payload, atlas.Width, atlas.Height);
+                }
                 Assert.Equal(NativeTextureFormats.PayloadBytes(PsbTextureFormats.NativeFormat(format), atlas.Width, atlas.Height), payload.Length);
                 byte[] decoded = format == PsbTextureFormat.Dxt5 ? PsbProcessor.DecodeDxt5ForTest(payload, atlas.Width, atlas.Height)
                     : PvrTextureCodec.Decode(payload, atlas.Width, atlas.Height, PsbTextureFormats.NativeFormat(format));

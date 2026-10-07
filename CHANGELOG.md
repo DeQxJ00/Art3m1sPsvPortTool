@@ -6,6 +6,13 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.17] - 2026-10-07
+
+- 普通图片的 BC1 / DXT1（不透明）与 BC3 / DXT5（渐变透明）新增 Swizzled / Linear 两种；普通 AUTO 和手动排除偏移信息 AUTO 均提供两种排列，默认优先 Swizzled。DDS FourCC 保持 DXT1 / DXT5，真正保留区开头（0x20–0x24）写 GXMSW，未标记仍按线性处理，不增加标记版本。共享 GXM Y-first Morton 块重排，补齐存储但不改逻辑尺寸，更新文件大小估计及中英文说明；已有原生资源和定位 metadata 保持保护，PFS 与散装使用同一规则。需配套引擎识别，不直接修改引擎。
+- Added Swizzled/Linear output for ordinary BC1/DXT1 opaque images and BC3/DXT5 alpha images, plus both layout variants for ordinary and manual metadata-excluding AUTO, preferring Swizzled. DDS retains DXT1/DXT5 FourCC and writes GXMSW at reserved offsets 0x20–0x24 without a marker version; unmarked files remain Linear. Shared Y-first Morton block ordering pads storage without changing logical dimensions. Size estimates and bilingual docs are updated; native resources and positioning metadata remain protected, with matching PFS/loose behavior. Requires engine support; no engine edits.
+- 新增 PSB DXT5 排列模式，默认 Swizzled（GXM Y-first Morton），可选 Linear；设置持久化且仅 DXT5 可用。以完整 BC3 块重排并补齐 2 的幂存储，逻辑尺寸不变；纯排列互转不重复压缩，支持读取重排后的资源再次缩放。使用独立 `DXT5_SWIZZLED` 标记，提供引擎接入约定，旧引擎需选择 Linear；不直接修改引擎、不影响 PVRTC2 或普通 DDS。
+- Added a persistent PSB DXT5 layout selector, defaulting to Swizzled (GXM Y-first Morton) with Linear available. Whole BC3 blocks are reordered into power-of-two-padded storage without changing logical dimensions; layout-only changes are lossless, and swizzled input can be resized. Uses the explicit DXT5_SWIZZLED marker and an engine handoff contract; legacy engines require Linear. PVRTC2 and standalone DDS are unaffected by the PSB layout setting.
+
 ## [1.0.16] - 2026-10-07
 
 - PSB 纹理转换新增 PVRTC2 4bpp / 2bpp 选择，默认仍为 DXT5（BC3）；保存格式设置，支持内嵌 RGBA8、DXT5 与两种 PVRTC2 互转，全局 Ratio 和禁用的独立比例功能保持不变。使用随包 PVRTexLib 编码并校验资源长度，重建字符串及资源表，不影响共享字符串的其他引用；附引擎格式接入说明，当前 GXM E-mote PSB 路径需另行支持 PVRTC2。

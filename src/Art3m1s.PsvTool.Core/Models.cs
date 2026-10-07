@@ -39,7 +39,8 @@ public sealed record ConversionOptions(
     bool ConvertEmotePsbTexturesToDxt5 = true,
     NativeTextureOptions? NativeTextures = null,
     PsbTextureOptions? PsbTextures = null,
-    PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5)
+    PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5,
+    PsbDxt5Layout Dxt5Layout = PsbDxt5Layout.Swizzled)
 {
     public int EffectiveParallelism => MaxParallelism > 0
         ? MaxParallelism
@@ -49,6 +50,7 @@ public sealed record ConversionOptions(
     {
         PsbTextures?.Validate();
         _ = PsbTextureFormats.Name(PsbOutputFormat);
+        if (!Enum.IsDefined(Dxt5Layout)) throw new ArgumentOutOfRangeException(nameof(Dxt5Layout));
         if (!Directory.Exists(InputDirectory))
             throw new DirectoryNotFoundException(InputDirectory);
         if (Ratio is <= 0 or > 1)

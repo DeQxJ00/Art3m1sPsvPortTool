@@ -52,7 +52,7 @@ Saved group parameters are retained, but scanning is unavailable from the UI; gr
 
 - Text: exactly reproduces VisualNovelUpscaler's Artemis matching, truncation, encoding, and output behavior for INI / TBL / IPT / AST / LUA. IET is copied unchanged. For E-mote, X/Y offsets and canvas dimensions in TBL pose tables, AST coordinates, and literal LUA `mulpos()` coordinates are scaled together; character scale factors, actions, faces, lip-sync samples, and resource names remain unchanged.
 - Images: high-quality alpha-premultiplied ImageSharp Bicubic resizing. Retained PNGs have no PNG optimization, palette compression or waifu2x; native texture encoding is a separate lossy option.
-- Animation: Bicubic OGV resize through FFmpeg; each target dimension is truncated as `int(original dimension × Ratio)`, matching VisualNovelUpscaler, while frame rate and audio are retained. Artemis/E-mote PSB containers (v1–v4) support embedded `RGBA8` / `DXT5` / `PVRTC2_4BPP` / `PVRTC2_2BPP` atlases. Bicubic Ratio resizing updates texture/truncation dimensions, icon rectangles, origins, screenSize, motion coordinates, offsets, paths, blank-mesh domains, and resource tables together. Angles, timing, scale factors, curves, and parameter ranges remain unchanged. “Convert E-mote PSB texture format” in Advanced settings is enabled by default, with `DXT5 (BC3)` selected; alternatives are `PVRTC2 4bpp` / `PVRTC2 2bpp`. Disable it to keep the source format; Animation still controls resizing. Textures already in the selected format are not re-encoded without a resize. Loose and PFS-contained PSBs share the same logic, processed one at a time to bound memory.
+- Animation: Bicubic OGV resize through FFmpeg; each target dimension is truncated as `int(original dimension × Ratio)`, matching VisualNovelUpscaler, while frame rate and audio are retained. Artemis/E-mote PSB containers (v1–v4) support embedded `RGBA8` / `DXT5` / `DXT5_SWIZZLED` / `PVRTC2_4BPP` / `PVRTC2_2BPP` atlases. Bicubic Ratio resizing updates texture/truncation dimensions, icon rectangles, origins, screenSize, motion coordinates, offsets, paths, blank-mesh domains, and resource tables together. Angles, timing, scale factors, curves, and parameter ranges remain unchanged. “Convert E-mote PSB texture format” in Advanced settings is enabled by default, with `DXT5 (BC3)` selected; alternatives are `PVRTC2 4bpp` / `PVRTC2 2bpp`. Disable it to keep the source format; Animation still controls resizing. Textures already in the selected format are not re-encoded without a resize. Loose and PFS-contained PSBs share the same logic, processed one at a time to bound memory.
 - Video: “Ignore video inside PFS (WMV / DAT / MP4 / AVI / MPG / MKV)” is enabled by default. Matching PFS entries retain their original names and bytes and are never passed to FFmpeg. OGV is not covered by this option and is still processed as animation. When the option is disabled, supported PFS video can be processed, while archived DAT remains unchanged because it may contain ordinary data such as font caches. Loose WMV / DAT / MP4 / AVI / MPG / MKV videos outside PFS are all emitted as same-stem MP4 files using H.264 Main@3.1 and AAC. DAT video uses a fixed 960×544 output; other containers use Ratio-based dimension truncation. DAT files without a detectable video stream remain unchanged.
 - Fonts (optional): TTF and OTF are supported. TrueType `glyf` fonts use the built-in conservative subsetter, while CFF OpenType fonts use HarfBuzz. The selected common Simplified Chinese, Japanese, or Traditional Chinese range is retained together with all script-used characters, ASCII, common punctuation, and full-width/half-width symbols. TTC remains unchanged to avoid corruption.
 - Unselected asset types are copied byte-for-byte.
@@ -65,13 +65,16 @@ Enable “Convert E-mote PSB texture format” in Advanced settings, then choose
 
 | Output format | Bit rate | Pixel-resource length (no mipmaps) | PSB `texture.type` |
 | --- | --- | --- | --- |
-| DXT5 (BC3, default) | 8bpp | `ceil(width/4) × ceil(height/4) × 16` | `DXT5` |
+| DXT5 (BC3) · Swizzled (default) | 8bpp | `P(width) × P(height)`, where `P(n)` is the smallest power of two ≥ `max(4,n)` | `DXT5_SWIZZLED` |
+| DXT5 (BC3) · Linear | 8bpp | `ceil(width/4) × ceil(height/4) × 16` | `DXT5` |
 | PVRTC2 4bpp | 4bpp | `ceil(width/4) × ceil(height/4) × 8` | `PVRTC2_4BPP` |
 | PVRTC2 2bpp | 2bpp | `ceil(width/8) × ceil(height/4) × 8` | `PVRTC2_2BPP` |
 
-All three support alpha but are lossy; 2bpp loses more color, edge and transparency detail. The supplied PVRTexLib encodes PVRTC2. PSB resources contain raw compressed blocks without DDS / PVR headers or PSV swizzle; string tables, resource lengths and offsets are rebuilt while preserving logical dimensions and unrelated strings. [PVRTC2 storage specification](https://github.com/KhronosGroup/DataFormat/blob/main/pvrtc.txt).
+All three support alpha but are lossy; 2bpp loses more color, edge and transparency detail. The supplied PVRTexLib encodes PVRTC2, retaining its raw linear block order. PSB resources have no DDS / PVR header; string tables, resource lengths and offsets are rebuilt while preserving logical dimensions and unrelated strings. [PVRTC2 storage specification](https://github.com/KhronosGroup/DataFormat/blob/main/pvrtc.txt).
 
-**Compatibility: the current GXM E-mote PSB loader recognizes only RGBA8 / DXT5. PVRTC2 support in its PNG/PVR path does not imply PSB support. PVRTC2 PSBs require separate engine support for the type identifiers and raw payload; otherwise they cannot display. This project does not modify the engine. Keep the default DXT5 for the current engine.** See the [PSB PVRTC2 format contract](docs/psb-pvrtc2-format.md).
+DXT5 “layout” defaults to **Swizzled · GXM Morton**, including legacy settings without a saved layout; **Linear** is also available. Whole 16-byte BC3 blocks are reordered with Y bits first and X bits second, continuing the longer dimension after the shorter one ends. Storage dimensions round up independently to powers of two, minimum 4; padded blocks are zero. Logical dimensions, icons and geometry are not rescaled by layout changes. Layout-only conversion moves blocks without decoding or lossy re-encoding and can be reversed exactly. Swizzled supports logical dimensions 1–4096 and rejects larger sizes explicitly. The selector applies only to PSB DXT5, is unavailable for PVRTC2 or disabled format conversion, and does not change standalone DDS/PVR output. Disabling format conversion retains the source PSB format and layout.
+
+**Compatibility: the current GXM E-mote PSB loader recognizes only RGBA8 / linear DXT5. Both `DXT5_SWIZZLED` and PVRTC2 require separate engine support. Swizzled bytes must not be mislabeled as `DXT5` or swizzled a second time by the engine. This project does not modify the engine; select DXT5 + Linear until matching support exists.** See the [DXT5 layout contract](docs/psb-dxt5-layout.md) and [PVRTC2 format contract](docs/psb-pvrtc2-format.md).
 
 ### PSB DXT5 GPU memory and why compress
 
@@ -79,7 +82,7 @@ RGBA8 uses 4 bytes per pixel; DXT5 (BC3) uses 16 bytes per `4×4` block and supp
 
 This is more than a smaller disk file: the current Art3m1sPSV native BC3 path uploads compressed blocks for GPU sampling without a full RGBA pixel mirror, reducing texture storage and transfers. Resizing compounds the savings, but higher frame rates are not guaranteed. Falling back to RGBA decoding on an unsupported engine may remove the GPU-memory benefit.
 
-| Atlas dimensions / Ratio | RGBA8 data | DXT5 data | Current GXM DXT5 allocation estimate |
+| Atlas dimensions / Ratio | RGBA8 data | DXT5 Linear data | Current GXM DXT5 allocation estimate |
 | --- | ---: | ---: | ---: |
 | 4096 × 2048 / 1 | 32 MiB | 8 MiB | 8 MiB |
 | 3072 × 1536 / 0.75 | 18 MiB | 4.5 MiB | 8 MiB |
@@ -87,6 +90,8 @@ This is more than a smaller disk file: the current Art3m1sPSV native BC3 path up
 | 1024 × 512 / 0.25 | 2 MiB | 0.5 MiB | 0.5 MiB |
 
 All ratios above refer to an original `4096 × 2048` atlas. The current engine rounds BC3 storage dimensions up to powers of two (minimum 4), aligns RGBA row stride to 8 pixels, and rounds each texture allocation up to **256 KiB**. Non-power-of-two dimensions therefore cannot use “1 byte per pixel” as actual GPU memory. Small textures can allocate at least 0.25 MiB in either format, eliminating allocation savings.
+
+“DXT5 data” in this table and the disabled legacy category panel means **Linear** data. Swizzled PSB resources include power-of-two storage padding: 3072×1536 uses 8 MiB rather than Linear's 4.5 MiB, without the extra 256 KiB GPU-allocation alignment. Swizzling itself does not reduce GPU memory.
 
 Each UI row compares the group's **single largest atlas** at the selected Ratio. It is not measured GPU usage for the chosen output format, the whole PSB, or all scanned files. Sum only the atlases actually loaded together; caches, render targets and temporary memory are extra. Estimates cover the current native GXM path for atlases up to 4096 without mipmaps, not other engines or fallback paths. `1 MiB = 1024 × 1024` bytes.
 
@@ -116,20 +121,20 @@ For each new version, update `CHANGELOG.md`, `Directory.Build.props`, and macOS 
 - The first macOS release is unsigned and unnotarized.
 - Unsupported video container/codec combinations stop with the original FFmpeg diagnostic instead of silently degrading.
 - pf2/pf6 can be read, while rebuilt files are pf8. Individual PFS entries over 4 GiB are unsupported.
-- PSB rebuilding currently supports plaintext bodies and encrypted headers whose key can be inferred automatically. Encrypted bodies, external textures, and atlas formats other than `RGBA8` / `DXT5` / `PVRTC2_4BPP` / `PVRTC2_2BPP` fail explicitly instead of being silently copied as “converted.” Block re-encoding is lossy. If an added string cannot fit the original node's index width and no index is reusable, conversion fails safely instead of corrupting output.
+- PSB rebuilding currently supports plaintext bodies and encrypted headers whose key can be inferred automatically. Encrypted bodies, external textures, and atlas formats other than `RGBA8` / `DXT5` / `DXT5_SWIZZLED` / `PVRTC2_4BPP` / `PVRTC2_2BPP` fail explicitly instead of being silently copied as “converted.” Block re-encoding is lossy. If an added string cannot fit the original node's index width and no index is reusable, conversion fails safely instead of corrupting output.
 - Automatic text rules target common Artemis scripts; verify subtitles, hit areas, and animation coordinates in the actual game.
 
 ## Native PSV textures
 
 The texture conversion master option is disabled by default; enable it when needed. Keep it disabled for resources shared with other platforms or original engines. It requires a version of Art3m1sPSV with native DDS/PVR loading support. Scan all valid `.pfs` / `.pfs.xxx` archives, including subdirectories, and loose images to populate directory categories. After enabling the master option, only color BG is selected by default. Grayscale is listed separately and kept by default; other categories are unchecked.
 
-Each category offers automatic, original, or explicit formats. Dropdown entries show unsuitable counts and reasons based on alpha, channels, metadata, name collisions and scaled dimensions. Incompatible selections are kept and reported. Automatic chooses BC1 for opaque color BG/CG/sprites, BC3 for transparency, and preserves grayscale/UI/unknown categories. An independent, default-off option discards BG alpha during conversion.
+Each category offers automatic, original, or explicit formats. Dropdown entries show unsuitable counts and reasons based on alpha, channels, metadata, name collisions and scaled dimensions. Incompatible selections are kept and reported. Ordinary AUTO and manual-only AUTO excluding offset metadata both offer **Swizzled (preferred/default)** and **Linear**. Swizzled AUTO uses BC1 Swizzled for opaque color and BC3 Swizzled for alpha; Linear AUTO uses their linear equivalents. Ordinary AUTO preserves grayscale/UI/unknown categories, while manual AUTO relaxes the directory restriction only for selected categories, retaining grayscale and metadata protection. An independent, default-off option discards BG alpha during conversion.
 
 | Format | Bits/pixel | Channels / alpha |
 | --- | ---: | --- |
-| BC1 / DXT1 | 4 | RGB + binary alpha |
+| BC1 / DXT1 · Swizzled / Linear | 4 | RGB + binary alpha |
 | BC2 / DXT3 | 8 | RGB + 4-bit alpha |
-| BC3 / DXT5 | 8 | RGB + interpolated alpha |
+| BC3 / DXT5 · Swizzled / Linear | 8 | RGB + interpolated alpha |
 | BC4 UNORM / SNORM | 4 | R, no separate alpha |
 | BC5 UNORM / SNORM | 8 | RG, no blue or separate alpha |
 | PVRTC1 RGB / RGBA 2bpp | 2 | RGB or RGBA |
@@ -140,6 +145,8 @@ Each category offers automatic, original, or explicit formats. Dropdown entries 
 BC4 can be explicitly selected for opaque grayscale data; BC5 and signed formats are unsuitable for ordinary images. PVRTC1 requires power-of-two output dimensions, without automatic stretching. ETC1 currently has Vita3K compatibility issues. Output is limited to 4096 per dimension, with no mipmaps. Estimates include block alignment and headers, but retained images use original sizes and GPU allocation has additional overhead. Compressed files may exceed PNG sizes.
 
 BC outputs DDS; PVRTC/ETC1 outputs PVR. PFS filename encoding is preserved while changing extensions, using the engine's PNG-to-native lookup. Metadata-bearing PNGs remain PNG to retain offsets/crop information. Existing native textures, conflicting names, duplicate virtual paths and unreadable images are kept. Existing PSB processing remains independent. Keep the supplied PVRTexLib native library and license files with the executable.
+
+Swizzled DDS uses a private PSV GXM layout: FourCC remains `DXT1` / `DXT5`; the first five bytes of `DDS_HEADER.dwReserved1` (file offsets `0x20`–`0x24`) contain ASCII `GXMSW`. Unmarked files remain ordinary Linear DDS. No marker version or extra header is added. Whole 4×4 blocks use Y-first Morton order with power-of-two storage padding, without enlarging logical/render dimensions. Swizzled files can exceed Linear files; estimates include padding and swizzling is not a higher compression ratio. **A GXMSW-aware engine is required; choose Linear for legacy engines or ordinary DDS viewers, and never swizzle marked payloads twice.** See the [DDS GXMSW contract](docs/dds-gxm-swizzled.md) for exact offsets and engine handoff. This project does not modify the engine; the PSB layout selector is separate, and BC2/BC4/BC5/PVR are unchanged.
 
 ## Credits
 
