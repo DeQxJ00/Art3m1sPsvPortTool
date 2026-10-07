@@ -102,19 +102,23 @@
           </StackPanel>
         </Border>
 
-        <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="card" IsEnabled="{Binding CanStart}">
+        <Border x:Name="PsbSectionCard" Grid.Row="4" Grid.ColumnSpan="2" Classes="card disabledCard" IsEnabled="False">
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-              <TextBlock Text="{Binding PsbTitle}" Classes="sectionTitle" VerticalAlignment="Center" TextWrapping="Wrap" />
-              <Button x:Name="ScanPsbButton" Grid.Column="1" Content="{Binding ScanPsbLabel}" Click="ScanPsbClick" />
+              <TextBlock x:Name="PsbSectionTitle" Text="{Binding PsbTitle}" Classes="sectionTitle" Foreground="{DynamicResource DisabledText}" IsEnabled="False" VerticalAlignment="Center" TextWrapping="Wrap" />
+              <Button x:Name="ScanPsbButton" Grid.Column="1" Content="{Binding ScanPsbLabel}" Click="ScanPsbClick" IsEnabled="{Binding CanUseIndependentPsbTextureScaling}" />
             </Grid>
-            <TextBlock Text="{Binding PsbHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
-            <CheckBox IsChecked="{Binding IndependentPsbTextureScaling}">
+            <TextBlock Text="{Binding PsbHelp}" TextWrapping="Wrap" Foreground="{DynamicResource DisabledText}" />
+            <CheckBox x:Name="IndependentPsbScalingCheckBox" IsChecked="{Binding IndependentPsbTextureScaling}" IsEnabled="{Binding CanUseIndependentPsbTextureScaling}">
               <TextBlock Text="{Binding IndependentPsbTextureScalingLabel}" TextWrapping="Wrap" />
             </CheckBox>
-            <TextBlock Text="{Binding PsbEmptyHelp}" IsVisible="{Binding !HasPsbCategories}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
-            <Expander Header="{Binding PsbDxt5Title}">
-              <TextBlock Text="{Binding PsbDxt5Help}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" FontSize="12" />
+            <CheckBox x:Name="PsbRenderCompensationCheckBox" IsChecked="{Binding PsbRenderCompensation}" IsEnabled="{Binding IndependentPsbTextureScaling}">
+              <TextBlock Text="{Binding PsbRenderCompensationLabel}" TextWrapping="Wrap" />
+            </CheckBox>
+            <TextBlock Text="{Binding PsbRenderCompensationHelp}" TextWrapping="Wrap" Foreground="{DynamicResource DisabledText}" FontSize="12" />
+            <TextBlock Text="{Binding PsbEmptyHelp}" IsVisible="{Binding !HasPsbCategories}" TextWrapping="Wrap" Foreground="{DynamicResource DisabledText}" />
+            <Expander Header="{Binding PsbDxt5Title}" Foreground="{DynamicResource DisabledText}">
+              <TextBlock Text="{Binding PsbDxt5Help}" TextWrapping="Wrap" Foreground="{DynamicResource DisabledText}" FontSize="12" />
             </Expander>
             <ItemsControl ItemsSource="{Binding PsbCategories}" IsEnabled="{Binding IndependentPsbTextureScaling}">
               <ItemsControl.ItemTemplate>
@@ -129,9 +133,9 @@
                         <TextBlock Grid.Column="4" Text="{Binding Preview}" VerticalAlignment="Center" TextWrapping="Wrap" />
                         <TextBlock Grid.Column="5" Text="{Binding Count}" VerticalAlignment="Center" />
                       </Grid>
-                      <TextBlock Text="{Binding MemoryComparison}" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" FontSize="12" />
-                      <TextBlock Text="{Binding RenderCompensation}" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" FontSize="12" />
-                      <TextBlock Text="{Binding Validation}" IsVisible="{Binding HasValidationError}" Foreground="{DynamicResource WarningText}" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding MemoryComparison}" Foreground="{DynamicResource DisabledText}" TextWrapping="Wrap" FontSize="12" />
+                      <TextBlock Text="{Binding RenderCompensation}" Foreground="{DynamicResource DisabledText}" TextWrapping="Wrap" FontSize="12" />
+                      <TextBlock Text="{Binding Validation}" IsVisible="{Binding HasValidationError}" Foreground="{DynamicResource DisabledText}" TextWrapping="Wrap" />
                       <Expander Header="{Binding DetailsLabel}" IsVisible="{Binding HasFiles}">
                         <ListBox ItemsSource="{Binding FileRows}" MaxHeight="180" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                           <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" /></DataTemplate></ListBox.ItemTemplate>
@@ -145,7 +149,7 @@
           </StackPanel>
         </Border>
 
-        <Border Grid.Row="3" Grid.ColumnSpan="2" Classes="card" IsEnabled="{Binding CanStart}">
+        <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="card" IsEnabled="{Binding CanStart}">
           <StackPanel Spacing="10">
             <CheckBox Content="{Binding NativeTexturesLabel}" IsChecked="{Binding NativeTextures}" />
             <TextBlock Text="{Binding NativeTexturesHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
@@ -195,7 +199,7 @@
           </StackPanel>
         </Border>
 
-        <Border Grid.Row="4" Grid.ColumnSpan="2" Classes="card">
+        <Border Grid.Row="3" Grid.ColumnSpan="2" Classes="card">
           <Grid ColumnDefinitions="1*,2*" ColumnSpacing="18">
             <StackPanel Spacing="10">
               <TextBlock Text="{Binding AdvancedLabel}" Classes="sectionTitle" />
@@ -207,12 +211,12 @@
               <CheckBox IsChecked="{Binding ConvertEmotePsbTexturesToDxt5}">
                 <TextBlock Text="{Binding ConvertEmotePsbTexturesToDxt5Label}" TextWrapping="Wrap" />
               </CheckBox>
+              <StackPanel Spacing="5" IsEnabled="{Binding ConvertEmotePsbTexturesToDxt5}">
+                <TextBlock Text="{Binding PsbFormatLabel}" TextWrapping="Wrap" />
+                <ComboBox x:Name="PsbFormatComboBox" ItemsSource="{Binding PsbFormatChoices}"
+                          SelectedIndex="{Binding SelectedPsbFormat}" HorizontalAlignment="Stretch" />
+              </StackPanel>
               <TextBlock Text="{Binding ConvertEmotePsbTexturesToDxt5Help}" TextWrapping="Wrap"
-                         Foreground="{DynamicResource SecondaryText}" FontSize="12" />
-              <CheckBox IsChecked="{Binding PsbRenderCompensation}" IsEnabled="{Binding IndependentPsbTextureScaling}">
-                <TextBlock Text="{Binding PsbRenderCompensationLabel}" TextWrapping="Wrap" />
-              </CheckBox>
-              <TextBlock Text="{Binding PsbRenderCompensationHelp}" TextWrapping="Wrap"
                          Foreground="{DynamicResource SecondaryText}" FontSize="12" />
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">

@@ -18,17 +18,26 @@ public sealed partial class MainViewModel
     public string IndependentPsbTextureScalingLabel => L("IndependentPsbTextureScaling");
     public string PsbRenderCompensationLabel => L("PsbRenderCompensation");
     public string PsbRenderCompensationHelp => L("PsbRenderCompensationHelp");
+    // Retain the UI and saved ratios, but do not allow independent scaling in this build.
+    public bool CanUseIndependentPsbTextureScaling => false;
     private bool _independentPsbTextureScaling;
     private bool _psbRenderCompensation = true;
     public bool IndependentPsbTextureScaling
     {
         get => _independentPsbTextureScaling;
-        set { if (Set(ref _independentPsbTextureScaling, value)) RefreshPsbRendering(); }
+        set
+        {
+            if (CanUseIndependentPsbTextureScaling && Set(ref _independentPsbTextureScaling, value))
+            {
+                OnPropertyChanged(nameof(PsbRenderCompensation));
+                RefreshPsbRendering();
+            }
+        }
     }
     public bool PsbRenderCompensation
     {
-        get => _psbRenderCompensation;
-        set { if (Set(ref _psbRenderCompensation, value)) { RefreshPsbRendering(); SaveSettings(); } }
+        get => IndependentPsbTextureScaling && _psbRenderCompensation;
+        set { if (Set(ref _psbRenderCompensation, IndependentPsbTextureScaling && value)) { RefreshPsbRendering(); SaveSettings(); } }
     }
 
     private void RefreshPsbRendering()
@@ -80,6 +89,7 @@ public sealed partial class MainViewModel
 
     private void RefreshPsb()
     {
+        OnPropertyChanged(nameof(PsbFormatLabel));
         foreach (var category in PsbCategories) category.Refresh();
         OnPropertyChanged(nameof(PsbTitle)); OnPropertyChanged(nameof(ScanPsbLabel)); OnPropertyChanged(nameof(PsbHelp));
         OnPropertyChanged(nameof(PsbDxt5Title)); OnPropertyChanged(nameof(PsbDxt5Help));

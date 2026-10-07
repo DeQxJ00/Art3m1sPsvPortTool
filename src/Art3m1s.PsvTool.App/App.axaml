@@ -9,6 +9,8 @@
           <SolidColorBrush x:Key="WindowBg">#07101F</SolidColorBrush><SolidColorBrush x:Key="HeaderBg">#0B1629</SolidColorBrush>
           <SolidColorBrush x:Key="CardBg">#101B2E</SolidColorBrush><SolidColorBrush x:Key="CardBorder">#253754</SolidColorBrush>
           <SolidColorBrush x:Key="PrimaryText">#F3F7FF</SolidColorBrush><SolidColorBrush x:Key="SecondaryText">#91A6C7</SolidColorBrush>
+          <SolidColorBrush x:Key="DisabledText">#66758B</SolidColorBrush>
+          <SolidColorBrush x:Key="DisabledCardBg">#151A23</SolidColorBrush><SolidColorBrush x:Key="DisabledCardBorder">#303744</SolidColorBrush>
           <SolidColorBrush x:Key="SubtleBg">#0A1425</SolidColorBrush><SolidColorBrush x:Key="AccentBg">#082644</SolidColorBrush>
           <SolidColorBrush x:Key="WarningBg">#332711</SolidColorBrush><SolidColorBrush x:Key="WarningBorder">#A87722</SolidColorBrush>
           <SolidColorBrush x:Key="WarningText">#FFD58A</SolidColorBrush>
@@ -17,6 +19,8 @@
           <SolidColorBrush x:Key="WindowBg">#EEF3FA</SolidColorBrush><SolidColorBrush x:Key="HeaderBg">#FFFFFF</SolidColorBrush>
           <SolidColorBrush x:Key="CardBg">#FFFFFF</SolidColorBrush><SolidColorBrush x:Key="CardBorder">#CDD8E8</SolidColorBrush>
           <SolidColorBrush x:Key="PrimaryText">#142033</SolidColorBrush><SolidColorBrush x:Key="SecondaryText">#586C88</SolidColorBrush>
+          <SolidColorBrush x:Key="DisabledText">#8993A2</SolidColorBrush>
+          <SolidColorBrush x:Key="DisabledCardBg">#F0F1F3</SolidColorBrush><SolidColorBrush x:Key="DisabledCardBorder">#D7DBE1</SolidColorBrush>
           <SolidColorBrush x:Key="SubtleBg">#F3F6FA</SolidColorBrush><SolidColorBrush x:Key="AccentBg">#DCEEFF</SolidColorBrush>
           <SolidColorBrush x:Key="WarningBg">#FFF3D9</SolidColorBrush><SolidColorBrush x:Key="WarningBorder">#C58A20</SolidColorBrush>
           <SolidColorBrush x:Key="WarningText">#65400C</SolidColorBrush>
@@ -36,6 +40,13 @@
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="12" />
       <Setter Property="Padding" Value="18" />
+    </Style>
+    <Style Selector="Border.card.disabledCard">
+      <Setter Property="Background" Value="{DynamicResource DisabledCardBg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource DisabledCardBorder}" />
+    </Style>
+    <Style Selector="Border.disabledCard TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource DisabledText}" />
     </Style>
     <Style Selector="TextBlock.sectionTitle">
       <Setter Property="FontSize" Value="16" />

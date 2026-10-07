@@ -20,8 +20,9 @@ internal static class ScanScrollChecks
                 foreach (bool psb in new[] { false, true })
                     foreach (double offset in new[] { 0d, 180d })
                     {
+                        var psbScanner = new PsbScanner();
                         var vm = new MainViewModel(settings: new ScreenshotSettingsStore(language, true),
-                            scanner: new Scanner(input), psbScanner: new PsbScanner()) { InputDirectory = input, Ratio = "0.75" };
+                            scanner: new Scanner(input), psbScanner: psbScanner) { InputDirectory = input, Ratio = "0.75" };
                         MainWindow window = new(vm) { Width = 1180, Height = 1000 };
                         try
                         {
@@ -37,6 +38,8 @@ internal static class ScanScrollChecks
                             { Dispatcher.UIThread.RunJobs(); Thread.Sleep(1); }
                             if (vm.IsBusy) throw new InvalidOperationException("Scan timed out.");
                             Settle(window);
+                            if (psb && (button.IsEnabled || psbScanner.Calls != 0 || vm.PsbCategories.Count != 0))
+                                throw new InvalidOperationException("Disabled PSB scan button must not invoke the scanner.");
                             if (vm.Ratio != (psb ? "0.75" : "0.5") || !psb && vm.SelectedResolutionIndex != 20)
                                 throw new InvalidOperationException("Wrong ratio or preferred WINDOWS resolution after scan.");
                             string name = $"{language}-{(psb ? "psb" : "resolution")}-{offset}";
@@ -76,10 +79,14 @@ internal static class ScanScrollChecks
 
     private sealed class PsbScanner : IPsbTextureScanner
     {
+        public int Calls { get; private set; }
         public Task<IReadOnlyList<PsbTextureFileInfo>> ScanAsync(string input, PfsNameEncoding encoding = PfsNameEncoding.Auto,
-            IProgress<ConversionProgress>? progress = null, CancellationToken token = default) =>
-            Task.FromResult<IReadOnlyList<PsbTextureFileInfo>>(Enumerable.Range(0, 30).Select(i =>
+            IProgress<ConversionProgress>? progress = null, CancellationToken token = default)
+        {
+            Calls++;
+            return Task.FromResult<IReadOnlyList<PsbTextureFileInfo>>(Enumerable.Range(0, 30).Select(i =>
                 new PsbTextureFileInfo("root.pfs.010", $"image/fg/hero{i}.psb", 100,
                     new(true, [new("atlas0", 4096, 2048, "RGBA8")]))).ToArray());
+        }
     }
 }

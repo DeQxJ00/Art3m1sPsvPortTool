@@ -20,6 +20,17 @@ internal static class Program
             return RunPsbResizeTestAsync(args[1], args[2]).GetAwaiter().GetResult();
         if (args.Length == 4 && args[0].Equals("--psb-bc3-test", StringComparison.Ordinal))
             return RunPsbBc3TestAsync(args[1], args[2], args[3]).GetAwaiter().GetResult();
+        if (args.Length == 5 && args[0].Equals("--psb-format-test", StringComparison.Ordinal))
+        {
+            PsbTextureFormat? format = args[4].ToLowerInvariant() switch
+            {
+                "dxt5" => PsbTextureFormat.Dxt5,
+                "pvrtc2-4" => PsbTextureFormat.Pvrtc2_4,
+                "pvrtc2-2" => PsbTextureFormat.Pvrtc2_2,
+                _ => null
+            };
+            return format.HasValue ? RunPsbBc3TestAsync(args[1], args[2], args[3], format.Value).GetAwaiter().GetResult() : 12;
+        }
         if (args.Length == 3 && args[0].Equals("--psb-pfs-self-test", StringComparison.Ordinal))
             return RunPsbPfsSelfTestAsync(args[1], args[2]).GetAwaiter().GetResult();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
@@ -56,6 +67,18 @@ internal static class Program
             var info = TextureScanner.InspectBytes(await File.ReadAllBytesAsync(texturePath), "image/bg/test.png");
             var converted = await new NativeTextureProcessor().ConvertAsync(texturePath, info, new(), 1);
             if (!converted.Converted || !File.ReadAllBytes(converted.OutputPath).AsSpan().StartsWith("DDS "u8)) return 12;
+            foreach (var format in new[] { NativeTextureFormat.Pvrtc2_4, NativeTextureFormat.Pvrtc2_2 })
+            {
+                texturePath = Path.Combine(root, format + ".png");
+                using (var image = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(32, 16,
+                    new SixLabors.ImageSharp.PixelFormats.Rgba32(40, 120, 210, 128)))
+                    await SixLabors.ImageSharp.ImageExtensions.SaveAsPngAsync(image, texturePath);
+                info = TextureScanner.InspectBytes(await File.ReadAllBytesAsync(texturePath), "image/fg/test.png");
+                converted = await new NativeTextureProcessor().ConvertAsync(texturePath, info,
+                    new(Rules: [new(info.GroupKey, true, format)]), 1);
+                if (!converted.Converted || new FileInfo(converted.OutputPath).Length !=
+                    52 + NativeTextureFormats.PayloadBytes(format, 32, 16)) return 16;
+            }
             return 0;
         }
         finally
@@ -105,7 +128,8 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunPsbBc3TestAsync(string source, string destination, string ratioText)
+    private static async Task<int> RunPsbBc3TestAsync(string source, string destination, string ratioText,
+        PsbTextureFormat format = PsbTextureFormat.Dxt5)
     {
         try
         {
@@ -113,8 +137,7 @@ internal static class Program
             if (File.Exists(destination)) return 13;
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destination))!);
             File.Copy(source, destination);
-            PsbProcessingResult result = await new PsbProcessor().ProcessAsync(destination, ratio,
-                convertRgba8ToDxt5: true);
+            PsbProcessingResult result = await new PsbProcessor().ProcessWithFormatAsync(destination, ratio, ratio, format);
             Console.WriteLine(result.Message);
             await new PsbProcessor().InspectAsync(destination);
             return result.IsEmoteMotion && result.Changed ? 0 : 14;

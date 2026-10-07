@@ -264,8 +264,8 @@ public sealed class ConversionService : IConversionService
                             }
                         }
                         double geometryRatio = options.Categories.HasFlag(AssetCategories.Animation) ? options.Ratio : 1;
-                        PsbProcessingResult result = await _psb.ProcessWithRatiosAsync(path, psbRatio, geometryRatio,
-                            options.ConvertEmotePsbTexturesToDxt5, token);
+                        PsbProcessingResult result = await _psb.ProcessWithFormatAsync(path, psbRatio, geometryRatio,
+                            options.ConvertEmotePsbTexturesToDxt5 ? options.PsbOutputFormat : null, token);
                         if (options.Categories.HasFlag(AssetCategories.Animation) && options.PsbTextures is { Enabled: true, CompensateRendering: true }
                             && result.IsEmoteMotion && result.Changed)
                             psbRenderModels.Add(new(relativePath.Replace('\\', '/'), archiveName,
