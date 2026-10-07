@@ -71,6 +71,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             {
                 TextureCategories.Clear();
                 PsbCategories.Clear();
+                ClearPsbSizeEstimate();
                 _resolutions = []; _selectedResolutionIndex = -1; _width = _height = null; _archiveCount = 0;
                 OnPropertyChanged(nameof(ResolutionChoices)); OnPropertyChanged(nameof(HasResolutionChoices));
                 OnPropertyChanged(nameof(SelectedResolutionIndex)); OnPropertyChanged(nameof(OriginalResolution));
@@ -80,21 +81,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         }
     }
     public string OutputDirectory { get => _outputDirectory; set { Set(ref _outputDirectory, value); _overwriteArmed = false; } }
-    public string Ratio { get => _ratio; set { if (Set(ref _ratio, value)) { OnPropertyChanged(nameof(TargetResolution)); RefreshTextures(); RefreshPsbRendering(); } } }
+    public string Ratio { get => _ratio; set { if (Set(ref _ratio, value)) { OnPropertyChanged(nameof(TargetResolution)); RefreshTextures(); RefreshPsbRendering(); RefreshPsbSizeEstimate(); } } }
     public bool ProcessText { get => _text; set => Set(ref _text, value); }
     public bool ProcessImages { get => _images; set => Set(ref _images, value); }
-    public bool ProcessAnimation { get => _animation; set { if (Set(ref _animation, value)) RefreshPsbRendering(); } }
+    public bool ProcessAnimation { get => _animation; set { if (Set(ref _animation, value)) { RefreshPsbRendering(); RefreshPsbSizeEstimate(); } } }
     public bool ProcessVideo { get => _video; set => Set(ref _video, value); }
     public bool IgnorePfsVideos { get => _ignorePfsVideos; set => Set(ref _ignorePfsVideos, value); }
     public bool ConvertEmotePsbTexturesToDxt5
     {
         get => _convertEmotePsbTexturesToDxt5;
-        set { if (Set(ref _convertEmotePsbTexturesToDxt5, value)) { OnPropertyChanged(nameof(CanSelectPsbDxt5Layout)); SaveSettings(); } }
+        set { if (Set(ref _convertEmotePsbTexturesToDxt5, value)) { OnPropertyChanged(nameof(CanSelectPsbDxt5Layout)); RefreshPsbSizeEstimate(); SaveSettings(); } }
     }
     public bool SubsetFonts { get => _subsetFonts; set => Set(ref _subsetFonts, value); }
     public int FontProfile { get => _fontProfile; set => Set(ref _fontProfile, value); }
     public int SelectedParallel { get => _selectedParallel; set => Set(ref _selectedParallel, value); }
-    public int SelectedEncoding { get => _selectedEncoding; set => Set(ref _selectedEncoding, value); }
+    public int SelectedEncoding { get => _selectedEncoding; set { if (Set(ref _selectedEncoding, value)) ClearPsbSizeEstimate(); } }
     public bool IsBusy { get => _isBusy; private set { Set(ref _isBusy, value); OnPropertyChanged(nameof(CanStart)); } }
     public bool CanStart => !IsBusy;
     public double Progress { get => _progress; private set => Set(ref _progress, value); }

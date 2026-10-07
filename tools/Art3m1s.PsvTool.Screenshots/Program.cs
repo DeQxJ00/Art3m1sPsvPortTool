@@ -15,6 +15,11 @@ AppBuilder.Configure<App>()
 
 string output = args.Length == 0 ? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../docs/screenshots")) : Path.GetFullPath(args[0]);
 Directory.CreateDirectory(output);
+if (args.Contains("--psb-size-checks"))
+{
+    PsbSizeChecks.Run(output);
+    return;
+}
 if (args.Contains("--scan-scroll-checks"))
 {
     ScanScrollChecks.Run(output);

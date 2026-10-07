@@ -135,12 +135,13 @@ public sealed class TextScalingTests : IDisposable
     [Fact]
     public async Task Case004MalformedAstCanBeConvertedWhenArchiveIsAvailable()
     {
-        string? archive = Environment.GetEnvironmentVariable("ART3M1S_Case004_PFS");
-        if (string.IsNullOrWhiteSpace(archive) || !File.Exists(archive)) return;
-        byte[]? original = await new PfsCodec().ReadSmallEntryAsync(archive, "script/05_fk_17h.ast");
+        string? archive = Environment.GetEnvironmentVariable("ART3M1S_CASE004_PFS");
+        string? entry = Environment.GetEnvironmentVariable("ART3M1S_CASE004_ENTRY");
+        if (string.IsNullOrWhiteSpace(archive) || string.IsNullOrWhiteSpace(entry) || !File.Exists(archive)) return;
+        byte[]? original = await new PfsCodec().ReadSmallEntryAsync(archive, entry);
         Assert.NotNull(original);
         Directory.CreateDirectory(root);
-        string path = Path.Combine(root, "05_fk_17h.ast");
+        string path = Path.Combine(root, "case004.ast");
         await File.WriteAllBytesAsync(path, original);
 
         await new ArtemisTextProcessor().ProcessAsync(path, .5);

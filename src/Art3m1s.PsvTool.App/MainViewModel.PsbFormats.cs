@@ -22,7 +22,7 @@ public sealed partial class MainViewModel
         set
         {
             if (value is < 0 or > 1) return;
-            if (Set(ref _selectedPsbDxt5Layout, value)) SaveSettings();
+            if (Set(ref _selectedPsbDxt5Layout, value)) { RefreshPsbSizeEstimate(); SaveSettings(); }
         }
     }
     public int SelectedPsbFormat
@@ -33,7 +33,7 @@ public sealed partial class MainViewModel
             if (value < 0 || value >= PsbFormatChoices.Count) return;
             if (Set(ref _selectedPsbFormat, value))
             {
-                OnPropertyChanged(nameof(CanSelectPsbDxt5Layout)); SaveSettings();
+                OnPropertyChanged(nameof(CanSelectPsbDxt5Layout)); RefreshPsbSizeEstimate(); SaveSettings();
             }
         }
     }

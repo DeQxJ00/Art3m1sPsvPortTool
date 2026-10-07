@@ -89,6 +89,7 @@ public sealed partial class MainViewModel
 
     private void RefreshPsb()
     {
+        RaisePsbSizeLabels();
         OnPropertyChanged(nameof(PsbFormatLabel));
         OnPropertyChanged(nameof(PsbDxt5LayoutLabel)); OnPropertyChanged(nameof(PsbDxt5LayoutHelp));
         foreach (var choice in PsbDxt5LayoutChoices) choice.Refresh();

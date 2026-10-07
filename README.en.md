@@ -63,6 +63,8 @@ Default parallelism is `max(1, logical CPU count - 1)`. OGV animation is always 
 
 Enable “Convert E-mote PSB texture format” in Advanced settings, then choose the format below it. New and legacy settings default to `DXT5 (BC3)`; the selection is saved. Choosing a format does not enable independent Ratio: textures and associated geometry still follow the global Ratio.
 
+The adjacent “Estimate size” button asynchronously reads all archived and loose PSB metadata without extracting whole archives or modifying assets. It shows source/target payload totals and groups details by full width × height and format, counting all atlases and shared pixel resources only once per PSB. Estimates include block alignment and padding for the global Ratio, DXT5 layout or PVRTC2 format; changing options after scanning updates the result immediately. Unchecked Animation uses Ratio 1, and disabled format conversion retains source formats/layouts. Unreadable, non-E-mote, unsupported-format or out-of-range PSBs are explicitly excluded, with failed paths also logged. This excludes PSB tables, container headers, GPU allocation alignment and caches: it is not whole-PSB file size or total game VRAM. Click again after source-file changes. The button does not enable the disabled independent Ratio/scan panel or move the main viewport.
+
 | Output format | Bit rate | Pixel-resource length (no mipmaps) | PSB `texture.type` |
 | --- | --- | --- | --- |
 | DXT5 (BC3) · Swizzled (default) | 8bpp | `P(width) × P(height)`, where `P(n)` is the smallest power of two ≥ `max(4,n)` | `DXT5_SWIZZLED` |
