@@ -149,6 +149,7 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 
 ## 已知限制
 
+- ImageSharp 3.1.12 存在已知漏洞。目前仅将 NU1902 / NU1903 保留为非阻断警告，漏洞审计仍启用；这不等于漏洞已修复。请仅处理可信且有权修改的资源，升级修复版 4.x 前需要配置官方许可 key。
 - macOS 首版不签名、不公证。
 - 无法由容器和原编码支持的音视频流会报告 FFmpeg 原始诊断并停止，不会静默降级。
 - pf2/pf6 可读取，但重新打包统一输出 pf8；超 4 GiB 的单个 PFS 条目不支持。

@@ -6,6 +6,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 暂时保留 ImageSharp 3.1.12，NU1902 / NU1903 漏洞审计仍显示警告，但不再因警告视为错误而阻断 CI 和发布还原；其他警告仍按错误处理。此调整不修复漏洞、不关闭审计；已修复的 4.x 版本需要先配置官方许可 key。
+- Temporarily retained ImageSharp 3.1.12 and kept NU1902 / NU1903 audit warnings visible without failing CI/release restore. Other warnings remain errors. This does not fix vulnerabilities or disable auditing; upgrading to the patched 4.x release requires an official license key first.
+
 ## [1.0.18] - 2026-10-08
 
 - PSB 纹理格式旁新增异步“计算大小”，按全局 Ratio、DXT5 排列和 PVRTC2 格式统计 PFS 内外全部图集的原/目标数据大小，按宽 × 高列明细；共享资源去重，异常及不支持资源明确排除。扫描后选项变更即时重算，不修改文件、不启用独立缩放、不改变主页面滚动位置；补充实际编码长度与 UI 验证。

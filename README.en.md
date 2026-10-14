@@ -120,6 +120,7 @@ For each new version, update `CHANGELOG.md`, `Directory.Build.props`, and macOS 
 
 ## Known limitations
 
+- ImageSharp 3.1.12 has known vulnerabilities. NU1902 / NU1903 remain visible, non-blocking warnings with auditing enabled; this does not fix the vulnerabilities. Process only trusted, authorized assets. Upgrading to patched 4.x requires an official license key.
 - The first macOS release is unsigned and unnotarized.
 - Unsupported video container/codec combinations stop with the original FFmpeg diagnostic instead of silently degrading.
 - pf2/pf6 can be read, while rebuilt files are pf8. Individual PFS entries over 4 GiB are unsupported.
