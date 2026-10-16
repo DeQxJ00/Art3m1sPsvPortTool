@@ -6,6 +6,12 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.19] - 2026-10-17
+
+- 修复 PSB v4 空扩展资源表与普通资源表共用地址时，转换重建数据区越界的问题；保留空表并正确迁移指针，增加重叠范围校验，补充共享空表、格式转换与重复缩放的合成回归测试。
+- Fixed PSB v4 conversion failures when empty extra-resource pointers alias regular resource tables. Empty tables are preserved and their pointers relocated without rebuilding nonexistent payloads; added overlap validation and synthetic regression coverage for shared empty tables, format conversion and repeated resizing.
+- AST 坐标转换补充 `basex` / `basey`，基准偏移跟随目标画布缩放；保留缩放倍率和图层编号，补充正负偏移测试。
+- AST coordinate conversion now scales `basex` / `basey` with the target canvas while preserving zoom factors and layer IDs, with signed-offset regression tests.
 - 暂时保留 ImageSharp 3.1.12，NU1902 / NU1903 漏洞审计仍显示警告，但不再因警告视为错误而阻断 CI 和发布还原；其他警告仍按错误处理。此调整不修复漏洞、不关闭审计；已修复的 4.x 版本需要先配置官方许可 key。
 - Temporarily retained ImageSharp 3.1.12 and kept NU1902 / NU1903 audit warnings visible without failing CI/release restore. Other warnings remain errors. This does not fix vulnerabilities or disable auditing; upgrading to the patched 4.x release requires an official license key first.
 
