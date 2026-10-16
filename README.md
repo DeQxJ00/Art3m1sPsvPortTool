@@ -2,8 +2,8 @@
 
 [简体中文](README.md) · [English](README.en.md) · [更新日志](CHANGELOG.md)
 
-[![CI](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml)
-[![Release](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml)
+[![CI](https://github.com/DeQxJ00/Art3m1sPsvPortTool/actions/workflows/ci.yml/badge.svg)](https://github.com/DeQxJ00/Art3m1sPsvPortTool/actions/workflows/ci.yml)
+[![Release](https://github.com/DeQxJ00/Art3m1sPsvPortTool/actions/workflows/release.yml/badge.svg)](https://github.com/DeQxJ00/Art3m1sPsvPortTool/actions/workflows/release.yml)
 
 面向 Artemis 引擎游戏的 PSV 移植辅助工具。它逐个解包物理 PFS、按选择缩小资源，再以相同文件名重新打包；根目录下 PFS 之外任意名称的文件夹也会完整递归复制，并按文件扩展名转换其中资源（至少覆盖 3 层，实际不限制深度）。应用使用 .NET 10、Avalonia 12、C# 14 与 NativeAOT，支持 Windows、Linux 和 macOS。
 

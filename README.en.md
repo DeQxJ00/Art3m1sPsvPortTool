@@ -2,8 +2,8 @@
 
 [简体中文](README.md) · [English](README.en.md) · [Changelog](CHANGELOG.md)
 
-[![CI](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml)
-[![Release](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml)
+[![CI](https://github.com/DeQxJ00/Art3m1sPsvPortTool/actions/workflows/ci.yml/badge.svg)](https://github.com/DeQxJ00/Art3m1sPsvPortTool/actions/workflows/ci.yml)
+[![Release](https://github.com/DeQxJ00/Art3m1sPsvPortTool/actions/workflows/release.yml/badge.svg)](https://github.com/DeQxJ00/Art3m1sPsvPortTool/actions/workflows/release.yml)
 
 A PSV porting assistant for Artemis-engine games. It extracts each physical PFS independently, resizes selected assets, and rebuilds it under the exact same file name. Arbitrarily named loose directories under the game root are copied recursively and their assets are converted by file extension (tested at three levels and with no depth limit in the implementation). The app uses .NET 10, Avalonia 12, C# 14, and NativeAOT on Windows, Linux, and macOS.
 
