@@ -20,7 +20,7 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
     private static readonly string[] TblScalarKeys = ["x", "y", "w", "h", "r", "cx", "cy", "cw", "ch", "fx", "fy", "fw", "fh", "left", "top", "size", "width", "height", "spacetop", "spacemiddle", "spacebottom", "kerning", "rubysize"];
     private static readonly string[] TblClipKeys = ["clip", "clip_a", "clip_c", "clip_d"];
     private static readonly string[] IptKeys = ["x", "y", "w", "h", "ax", "ay"];
-    private static readonly string[] AstKeys = ["mx", "my", "ax", "ay", "bx", "by", "x", "y", "x2", "y2"];
+    private static readonly string[] AstKeys = ["mx", "my", "ax", "ay", "bx", "by", "basex", "basey", "x", "y", "x2", "y2"];
     private static readonly string[] LuaKeys = ["width", "height", "left", "top", "x", "y"];
 
     public async Task ProcessAsync(string path, double ratio, CancellationToken cancellationToken = default)

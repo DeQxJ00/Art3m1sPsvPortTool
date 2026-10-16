@@ -502,6 +502,19 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
+    public async Task FrameBaseOffsetsScaleWithCanvasWithoutChangingZoomOrIds()
+    {
+        string ast = Path.Combine(_root, "frame-offset.ast");
+        await File.WriteAllTextAsync(ast,
+            "{\"fgf\", id=8.25, basex=-410, basey=-100, mx=-50, zoom=175}\r\n" +
+            "{\"fgf\", basex=410, basey=100}\r\n", new UTF8Encoding(false));
+        await new ArtemisTextProcessor().ProcessAsync(ast, 0.75);
+        Assert.Equal(
+            "{\"fgf\", id=8.25, basex=-307, basey=-75, mx=-37, zoom=175}\r\n" +
+            "{\"fgf\", basex=307, basey=75}\r\n", await File.ReadAllTextAsync(ast));
+    }
+
+    [Fact]
     public async Task ArtemisTextRulesPreserveLineEndingsAndSavePathBehavior()
     {
         string ast = Path.Combine(_root, "sample.ast");
