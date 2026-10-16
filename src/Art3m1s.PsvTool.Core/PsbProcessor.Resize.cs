@@ -474,8 +474,12 @@ public sealed partial class PsbProcessor
         public byte[] RebuildResources(Dictionary<ResourceKey, byte[]> replacements)
         {
             List<ResourceRegion> regions = [];
-            regions.Add(BuildRegion(false, _chunkData, _chunkOffsets, _chunkLengths, replacements, regions));
-            if (_extraOffsets is not null && _extraLengths is not null)
+            // Empty resource sets own no payload. Their base pointer may alias
+            // another section (including a regular resource table) in PSB v4.
+            // Preserve their tables and only relocate the header pointers.
+            if (_chunkOffsets.Values.Length > 0)
+                regions.Add(BuildRegion(false, _chunkData, _chunkOffsets, _chunkLengths, replacements, regions));
+            if (_extraOffsets is { Values.Length: > 0 } && _extraLengths is not null)
                 regions.Add(BuildRegion(true, _extraData, _extraOffsets, _extraLengths, replacements, regions));
             if (_stringNodes.Any(node => node.Value != node.OriginalValue))
             {
@@ -523,6 +527,8 @@ public sealed partial class PsbProcessor
             int cursor = 0;
             foreach (ResourceRegion region in regions)
             {
+                if (region.Start < cursor || region.End < region.Start || region.End > _data.Length)
+                    throw new InvalidDataException("Overlapping or out-of-range PSB rebuild sections.");
                 output.Write(_data.AsSpan(cursor, region.Start - cursor));
                 output.Write(region.NewBytes!);
                 cursor = region.End;
