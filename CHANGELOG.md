@@ -6,6 +6,13 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.20] - 2026-10-19
+
+- 扫描图片分类后，自动勾选 AUTO 识别到可安全转换的 BG/FG/CG 等分类，默认使用 Swizzled；继续保护灰度、UI、偏移元数据和不适合转换的图片，不自动打开总开关，重新扫描保留已有分类设置。
+- Image scanning now automatically selects categories with suitable AUTO-detected images (BG/FG/CG, etc.), using Swizzled by default. Grayscale, UI, offset metadata and unsuitable images remain protected; scanning leaves the master switch unchanged and preserves existing category settings on rescans.
+- 图片纹理转换标题改为“建议转换”，中英文同步；仅修改提示，实际默认开关状态不变。更新双语说明，补充分类识别、保护规则、PFS/散装扫描及重新扫描的回归测试。
+- Updated the bilingual texture conversion title to “recommended” without changing the default master-switch state. Refreshed documentation and added coverage for category detection, preservation rules, archived/loose scanning and rescans.
+
 ## [1.0.19] - 2026-10-17
 
 - 修复 PSB v4 空扩展资源表与普通资源表共用地址时，转换重建数据区越界的问题；保留空表并正确迁移指针，增加重叠范围校验，补充共享空表、格式转换与重复缩放的合成回归测试。

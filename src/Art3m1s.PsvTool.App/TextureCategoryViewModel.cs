@@ -19,7 +19,8 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
     public TextureCategoryViewModel(IReadOnlyList<TextureImageInfo> images, double ratio, bool ignoreAlpha, bool english)
     {
         Images = images; Key = images[0].GroupKey;
-        _enabled = images.Any(NativeTextureFormats.DefaultEnabled);
+        _enabled = images.Any(image => NativeTextureFormats.Recommend(image, ignoreAlpha) != NativeTextureFormat.Preserve
+            && NativeTextureFormats.Unsuitable(image, NativeTextureFormat.Auto, ratio, ignoreAlpha) == null);
         _ratio = ratio; _ignoreAlpha = ignoreAlpha; _english = english;
         if (images.All(x => NativeTextureFormats.Recommend(x, ignoreAlpha) == NativeTextureFormat.Preserve)) _selectedFormat = 0;
     }
