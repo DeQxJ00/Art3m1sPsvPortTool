@@ -208,6 +208,34 @@ public sealed class CoreTests : IDisposable
         Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(result.AsSpan(20, 4)));
     }
 
+    [Theory]
+    [InlineData(1, 5, 5)]
+    [InlineData(2, 9, 7)]
+    [InlineData(4, 17, 11)]
+    [InlineData(8, 5, 5)]
+    public async Task Adam7IndexedResizeWritesMatchingScanlineHeader(int depth, int width, int height)
+    {
+        string path = Path.Combine(_root, "interlaced.png");
+        using (Image<Rgba32> image = new(width, height, new Rgba32(0, 0, 0, 0)))
+            image.Save(path, new PngEncoder { ColorType = PngColorType.Palette,
+                BitDepth = (PngBitDepth)depth, InterlaceMethod = PngInterlaceMode.Adam7 });
+        byte[] before = await File.ReadAllBytesAsync(path);
+        Assert.Equal(1, before[28]);
+        var original = ReadPngDetails(before);
+        await new PngProcessor().ResizeAsync(path, 0.75);
+        byte[] after = await File.ReadAllBytesAsync(path);
+        Assert.Equal(0, after[28]);
+        var resized = ReadPngDetails(after);
+        Assert.Equal(original.Item1, resized.Item1);
+        Assert.Equal(original.Item2, resized.Item2);
+        Assert.Equal(original.Item3, resized.Item3);
+        using Image<Rgba32> decoded = Image.Load<Rgba32>(after);
+        Assert.Equal((int)(width * 0.75), decoded.Width);
+        Assert.Equal((int)(height * 0.75), decoded.Height);
+        for (int y = 0; y < decoded.Height; y++)
+            for (int x = 0; x < decoded.Width; x++) Assert.Equal(0, decoded[x, y].A);
+    }
+
     [Fact]
     public async Task RgbPngStaysRgbAndKeepsAncillaryChunksByteForByte()
     {

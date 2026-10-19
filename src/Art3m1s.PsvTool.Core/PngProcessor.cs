@@ -102,6 +102,8 @@ public sealed class PngProcessor : IPngProcessor
         byte[] ihdr = document.Ihdr.ToArray();
         BinaryPrimitives.WriteUInt32BigEndian(ihdr.AsSpan(0, 4), checked((uint)width));
         BinaryPrimitives.WriteUInt32BigEndian(ihdr.AsSpan(4, 4), checked((uint)height));
+        // The indexed encoder above emits ordinary scanlines, not Adam7 passes.
+        ihdr[12] = 0;
         await WriteChunkAsync(output, "IHDR", ihdr, cancellationToken);
 
         bool wroteData = false;
