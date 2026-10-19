@@ -6,6 +6,13 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.21] - 2026-10-19
+
+- 启用文本处理时，将 `system.ini` 中 WINDOWS、ANDROID、IOS、WASM、SWITCH、PS4 和 VITA 平台节的宽高统一为转换目标尺寸，补齐缺失的 WIDTH/HEIGHT；目标来自界面选定分辨率乘以 Ratio，未指定时使用扫描结果。保留其他节、注释、编码及换行，不改变脚本坐标自身的缩放规则；归档与散装 INI 使用相同行为。
+- When text processing is enabled, `system.ini` sections for WINDOWS, ANDROID, IOS, WASM, SWITCH, PS4 and VITA now share the conversion target dimensions, adding missing WIDTH/HEIGHT fields. Targets come from the UI-selected resolution times Ratio, falling back to scanned dimensions when omitted. Other sections, comments, encoding and line endings are retained; script coordinates keep their existing scaling rules. Applies to both archived and loose INI files.
+- 增加目标宽高成对校验，以及平台画布统一、禁用文本处理、原文件不变、编码与重复处理的回归测试。
+- Added validation of paired target dimensions and regression coverage for platform canvases, disabled text processing, unchanged inputs, encoding and repeated processing.
+
 ## [1.0.20] - 2026-10-19
 
 - 扫描图片分类后，自动勾选 AUTO 识别到可安全转换的 BG/FG/CG 等分类，默认使用 Swizzled；继续保护灰度、UI、偏移元数据和不适合转换的图片，不自动打开总开关，重新扫描保留已有分类设置。
