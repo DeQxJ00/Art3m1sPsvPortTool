@@ -6,6 +6,11 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.22] - 2026-10-19
+
+- 修复交错索引色 PNG 缩放后仍保留 Adam7 标记、导致像素数据不足和解码失败的问题。输出普通扫描行时同步写入非交错标记，继续保留调色板、透明度和目标尺寸；新增 1/2/4/8 位交错 PNG 回归测试。
+- Fixed indexed PNG resizing retaining an Adam7 header while emitting ordinary scanlines, causing incomplete-image decode errors. Output now declares non-interlaced data while preserving the palette, transparency and target dimensions. Added regression tests for 1/2/4/8-bit interlaced PNGs.
+
 ## [1.0.21] - 2026-10-19
 
 - 启用文本处理时，将 `system.ini` 中 WINDOWS、ANDROID、IOS、WASM、SWITCH、PS4 和 VITA 平台节的宽高统一为转换目标尺寸，补齐缺失的 WIDTH/HEIGHT；目标来自界面选定分辨率乘以 Ratio，未指定时使用扫描结果。保留其他节、注释、编码及换行，不改变脚本坐标自身的缩放规则；归档与散装 INI 使用相同行为。
