@@ -40,7 +40,9 @@ public sealed record ConversionOptions(
     NativeTextureOptions? NativeTextures = null,
     PsbTextureOptions? PsbTextures = null,
     PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5,
-    PsbDxt5Layout Dxt5Layout = PsbDxt5Layout.Swizzled)
+    PsbDxt5Layout Dxt5Layout = PsbDxt5Layout.Swizzled,
+    int? TargetWidth = null,
+    int? TargetHeight = null)
 {
     public int EffectiveParallelism => MaxParallelism > 0
         ? MaxParallelism
@@ -48,6 +50,8 @@ public sealed record ConversionOptions(
 
     public void Validate()
     {
+        if (TargetWidth.HasValue != TargetHeight.HasValue || TargetWidth is <= 0 || TargetHeight is <= 0)
+            throw new ArgumentException("Target width and height must both be positive or both omitted.");
         PsbTextures?.Validate();
         _ = PsbTextureFormats.Name(PsbOutputFormat);
         if (!Enum.IsDefined(Dxt5Layout)) throw new ArgumentOutOfRangeException(nameof(Dxt5Layout));

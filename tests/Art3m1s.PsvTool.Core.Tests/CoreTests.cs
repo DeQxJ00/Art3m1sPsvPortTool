@@ -15,6 +15,45 @@ public sealed class CoreTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "art3m1s-tests-" + Guid.NewGuid().ToString("N"));
     public CoreTests() => Directory.CreateDirectory(_root);
 
+    [Theory]
+    [InlineData(false, true, 960, 540)]
+    [InlineData(true, true, 800, 450)]
+    [InlineData(false, false, 1280, 720)]
+    public async Task ConversionUnifiesIniCanvasesOnlyWhenProcessingText(bool loose, bool text, int width, int height)
+    {
+        string input = Path.Combine(_root, "input"), output = Path.Combine(_root, "output");
+        Directory.CreateDirectory(input);
+        const string ini = "[WINDOWS]\nWIDTH=1920\nHEIGHT=1080\n[ANDROID]\nWIDTH=1280\nHEIGHT=720\nBOOT=system/first.iet\n";
+        await PackIniAsync(Path.Combine(input, "root.pfs"), ini);
+        if (loose) await File.WriteAllTextAsync(Path.Combine(input, "system.ini"), ini);
+        await new ConversionService().ConvertAsync(new ConversionOptions(input, output,
+            Categories: text ? AssetCategories.Text : AssetCategories.None,
+            TargetWidth: loose ? width : null, TargetHeight: loose ? height : null));
+        byte[] bytes = (await new PfsCodec().ReadSmallEntryAsync(Path.Combine(output, "root.pfs"), "system.ini"))!;
+        string result = Encoding.UTF8.GetString(bytes);
+        Assert.Contains($"[ANDROID]\nWIDTH={width}\nHEIGHT={height}\nBOOT=system/first.iet", result);
+        if (text) Assert.Contains($"WIDTH = {width}", result);
+        if (loose) Assert.Equal(result, await File.ReadAllTextAsync(Path.Combine(output, "system.ini")));
+        Assert.Equal(ini, Encoding.UTF8.GetString((await new PfsCodec().ReadSmallEntryAsync(Path.Combine(input, "root.pfs"), "system.ini"))!));
+    }
+
+    [Fact]
+    public async Task UnifiedIniPreservesOtherSettingsAndEncoding()
+    {
+        string path = Path.Combine(_root, "system.ini");
+        const string ini = "; header\r\n[ANDROID]\r\n width = 640 ; comment\r\nHEIGHT=360\r\nWIDTH=320\r\nBOOT=system/first.iet\r\n[OTHER]\r\nWIDTH=42\r\n[IOS]\r\nBOOT=system/first.iet";
+        await File.WriteAllTextAsync(path, ini, new UTF8Encoding(true));
+        await PlatformIniResolution.ApplyAsync(path, 960, 540, default);
+        string result = await File.ReadAllTextAsync(path);
+        Assert.Contains(" width = 960 ; comment\r\nHEIGHT=540\r\nWIDTH=960", result);
+        Assert.Contains("[OTHER]\r\nWIDTH=42", result);
+        Assert.EndsWith("BOOT=system/first.iet\r\nWIDTH = 960\r\nHEIGHT = 540\r\n", result);
+        byte[] first = await File.ReadAllBytesAsync(path);
+        Assert.Equal(new byte[] { 0xef, 0xbb, 0xbf }, first[..3]);
+        await PlatformIniResolution.ApplyAsync(path, 960, 540, default);
+        Assert.Equal(first, await File.ReadAllBytesAsync(path));
+    }
+
     [Fact]
     public async Task Pf8RoundTripPreservesNamesOrderAndBytes()
     {

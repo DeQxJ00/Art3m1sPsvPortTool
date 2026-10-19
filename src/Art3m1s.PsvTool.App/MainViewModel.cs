@@ -218,7 +218,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 Progress = value.Percent; Status = LocalizeStage(value.Stage);
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
             });
-            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(Enabled: false, CompensateRendering: false), (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout);
+            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(Enabled: false, CompensateRendering: false), (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout,
+                TargetWidth: _width is > 0 ? Math.Max(1, (int)(_width.Value * ratio)) : null,
+                TargetHeight: _height is > 0 ? Math.Max(1, (int)(_height.Value * ratio)) : null);
             var token = _conversionCancellation.Token;
             await Task.Run(() => _converter.ConvertAsync(options, reporter, token), token);
             Status = L("Finished");

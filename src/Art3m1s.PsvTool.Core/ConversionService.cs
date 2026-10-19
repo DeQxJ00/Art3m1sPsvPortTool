@@ -60,6 +60,12 @@ public sealed class ConversionService : IConversionService
         if (File.Exists(Path.Combine(options.InputDirectory, PsbRenderManifest.FileName)))
             throw new InvalidDataException("Input already contains art3m1s_psb_render.json. Please convert the original game resources, not an already converted output.");
         ScanResult scan = await _scanner.ScanAsync(options.InputDirectory, cancellationToken);
+        if (options.TargetWidth is null && scan.HasResolution)
+            options = options with
+            {
+                TargetWidth = Math.Max(1, (int)(scan.Width!.Value * options.Ratio)),
+                TargetHeight = Math.Max(1, (int)(scan.Height!.Value * options.Ratio))
+            };
         if (scan.Archives.Count == 0)
             throw new InvalidDataException("No valid PFS archives were found.");
         if (Directory.Exists(options.OutputDirectory) && !options.OverwriteExisting)
@@ -302,7 +308,12 @@ public sealed class ConversionService : IConversionService
                 }
 
                 if (Path.GetFileName(path).Equals("system.ini", StringComparison.OrdinalIgnoreCase))
+                {
                     await _vita.EnsureVitaSectionAsync(path, token);
+                    if (options.Categories.HasFlag(AssetCategories.Text) &&
+                        options.TargetWidth is int width && options.TargetHeight is int height)
+                        await PlatformIniResolution.ApplyAsync(path, width, height, token);
+                }
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception exception)
