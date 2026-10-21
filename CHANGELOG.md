@@ -6,8 +6,12 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.23] - 2026-10-21
+
 - 文本坐标中的尾随全角数字不参与数值计算：只缩放前面的半角数值，例如 Ratio 0.5 时 `960４` → `480４`、`-640３` → `-320３`；全角后缀逐字保留，纯全角数字不转换，不因此中断流程。坐标串、裸数值、INI 和相关元组使用同一原则，记录保留内容所在行号；INI 平台统一不会二次覆盖此类字段。
 - Trailing fullwidth digits in text coordinates are excluded from arithmetic: only the ASCII numeric prefix scales, e.g. at Ratio 0.5, `960４` → `480４` and `-640３` → `-320３`. Suffixes stay unchanged; entirely fullwidth values are preserved without aborting conversion. Applies to coordinate strings, bare values, INI fields and relevant tuples, with preserved-content line numbers reported; platform INI unification does not overwrite these fields afterward.
+- 移除大图扫描的像素数与编码大小限制，使长背景等资源仍能按 Ratio 缩放；图片检查失败时停止发布输出并报告错误，避免静默保留未适配的原图。补充大图缩放和失败输出清理测试。
+- Removed pixel-count and encoded-size image scan cutoffs so large scrolling backgrounds can still resize by Ratio. Image inspection errors now stop output publication and are reported instead of silently retaining unadapted originals. Added oversized-image resizing and failed-output cleanup coverage.
 
 ## [1.0.22] - 2026-10-19
 
