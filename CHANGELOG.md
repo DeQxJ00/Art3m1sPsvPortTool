@@ -6,6 +6,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 文本坐标中的尾随全角数字不参与数值计算：只缩放前面的半角数值，例如 Ratio 0.5 时 `960４` → `480４`、`-640３` → `-320３`；全角后缀逐字保留，纯全角数字不转换，不因此中断流程。坐标串、裸数值、INI 和相关元组使用同一原则，记录保留内容所在行号；INI 平台统一不会二次覆盖此类字段。
+- Trailing fullwidth digits in text coordinates are excluded from arithmetic: only the ASCII numeric prefix scales, e.g. at Ratio 0.5, `960４` → `480４` and `-640３` → `-320３`. Suffixes stay unchanged; entirely fullwidth values are preserved without aborting conversion. Applies to coordinate strings, bare values, INI fields and relevant tuples, with preserved-content line numbers reported; platform INI unification does not overwrite these fields afterward.
+
 ## [1.0.22] - 2026-10-19
 
 - 修复交错索引色 PNG 缩放后仍保留 Adam7 标记、导致像素数据不足和解码失败的问题。输出普通扫描行时同步写入非交错标记，继续保留调色板、透明度和目标尺寸；新增 1/2/4/8 位交错 PNG 回归测试。

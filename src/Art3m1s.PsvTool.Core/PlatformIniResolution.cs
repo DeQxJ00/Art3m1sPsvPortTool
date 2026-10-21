@@ -41,7 +41,9 @@ internal static class PlatformIniResolution
                     bool isWidth = size.Groups[2].Value.Equals("WIDTH", StringComparison.OrdinalIgnoreCase);
                     if (isWidth) hasWidth = true; else hasHeight = true;
                     Group value = size.Groups[4];
-                    line = line[..value.Index] + (isWidth ? width : height) + line[(value.Index + value.Length)..];
+                    // Non-ASCII digits are protected values, not missing dimensions.
+                    if (value.Value.All(char.IsAsciiDigit))
+                        line = line[..value.Index] + (isWidth ? width : height) + line[(value.Index + value.Length)..];
                 }
             }
             output.Append(line);

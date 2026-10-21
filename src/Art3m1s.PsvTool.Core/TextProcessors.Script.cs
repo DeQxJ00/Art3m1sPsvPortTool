@@ -114,8 +114,10 @@ public sealed partial class ArtemisTextProcessor
             end = index; number = 0;
             bool negative = At(end) == "-";
             if (negative) end++;
-            if (end >= tokens.Count || tokens[end].Kind != 'n' ||
-                !double.TryParse(tokens[end].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out number)) return false;
+            if (end >= tokens.Count || tokens[end].Kind != 'n') return false;
+            int length = AsciiNumericPrefixLength(tokens[end].Text);
+            if (length == 0 || !double.TryParse(tokens[end].Text[..length], NumberStyles.Float, CultureInfo.InvariantCulture, out number) ||
+                !double.IsFinite(number)) return false;
             if (negative) number = -number;
             end++;
             return true;
@@ -128,19 +130,36 @@ public sealed partial class ArtemisTextProcessor
             if (Math.Abs(number) >= 1 && value == 0) value = Math.Sign(number);
             return value.ToString("0", CultureInfo.InvariantCulture);
         }
-        void AddNumber(int start, int end, double number, bool size) =>
-            edits.Add(new(tokens[start].Start, tokens[end - 1].End, Scaled(number, size)));
+        void AddNumber(int start, int end, double number, bool size)
+        {
+            ScriptToken last = tokens[end - 1];
+            int editEnd = last.Start + AsciiNumericPrefixLength(last.Text);
+            if (editEnd < last.End)
+                preservedExpressions.Add(1 + text.AsSpan(0, tokens[start].Start).Count('\n'));
+            edits.Add(new(tokens[start].Start, editEnd, Scaled(number, size)));
+        }
         void ScaleString(ScriptToken token, bool rectangle, bool size)
         {
             string value = token.Text[1..^1];
             if (!Regex.IsMatch(value, @"^\s*-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*,\s*-?(?:\d+(?:\.\d+)?|\.\d+))*\s*$", RegexOptions.CultureInvariant)) return;
             MatchCollection numbers = Regex.Matches(value, @"-?(?:\d+(?:\.\d+)?|\.\d+)", RegexOptions.CultureInvariant);
             if (rectangle && numbers.Count != 4) return;
+            // Scale ASCII numeric prefixes only. Non-ASCII digit suffixes keep
+            // their original spelling and never become part of the number.
             for (int n = 0; n < numbers.Count; n++)
             {
                 Match m = numbers[n];
-                double number = double.Parse(m.Value, CultureInfo.InvariantCulture);
-                edits.Add(new(token.Start + 1 + m.Index, token.Start + 1 + m.Index + m.Length,
+                int length = AsciiNumericPrefixLength(m.Value);
+                if (length < m.Length)
+                    preservedExpressions.Add(1 + text.AsSpan(0, token.Start).Count('\n'));
+                if (length == 0 || !double.TryParse(m.Value[..length], NumberStyles.Float, CultureInfo.InvariantCulture, out double number) ||
+                    !double.IsFinite(number))
+                {
+                    if (length == m.Length)
+                        preservedExpressions.Add(1 + text.AsSpan(0, token.Start).Count('\n'));
+                    continue;
+                }
+                edits.Add(new(token.Start + 1 + m.Index, token.Start + 1 + m.Index + length,
                     Scaled(number, size || rectangle && n >= 2)));
             }
         }
@@ -164,6 +183,15 @@ public sealed partial class ArtemisTextProcessor
     }
 
     private static string KeyName(ScriptToken token) => token.Kind == 's' ? token.Text[1..^1] : token.Text;
+
+    private static int AsciiNumericPrefixLength(string value)
+    {
+        int length = 0;
+        while (length < value.Length && char.IsAscii(value[length])) length++;
+        for (int i = length; i < value.Length; i++)
+            if (!char.IsDigit(value[i])) return 0;
+        return length;
+    }
 
     private static List<ScriptToken> LexScript(string text)
     {

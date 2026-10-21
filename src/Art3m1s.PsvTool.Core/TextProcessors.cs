@@ -37,7 +37,7 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         List<int> preservedExpressions = [];
         string output = extension switch
         {
-            ".ini" => ScaleIni(encoded.Text, ratio),
+            ".ini" => ScaleIni(encoded.Text, ratio, preservedExpressions),
             ".tbl" or ".ipt" or ".ast" or ".lua" => ScaleScript(encoded.Text, ratio, extension, preservedExpressions),
             _ => encoded.Text
         };
@@ -46,13 +46,15 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         return preservedExpressions.Distinct().Order().ToArray();
     }
 
-    private static string ScaleIni(string text, double ratio)
+    private static string ScaleIni(string text, double ratio, List<int> preservedExpressions)
     {
         StringBuilder result = new(text.Length);
         bool inVita = false;
         bool insertedSavePath = false;
+        int lineNumber = 0;
         foreach (string line in SplitLines(text))
         {
+            lineNumber++;
             Match section = SectionRegex().Match(line);
             if (section.Success)
                 inVita = section.Groups[1].Value.Equals("VITA", StringComparison.OrdinalIgnoreCase);
@@ -61,7 +63,16 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
             {
                 Match size = Regex.Match(transformed, @"^(WIDTH|HEIGHT)(\s*=\s*)(\d+)(?=\s*(?:;|$))", RegexOptions.CultureInvariant);
                 if (size.Success)
-                    transformed = size.Groups[1].Value + size.Groups[2].Value + ScaleInteger(size.Groups[3].Value, ratio) + transformed[(size.Groups[3].Index + size.Groups[3].Length)..];
+                {
+                    string value = size.Groups[3].Value;
+                    int length = AsciiNumericPrefixLength(value);
+                    if (length > 0 && int.TryParse(value[..length], NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
+                        transformed = size.Groups[1].Value + size.Groups[2].Value +
+                            ((int)(number * ratio)).ToString(CultureInfo.InvariantCulture) + value[length..] + transformed[(size.Groups[3].Index + size.Groups[3].Length)..];
+                    else
+                        preservedExpressions.Add(lineNumber);
+                    if (length > 0 && length < value.Length) preservedExpressions.Add(lineNumber);
+                }
                 Match savePath = Regex.Match(transformed, @"^(;?)(SAVEPATH.*)", RegexOptions.CultureInvariant);
                 if (savePath.Success)
                 {
@@ -83,9 +94,6 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         }
         return result.ToString();
     }
-
-    private static string ScaleInteger(string value, double ratio) =>
-        ((int)(int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture) * ratio)).ToString(CultureInfo.InvariantCulture);
 
     private static IEnumerable<string> SplitLines(string text)
     {

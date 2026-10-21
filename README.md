@@ -50,7 +50,7 @@ Release 为 `win-x64`、`linux-x64`、`osx-x64` 和 `osx-arm64` 各提供两种�
 
 保留已保存的分类参数，但当前无法从界面扫描，也不恢复独立缩放开启状态、不采用分类参数转换。自动扫描游戏分辨率不受影响。请从原始资源转换；已带本工具渲染配置的输入会被拒绝，避免重复缩放或沿用失效配置。
 
-- 文本：INI / TBL / IPT / AST / LUA 严格复刻 VisualNovelUpscaler 的 Artemis 匹配、取整、编码与输出行为；IET 原样复制。E-mote 会额外同步缩放 TBL 姿态表中的 X/Y 偏移与画布宽高、AST 坐标以及 LUA 的固定 `mulpos()` 坐标；人物缩放倍率、动作、表情、口型采样和资源名保持不变。
+- 文本：INI / TBL / IPT / AST / LUA 严格复刻 VisualNovelUpscaler 的 Artemis 匹配、取整、编码与输出行为；IET 原样复制。坐标含尾随全角数字时，仅缩放前面的半角数值：Ratio 0.5 时 `960４` → `480４`、`-640３` → `-320３`；全角后缀逐字保留，纯全角数字不转换，其他正常坐标继续处理，不因此中断转换，并记录保留内容所在行号。INI 平台分辨率统一不会二次覆盖此类字段。E-mote 会额外同步缩放 TBL 姿态表中的 X/Y 偏移与画布宽高、AST 坐标以及 LUA 的固定 `mulpos()` 坐标；人物缩放倍率、动作、表情、口型采样和资源名保持不变。
 - 图片：PNG 使用 ImageSharp 的 Alpha 预乘高质量 Bicubic，默认缩放；保留 PNG 时不进行 PNG 优化、调色板压缩或 waifu2x。下方 PSV 纹理选项可启用有损压缩。
 - 动画：OGV 使用 FFmpeg Bicubic；目标宽高与 VisualNovelUpscaler 一样分别按 `int(原尺寸 × Ratio)` 截断，保持帧率与音频。Artemis／E-mote 动态立绘 PSB（v1–v4）支持内嵌 `RGBA8` / `DXT5` / `DXT5_SWIZZLED` / `PVRTC2_4BPP` / `PVRTC2_2BPP` atlas，以 Bicubic 按 Ratio 缩小并重建资源表，同时缩放 texture 尺寸、裁切尺寸、icon 矩形、origin、screenSize、动作坐标、偏移、运动路径与空白网格域；角度、动作时间、缩放倍率、曲线和参数范围保持不变。高级设置的“E-mote PSB 纹理格式转换”默认开启，格式默认 `DXT5 (BC3)`，可改为 `PVRTC2 4bpp` / `PVRTC2 2bpp`；关闭则保留原纹理格式，动画勾选项仍控制是否缩放。已有目标格式且无需缩放时不会重复编码。散装及 PFS 内 PSB 使用相同逻辑，固定逐个处理以控制峰值内存。
 - 视频：默认勾选“忽略 PFS 内的视频（WMV / DAT / MP4 / AVI / MPG / MKV）”，这些 PFS 条目保持原文件名和原始字节，不交给 FFmpeg；OGV 不在此忽略范围内，仍按动画规则处理。取消勾选后可处理 PFS 内受支持的视频，但 PFS 内 DAT 仍因可能是字体缓存等普通数据而原样保留。PFS 外散装目录中的 WMV / DAT / MP4 / AVI / MPG / MKV 视频统一输出为同名 MP4（H.264 Main@3.1、AAC）；除 DAT 固定为 960×544 外，其余格式使用 Ratio 尺寸截断规则。无法检测到视频流的普通数据 DAT 原样保留。
