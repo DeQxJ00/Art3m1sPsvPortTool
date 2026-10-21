@@ -223,6 +223,10 @@ public sealed class ConversionService : IConversionService
                 {
                     string normalized = relativePath.Replace('\\', '/');
                     textureLookup.TryGetValue((archiveName ?? "") + "|" + normalized, out var info);
+                    // A scan failure must not silently bypass mandatory resizing
+                    // and publish an unadapted original in a successful output.
+                    if (info?.Error is { } scanError)
+                        throw new InvalidDataException($"Image inspection failed; conversion stopped: {scanError}");
                     bool readable = info?.Error == null;
                     if (readable && extension.Equals(".png", StringComparison.OrdinalIgnoreCase)) await _png.ResizeAsync(path, options.Ratio, token);
                     else if (readable && options.NativeTextures?.Enabled == true && extension.ToLowerInvariant() is ".jpg" or ".jpeg")

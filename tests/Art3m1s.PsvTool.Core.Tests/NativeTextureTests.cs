@@ -229,7 +229,7 @@ public sealed class NativeTextureTests : IDisposable
         Assert.All(scan, i => Assert.NotNull(NativeTextureFormats.Unsuitable(i, NativeTextureFormat.Bc3, 1, false)));
     }
     [Fact]
-    public async Task GrayCanOptIntoBc4AndBadImageIsPreserved()
+    public async Task GrayCanOptIntoBc4AndBadImageStopsPublication()
     {
         string p = await Png("gray.png", gray: true);
         var i = await Info(p);
@@ -243,9 +243,30 @@ public sealed class NativeTextureTests : IDisposable
         var scan = await new TextureScanner().ScanAsync(input);
         Assert.NotNull(Assert.Single(scan).Error);
         string output = Path.Combine(root, "broken-output");
-        await new ConversionService().ConvertAsync(new(input, output, Categories: AssetCategories.Images, ConvertEmotePsbTexturesToDxt5: false, NativeTextures: new()));
-        var unpack = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(root, "broken-unpack"));
-        Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(Assert.Single(unpack.Entries).ExtractedPath));
+        await Assert.ThrowsAsync<ConversionItemException>(() => new ConversionService().ConvertAsync(new(input, output, Categories: AssetCategories.Images, ConvertEmotePsbTexturesToDxt5: false, NativeTextures: new())));
+        Assert.False(Directory.Exists(output));
+        Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(bad));
+    }
+
+    [Fact]
+    public async Task ScrollingBackgroundAboveOldScanLimitStillResizes()
+    {
+        string input = Path.Combine(root, "long-input"); Directory.CreateDirectory(input);
+        string path = Path.Combine(root, "long.png");
+        using (var image = new Image<Rgb24>(4097, 8192, new Rgb24(40, 80, 120)))
+            await image.SaveAsPngAsync(path);
+        var codec = new PfsCodec();
+        await codec.PackPf8Async(new('8', [new(Encoding.UTF8.GetBytes("image/bg/long.png"), "image/bg/long.png", 0, 0, path)]), Path.Combine(input, "root.pfs"));
+        var scanned = Assert.Single(await new TextureScanner().ScanAsync(input));
+        Assert.Null(scanned.Error);
+        Assert.Equal(4097, scanned.Width);
+        string output = Path.Combine(root, "long-output");
+        await new ConversionService().ConvertAsync(new(input, output, Ratio: .5, Categories: AssetCategories.Images,
+            ConvertEmotePsbTexturesToDxt5: false, NativeTextures: new(Rules: [new("image/bg", false, NativeTextureFormat.Preserve)])));
+        var unpack = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(root, "long-unpack"));
+        var dimensions = Image.Identify(Assert.Single(unpack.Entries).ExtractedPath);
+        Assert.Equal(2048, dimensions.Width);
+        Assert.Equal(4096, dimensions.Height);
     }
 
     public void Dispose() { if (Directory.Exists(root)) Directory.Delete(root, true); }

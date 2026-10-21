@@ -44,7 +44,6 @@ public sealed partial class PfsCodec
     public static async Task<byte[]> ReadIndexedEntryAsync(FileStream input, PfsIndexEntry entry, byte[]? key,
         CancellationToken token = default)
     {
-        if (entry.Size > 64 * 1024 * 1024) throw new InvalidDataException("Image exceeds 64 MiB scan limit.");
         byte[] data = new byte[entry.Size]; input.Position = entry.Offset;
         await input.ReadExactlyAsync(data, token);
         if (key != null) for (int i = 0; i < data.Length; i++) data[i] ^= key[i % key.Length];

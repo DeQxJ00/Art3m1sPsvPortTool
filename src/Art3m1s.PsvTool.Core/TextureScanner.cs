@@ -65,7 +65,6 @@ public sealed class TextureScanner
         foreach (var path in loose)
             await Inspect(null, Path.GetRelativePath(input, path).Replace('\\', '/'), new FileInfo(path).Length, async () =>
             {
-                if (new FileInfo(path).Length > 64 * 1024 * 1024) throw new InvalidDataException("Image exceeds 64 MiB scan limit.");
                 return await File.ReadAllBytesAsync(path, token);
             });
         var overlays = result.GroupBy(x => x.Path, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1)
@@ -103,8 +102,6 @@ public sealed class TextureScanner
             int h = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(dds ? 12 : 24)));
             return new(archive, path, category, w, h, bytes.Length, false, false, false, false, true);
         }
-        ImageInfo header = Image.Identify(bytes);
-        if ((long)header.Width * header.Height > 32 * 1024 * 1024) throw new InvalidDataException("Image exceeds 32 megapixel scan limit.");
         bool metadata = HasPngMetadata(bytes);
         using Image<Rgba32> image = Image.Load<Rgba32>(bytes);
         if (image.Frames.Count > 1) metadata = true;
