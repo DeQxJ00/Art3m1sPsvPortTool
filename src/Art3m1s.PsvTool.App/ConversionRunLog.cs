@@ -98,7 +98,7 @@ internal sealed class ConversionRunLog : IProgress<ConversionProgress>, IDisposa
                 try
                 {
                     _main?.WriteLine(line);
-                    if (_persist && level != ConversionLogLevel.Info)
+                    if (_persist && (level != ConversionLogLevel.Info || code is "RUN_START" or "RUN_END"))
                     {
                         _issues ??= Open(ErrorLogPath);
                         _issues.WriteLine(line);

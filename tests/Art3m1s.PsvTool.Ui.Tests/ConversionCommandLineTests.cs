@@ -351,6 +351,13 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(Output, "sample01")));
         Assert.Equal(original, await File.ReadAllBytesAsync(Path.Combine(Input, "root.pfs")));
         await AssertDefaultOutput(font, originalFont);
+        string successfulErrors = Path.Combine(_root, "logs", "sample01", "sample01.errors.log");
+        Assert.True(File.Exists(successfulErrors));
+        string successfulDetails = await File.ReadAllTextAsync(successfulErrors);
+        Assert.Contains("code=RUN_START", successfulDetails); Assert.Contains("code=RUN_END", successfulDetails);
+        Assert.Contains("outcome=success; exit-code=0", successfulDetails);
+        Assert.Contains("warning-events=0; error-events=0", successfulDetails);
+        Assert.DoesNotContain("code=PROGRESS", successfulDetails);
 
         // Independent invocations can choose unrelated paths and different ratios.
         string secondInput = Path.Combine(_root, "other-source", "sample02");

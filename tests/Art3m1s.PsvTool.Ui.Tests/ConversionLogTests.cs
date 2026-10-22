@@ -16,6 +16,29 @@ public sealed class ConversionLogTests : IDisposable
     public void Dispose() { Directory.Delete(_root, true); }
 
     [Fact]
+    public void SuccessfulRunCreatesSeparateErrorLogWithoutOrdinaryProgress()
+    {
+        string path, errors;
+        using (var log = new ConversionRunLog(Input, Output, standardOutput: TextWriter.Null, standardError: TextWriter.Null))
+        {
+            path = log.LogPath; errors = log.ErrorLogPath;
+            Assert.True(File.Exists(path)); Assert.True(File.Exists(errors));
+            Assert.NotEqual(path, errors);
+            using (var reader = new StreamReader(new FileStream(errors, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)))
+                Assert.Contains("code=RUN_START", reader.ReadToEnd());
+            log.Report(new(50, "resource", "root.pfs", "image/bg/sample.png"));
+            log.Complete("success", 0);
+        }
+        string details = File.ReadAllText(errors);
+        Assert.Contains("code=RUN_END", details);
+        Assert.Contains("outcome=success; exit-code=0", details);
+        Assert.Contains("warning-events=0; error-events=0", details);
+        Assert.DoesNotContain("code=PROGRESS", details);
+        Assert.Contains("image/bg/sample.png", File.ReadAllText(path));
+        Assert.DoesNotContain("image/bg/sample.png", details);
+    }
+
+    [Fact]
     public void AllResourcesReachFileWhileOnlyConsoleProgressIsThrottled()
     {
         StringWriter console = new();
@@ -50,7 +73,7 @@ public sealed class ConversionLogTests : IDisposable
         using (var first = new ConversionRunLog(Input, Output, standardOutput: TextWriter.Null, standardError: TextWriter.Null))
         {
             path = first.LogPath; errorPath = first.ErrorLogPath; firstRun = first.RunId;
-            Assert.False(File.Exists(errorPath));
+            Assert.True(File.Exists(errorPath));
             first.Report(new(0, "texture-scan", null, "broken.png", new(ConversionLogLevel.Warning, "PRESERVED", "kept original")));
             first.Complete("success", 0);
         }
@@ -67,7 +90,10 @@ public sealed class ConversionLogTests : IDisposable
         Assert.Equal(2, all.Split("code=RUN_END", StringSplitOptions.None).Length - 1);
         Assert.Contains("kept original", all); Assert.Contains("second invocation", all);
         Assert.Contains("run=" + firstRun, errors); Assert.Contains("kept original", errors);
-        Assert.DoesNotContain("run=" + secondRun, errors);
+        Assert.Contains("run=" + secondRun, errors);
+        Assert.Equal(2, errors.Split("code=RUN_START", StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, errors.Split("code=RUN_END", StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("second invocation", errors);
     }
 
     [Fact]
@@ -134,8 +160,9 @@ public sealed class ConversionLogTests : IDisposable
     public void ErrorLogWriteFailureDoesNotMaskOriginalError()
     {
         StringWriter stderr = new();
-        using var log = new ConversionRunLog(Input, Output, standardOutput: TextWriter.Null, standardError: stderr);
-        Directory.CreateDirectory(log.ErrorLogPath);
+        string path = Path.Combine(_root, "blocked.log");
+        Directory.CreateDirectory(Path.Combine(_root, "blocked.errors.log"));
+        using var log = new ConversionRunLog(Input, Output, logPath: path, standardOutput: TextWriter.Null, standardError: stderr);
         log.Exception(new InvalidDataException("original failure"));
         Assert.True(log.HasWriteFailure);
         Assert.Contains("LOG_WRITE_FAILED", stderr.ToString());
