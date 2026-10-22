@@ -46,9 +46,9 @@ Release 为 `win-x64`、`linux-x64`、`osx-x64` 和 `osx-arm64` 各提供两种�
 
 ### 统一默认预设
 
-`--preset ui-defaults` 使用与 UI 首次启动相同的转换默认值，省略时也使用此预设。二者共用 `ConversionDefaults`，但命令行不读取 UI 已保存的个性化设置；显式传入的参数覆盖预设，且不受 `--preset` 的前后位置影响。
+`--preset ui-defaults` 使用与 UI 相同的转换默认值，省略时也使用此预设。分辨率和 Ratio 默认按照 UI 点击“自动扫描分辨率”后的行为选择与计算，两者复用同一逻辑；其他默认值共用 `ConversionDefaults`。命令行不读取 UI 已保存的个性化设置；显式传入的参数覆盖预设，且不受 `--preset` 的前后位置影响。
 
-默认值：Ratio **0.5**；文本、图片、动画、视频全部开启；图片 PSV 纹理转换开启（扫描后采用建议的 AUTO Swizzled）；保留背景 Alpha；PSB 为 DXT5 / Swizzled，独立缩放和渲染补偿关闭；忽略 PFS 内普通视频；并行度、文件名编码为自动；字体削减关闭，字体范围为简体中文。已有输出的跳过 / 覆盖策略属于命令行运行策略，仍由 `--existing` 单独控制。
+命令行默认值：Ratio **auto**，先扫描并选择默认分辨率，再保持比例适配 `960×540`、不放大；文本、图片、动画、视频全部开启；图片 PSV 纹理转换开启（扫描后采用建议的 AUTO Swizzled）；保留背景 Alpha；PSB 为 DXT5 / Swizzled，独立缩放和渲染补偿关闭；忽略 PFS 内普通视频；并行度、文件名编码为自动；字体削减关闭，字体范围为简体中文。已有输出的跳过 / 覆盖策略属于命令行运行策略，仍由 `--existing` 单独控制。
 
 按“只勾选字体削减、简体中文，其余默认”测试时，只需：
 
@@ -56,7 +56,9 @@ Release 为 `win-x64`、`linux-x64`、`osx-x64` 和 `osx-arm64` 各提供两种�
 .\Art3m1s.PsvTool.App.exe --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --preset ui-defaults --subset-fonts true --font-profile simplified | Out-Host
 ```
 
-不需要再罗列其他开关；默认不会因扫描到 720p、2K 或 4K 而改变 Ratio。需要类似 UI“自动扫描分辨率”后的适配比例时，明确传 `--ratio auto`。
+不需要再罗列其他开关，也不需要显式写 `--ratio auto`；1280×720 默认得到 Ratio 0.75、1920×1080 得到 0.5、2560×1440 得到 0.375、3840×2160 得到 0.25，均输出 960×540。只有显式指定 `--ratio 0.5` 等数值才使用固定比例。已有输出不会自动重新转换，仍按 `--existing` 策略处理。
+
+默认执行顺序：自动扫描分辨率并计算 Ratio → 扫描全部图片分类 → 按 UI 扫描按钮的同一套规则勾选建议分类、生成格式规则 → 全部完成后才开始转换。控制台和完整日志记录 `TEXTURE_SCAN_START`、各分类勾选 / 格式、`TEXTURE_SCAN_COMPLETE`，然后才出现 `CONVERT_START`；图片扫描失败或取消时不进入转换。显式关闭图片处理或 PSV 纹理总开关时跳过分类准备；`--dry-run` 仅预览分辨率，不进行完整图片扫描或转换。
 
 ### 单个游戏调用
 
@@ -82,10 +84,10 @@ Linux 直接执行 `./Art3m1s.PsvTool.App --convert --input /data/sample01 --out
 
 | 参数 | 默认值 / 说明 |
 | --- | --- |
-| `--preset ui-defaults` | 默认预设，转换参数与 UI 首次启动一致；可省略 |
+| `--preset ui-defaults` | 默认预设，分辨率与 Ratio 按 UI 自动扫描行为，其余 UI 默认；可省略 |
 | `--input PATH` / `-i PATH` | 必填，单个游戏根目录，直接包含 PFS 文件 |
 | `--output PATH` / `-o PATH` | 必填，该游戏的最终输出目录，不自动追加游戏文件夹名；不可与输入重合或互相包含 |
-| `--ratio auto\|R` | `0.5`，与 UI 初始值一致；`auto` 为显式启用自动适配；手动值为 `0 < R ≤ 1`，小数点使用 `.` |
+| `--ratio auto\|R` | 默认 `auto`，与 UI 点击自动扫描分辨率后的适配一致；手动值为 `0 < R ≤ 1`，小数点使用 `.` |
 | `--source-resolution WxH` | 指定该游戏的原始分辨率，例如 `1920x1080`；不修改源文件 |
 | `--fit WxH` | `960x540`；仅自动 Ratio 使用的目标边界，不强行改变长宽比 |
 | `--types LIST` | `all`；也可 `none` 或 `text,images,animation,video` 的逗号分隔子集 |

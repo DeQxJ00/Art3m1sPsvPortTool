@@ -124,7 +124,7 @@ public sealed class ConversionLogTests : IDisposable
         string pngPath = Path.Combine(_root, "payload.png");
         using (Image<Rgb24> png = new(9000, 8, new Rgb24(170, 90, 30))) await png.SaveAsPngAsync(pngPath);
         await Pack("image/bg/large.png", pngPath);
-        Assert.Equal(0, await ConversionCommandLine.RunAsync(["--convert", Input, Output, "--subset-fonts", "true", "--font-profile", "simplified"],
+        Assert.Equal(0, await ConversionCommandLine.RunAsync(["--convert", Input, Output, "--ratio", "0.5", "--subset-fonts", "true", "--font-profile", "simplified"],
             standardOutput: new StringWriter(), standardError: new StringWriter()));
         string error = Directory.GetFiles(Path.GetDirectoryName(Output)!, "*.errors.log", SearchOption.AllDirectories).Single();
         string text = await File.ReadAllTextAsync(error);
@@ -147,6 +147,7 @@ public sealed class ConversionLogTests : IDisposable
         await File.WriteAllBytesAsync(payload, [1]); await Pack("sample.bin", payload);
         await File.WriteAllBytesAsync(Path.Combine(Input, "sample01.png"), [1, 2]);
         await File.WriteAllBytesAsync(Path.Combine(Input, "sample02.png"), [3, 4]);
+        await File.WriteAllTextAsync(Path.Combine(Input, "system.ini"), "[WINDOWS]\nWIDTH=1920\nHEIGHT=1080\n");
         Assert.Equal(1, await ConversionCommandLine.RunAsync(["--convert", Input, Output, "--subset-fonts", "true", "--font-profile", "simplified"],
             standardOutput: new StringWriter(), standardError: new StringWriter()));
         string error = Directory.GetFiles(Path.GetDirectoryName(Output)!, "*.errors.log", SearchOption.AllDirectories).Single();

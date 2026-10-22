@@ -46,9 +46,9 @@ Starting without arguments opens the GUI. `--help` and `--version` print help/ve
 
 ### Shared default preset
 
-`--preset ui-defaults` selects the fresh-UI conversion defaults and is also used when omitted. Both entry points use `ConversionDefaults`. CLI mode does not load personalized GUI settings; explicit flags override the preset regardless of where `--preset` appears.
+`--preset ui-defaults` selects UI conversion defaults and is also used when omitted. Resolution selection and Ratio calculation default to the GUI's "Detect resolution" action, using the same shared logic; other defaults use `ConversionDefaults`. CLI mode does not load personalized GUI settings; explicit flags override the preset regardless of where `--preset` appears.
 
-Defaults: Ratio **0.5**; text/images/animation/video enabled; native image textures enabled with recommended AUTO Swizzled categories after scanning; background alpha retained; PSB DXT5 / Swizzled; independent PSB scaling and render compensation disabled; ordinary archived videos ignored; automatic worker count and filename encoding; font subsetting disabled with Simplified Chinese as the default range. Existing-output handling remains a CLI execution policy, controlled separately by `--existing`.
+CLI defaults: Ratio **auto**, detecting and selecting the default resolution before fitting within `960x540` without upscaling; text/images/animation/video enabled; native image textures enabled with recommended AUTO Swizzled categories after scanning; background alpha retained; PSB DXT5 / Swizzled; independent PSB scaling and render compensation disabled; ordinary archived videos ignored; automatic worker count and filename encoding; font subsetting disabled with Simplified Chinese as the default range. Existing-output handling remains a CLI execution policy, controlled separately by `--existing`.
 
 For the test configuration requested—enable only Simplified Chinese font subsetting and leave everything else at defaults—use:
 
@@ -56,7 +56,9 @@ For the test configuration requested—enable only Simplified Chinese font subse
 .\Art3m1s.PsvTool.App.exe --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --preset ui-defaults --subset-fonts true --font-profile simplified | Out-Host
 ```
 
-No other switches are needed. Detecting a 720p, 2K or 4K source does not change the default Ratio. Explicitly use `--ratio auto` for the behavior of the GUI's automatic resolution-fit action.
+No other switches or explicit `--ratio auto` are needed. Defaults yield 0.75 for 1280x720, 0.5 for 1920x1080, 0.375 for 2560x1440 and 0.25 for 3840x2160, all targeting 960x540. A fixed Ratio is used only when a number such as `--ratio 0.5` is explicitly supplied. Existing outputs are not automatically reconverted; `--existing` still applies.
+
+Default sequence: detect resolution and calculate Ratio, scan all image categories, apply the same recommendations and format rules as the GUI scan button, then start conversion only after preparation finishes. Console/full logs show `TEXTURE_SCAN_START`, category selections/formats, `TEXTURE_SCAN_COMPLETE`, then `CONVERT_START`. Failed or cancelled image scans do not start conversion. Explicitly disabling image processing or native textures skips category preparation; `--dry-run` previews resolution only, without a full image scan or conversion.
 
 ### Convert one game
 
@@ -82,10 +84,10 @@ Linux: `./Art3m1s.PsvTool.App --convert --input /data/sample01 --output /data/ou
 
 | Option | Default / behavior |
 | --- | --- |
-| `--preset ui-defaults` | Shared fresh-UI conversion defaults; implicit when omitted |
+| `--preset ui-defaults` | GUI automatic resolution selection/Ratio, other shared UI defaults; implicit when omitted |
 | `--input PATH` / `-i PATH` | Required single game root, directly containing PFS files |
 | `--output PATH` / `-o PATH` | Required exact game output directory; no extra nesting; input/output must not overlap |
-| `--ratio auto\|R` | `0.5`, matching the initial GUI value; `auto` explicitly enables fitting; explicit numbers must satisfy `0 < R ≤ 1` and use a decimal point |
+| `--ratio auto\|R` | `auto` by default, matching the GUI's automatic resolution-fit action; explicit numbers must satisfy `0 < R ≤ 1` and use a decimal point |
 | `--source-resolution WxH` | Override this game's source size, e.g. `1920x1080`; does not edit sources |
 | `--fit WxH` | `960x540`; bounding box for automatic Ratio, preserving aspect ratio |
 | `--types LIST` | `all`, `none`, or a comma-separated subset of `text,images,animation,video` |

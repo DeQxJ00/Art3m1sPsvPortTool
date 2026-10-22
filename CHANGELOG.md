@@ -6,6 +6,10 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- UI 和命令行共用扫描图片后的分类与建议勾选规则；命令行等待分辨率、图片分类扫描及规则生成全部完成才开始转换，记录各分类勾选 / 格式及扫描完成标记。图片扫描失败或取消时不进入转换，新增异步顺序和 UI / CLI 分类一致性测试。
+- GUI and CLI now share scanned-image category/recommendation construction. CLI waits for resolution detection, image scanning and rule generation before conversion, logging category selections/formats and scan completion. Failed or cancelled image scans never start conversion; added async-ordering and GUI/CLI category parity tests.
+- 命令行默认执行 UI“自动扫描分辨率”同一套选择与适配逻辑：首个有效 INI 优先 WINDOWS，否则首组，图片检测兜底；自动计算不放大且适配 960×540 的 Ratio，不再默认固定 0.5。只有显式数值参数才固定 Ratio；新增 UI / CLI 一致性及 720p 实际 EXE 转换测试。
+- CLI defaults now reuse the GUI's automatic-resolution selection and fit calculation: prefer WINDOWS in the first usable INI, otherwise its first entry, with image detection as fallback. Ratio fits within 960x540 without upscaling instead of defaulting to fixed 0.5; explicit numeric overrides remain supported. Added GUI/CLI parity and real-executable 720p conversion coverage.
 - 命令行转换结束后自动清理本任务的 `.conversion.lock`，覆盖成功、失败、取消、跳过和初始化失败；采用独占句柄关闭删除，未取得锁的任务不会清理，避免误删其他正在转换任务的锁。补充锁竞争、不同输出互不干扰及旧锁接管的回归测试。
 - CLI conversions now clean their owned `.conversion.lock` on success, failure, cancellation, skipping and setup failure. Exclusive delete-on-close handles avoid post-release path deletion; unsuccessful contenders never remove another task's lock. Added contention, independent-output and stale-sidecar regression coverage.
 

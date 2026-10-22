@@ -175,18 +175,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             ScanResult result = await _scanner.ScanAsync(input);
             if (input != InputDirectory) { Status = L("ScanInputChanged"); return; }
             _archiveCount = result.Archives.Count;
-            _resolutions = result.Resolutions.Where(item => item.Width > 0 && item.Height > 0).ToArray();
-            int preferred = _resolutions.Count == 0 ? -1 : _resolutions.ToList().FindIndex(item =>
-                item.Source == _resolutions[0].Source && item.Section.Equals("WINDOWS", StringComparison.OrdinalIgnoreCase));
-            if (preferred < 0 && _resolutions.Count > 0) preferred = 0;
-            _width = preferred < 0 ? result.Width : _resolutions[preferred].Width;
-            _height = preferred < 0 ? result.Height : _resolutions[preferred].Height;
+            var automatic = AutomaticResolution.FromScan(result);
+            _resolutions = automatic.Choices;
+            int preferred = automatic.SelectedIndex;
+            _width = automatic.Width;
+            _height = automatic.Height;
             _selectedResolutionIndex = -1;
             OnPropertyChanged(nameof(ResolutionChoices)); OnPropertyChanged(nameof(HasResolutionChoices));
             SelectedResolutionIndex = preferred;
             OnPropertyChanged(nameof(SelectedResolutionIndex));
             if (resolutionOnly && _width is > 0 && _height is > 0)
-                Ratio = Math.Min(1d, Math.Min((double)ConversionDefaults.FitWidth / _width.Value, (double)ConversionDefaults.FitHeight / _height.Value)).ToString(CultureInfo.InvariantCulture);
+                Ratio = AutomaticResolution.FitRatio(_width.Value, _height.Value).ToString(CultureInfo.InvariantCulture);
             Status = resolutionOnly
                 ? _width is > 0 && _height is > 0
                     ? string.Format(CultureInfo.CurrentUICulture, L("ResolutionDetected"), OriginalResolution)

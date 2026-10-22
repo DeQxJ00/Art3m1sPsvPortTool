@@ -17,7 +17,13 @@ public sealed record TextureImageInfo(string? Archive, string Path, string Categ
     public string? ConflictReason { get; init; }
 }
 
-public sealed class TextureScanner
+public interface ITextureScanner
+{
+    Task<IReadOnlyList<TextureImageInfo>> ScanAsync(string input, PfsNameEncoding encoding = PfsNameEncoding.Auto,
+        IProgress<ConversionProgress>? progress = null, CancellationToken token = default);
+}
+
+public sealed class TextureScanner : ITextureScanner
 {
     public static bool IsImage(string path) => Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".dds" or ".pvr";
     public static string CategoryFor(string path)

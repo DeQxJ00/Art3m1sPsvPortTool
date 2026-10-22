@@ -34,6 +34,15 @@ public sealed class TextureCategoryViewModel : INotifyPropertyChanged
         set { if (value < 0 || value >= NativeTextureFormats.All.Count || value == _selectedFormat) return; _selectedFormat = value; _summary = null; _fileRows = null; Changed(); Changed(nameof(Summary)); Changed(nameof(FileRows)); }
     }
     public NativeTextureRule Rule => new(Key, Enabled, NativeTextureFormats.All[SelectedFormat].Format);
+    internal static TextureCategoryViewModel[] FromScan(IReadOnlyList<TextureImageInfo> images, double ratio,
+        bool ignoreAlpha, bool english, IReadOnlyDictionary<string, NativeTextureRule>? previous = null) =>
+        images.GroupBy(x => x.GroupKey).OrderBy(x => x.Key, StringComparer.Ordinal).Select(group =>
+        {
+            var category = new TextureCategoryViewModel(group.ToArray(), ratio, ignoreAlpha, english);
+            if (previous != null && previous.TryGetValue(group.Key, out var rule))
+            { category.Enabled = rule.Enabled; category.SelectedFormat = NativeTextureFormats.IndexOf(rule.Format); }
+            return category;
+        }).ToArray();
     public IReadOnlyList<string> Choices => _choices ??= NativeTextureFormats.All.Select(f => Choice(f)).ToArray();
     // Keep item identities stable while translated labels and suitability
     // reasons change, so the bound ComboBox does not lose its selection.

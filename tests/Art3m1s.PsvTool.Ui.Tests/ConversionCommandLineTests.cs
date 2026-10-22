@@ -27,7 +27,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         var options = ConversionCommandLineOptions.Parse([command, "input", "output"]);
         Assert.Equal("input", options.Input);
         Assert.Equal("output", options.Output);
-        Assert.Equal(.5, options.Ratio);
+        Assert.Null(options.Ratio);
         Assert.Equal((960, 540), options.Fit);
         Assert.True(options.NativeTextures);
         Assert.False(options.SubsetFonts);
@@ -183,18 +183,65 @@ public sealed class ConversionCommandLineTests : IDisposable
     {
         FakeScanner scanner = new() { Result = new([new("", "root.pfs", '8', 0)], false, null, null, []) };
         FakeConverter converter = new();
-        Assert.Equal(1, await ConversionCommandLine.RunAsync(Args("--ratio", "auto"), scanner: scanner, converter: converter, standardOutput: new StringWriter(), standardError: new StringWriter()));
+        Assert.Equal(1, await ConversionCommandLine.RunAsync(Args(), scanner: scanner, converter: converter, standardOutput: new StringWriter(), standardError: new StringWriter()));
         Assert.Empty(converter.Calls);
         Assert.Equal(0, await ConversionCommandLine.RunAsync(Args("--ratio", "0.5"), scanner: scanner, converter: converter, standardOutput: new StringWriter(), standardError: new StringWriter()));
         Assert.Null(Assert.Single(converter.Calls).TargetWidth);
     }
 
+    [Theory]
+    [InlineData(1280, 720, .75)]
+    [InlineData(1920, 1080, .5)]
+    [InlineData(2560, 1440, .375)]
+    [InlineData(3840, 2160, .25)]
+    [InlineData(1280, 1024, .52734375)]
+    [InlineData(320, 180, 1d)]
+    public async Task DefaultRatioMatchesUiAutoScanAcrossResolutions(int width, int height, double ratio)
+    {
+        var scanner = new FakeScanner { Result = new([new("", "root.pfs", '8', 0)], true, 640, 360,
+            [new("root.pfs/system.ini", "VITA", 640, 360),
+             new("root.pfs/system.ini", "windows", width, height),
+             new("root.pfs.010/system.ini", "WINDOWS", 3840, 2160)]) };
+        MainViewModel ui = new(scanner: scanner, settings: new DefaultSettingsStore()) { InputDirectory = Input };
+        await ui.AutoScanResolutionAsync();
+        var converter = new FakeConverter();
+        Assert.Equal(0, await ConversionCommandLine.RunAsync(Args(), scanner: scanner, converter: converter,
+            standardOutput: TextWriter.Null, standardError: TextWriter.Null));
+        ConversionOptions call = Assert.Single(converter.Calls);
+        Assert.Equal(1, ui.SelectedResolutionIndex);
+        Assert.Equal(ratio, double.Parse(ui.Ratio, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(ratio, call.Ratio);
+        Assert.Equal((int)(width * ratio), call.TargetWidth); Assert.Equal((int)(height * ratio), call.TargetHeight);
+    }
+
     [Fact]
-    public void FreshUiAndCommandLineShareDefaults()
+    public async Task DefaultSelectionDoesNotChooseWindowsFromALaterIni()
+    {
+        var scanner = new FakeScanner { Result = new([new("", "root.pfs", '8', 0)], true, 1024, 768,
+            [new("root.pfs/system.ini", "DISPLAY", 1024, 768),
+             new("root.pfs.010/system.ini", "WINDOWS", 1920, 1080)]) };
+        var converter = new FakeConverter();
+        Assert.Equal(0, await ConversionCommandLine.RunAsync(Args(), scanner: scanner, converter: converter,
+            standardOutput: TextWriter.Null, standardError: TextWriter.Null));
+        var call = Assert.Single(converter.Calls);
+        Assert.Equal(.703125, call.Ratio); Assert.Equal(720, call.TargetWidth); Assert.Equal(540, call.TargetHeight);
+    }
+
+    [Fact]
+    public async Task ExplicitRatioStillOverridesAutomaticScan()
+    {
+        var converter = new FakeConverter();
+        Assert.Equal(0, await Run(Args("--source-resolution", "1280x720", "--ratio", "0.5"), converter));
+        var call = Assert.Single(converter.Calls);
+        Assert.Equal(.5, call.Ratio); Assert.Equal(640, call.TargetWidth); Assert.Equal(360, call.TargetHeight);
+    }
+
+    [Fact]
+    public void FreshUiAndCommandLineShareNonResolutionDefaults()
     {
         MainViewModel ui = new(settings: new DefaultSettingsStore());
         var cli = ConversionCommandLineOptions.Parse(["--convert", Input, Output]);
-        Assert.Equal(double.Parse(ui.Ratio, System.Globalization.CultureInfo.InvariantCulture), cli.Ratio);
+        Assert.Null(cli.Ratio);
         Assert.Equal(ui.ProcessText, cli.Types.HasFlag(AssetCategories.Text));
         Assert.Equal(ui.ProcessImages, cli.Types.HasFlag(AssetCategories.Images));
         Assert.Equal(ui.ProcessAnimation, cli.Types.HasFlag(AssetCategories.Animation));
@@ -223,7 +270,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         FakeConverter uiConverter = new(), cliConverter = new();
         MainViewModel ui = new(scanner: scanner, converter: uiConverter, settings: new DefaultSettingsStore())
         { InputDirectory = Input, OutputDirectory = Output, SubsetFonts = true, FontProfile = (int)FontSubsetProfile.SimplifiedChinese };
-        await ui.ScanAsync();
+        await ui.AutoScanResolutionAsync();
         await ui.StartAsync();
         ConversionOptions expected = Assert.Single(uiConverter.Calls);
         string destination = Path.Combine(_root, "cli-result");
@@ -238,8 +285,8 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.Equal(expected.NativeTextures.IgnoreBackgroundAlpha, actual.NativeTextures.IgnoreBackgroundAlpha);
         Assert.Equal(expected.NativeTextures.Rules, actual.NativeTextures.Rules);
         Assert.Equal(expected.PsbTextures, actual.PsbTextures);
-        Assert.Equal(.5, actual.Ratio);
-        Assert.Equal(640, actual.TargetWidth); Assert.Equal(360, actual.TargetHeight);
+        Assert.Equal(.75, actual.Ratio);
+        Assert.Equal(960, actual.TargetWidth); Assert.Equal(540, actual.TargetHeight);
         Assert.True(actual.SubsetFonts);
         Assert.Equal(FontSubsetProfile.SimplifiedChinese, actual.FontProfile);
     }
@@ -247,7 +294,7 @@ public sealed class ConversionCommandLineTests : IDisposable
     [Fact]
     public async Task DefaultPresetConvertsTexturesAndSubsetsFontsWithoutChangingSource()
     {
-        await CreatePfs(Input);
+        await CreatePfs(Input, 1280, 720);
         string? font = await CreateDefaultTestAssets();
         byte[] originalPfs = await File.ReadAllBytesAsync(Path.Combine(Input, "root.pfs"));
         byte[] originalPng = await File.ReadAllBytesAsync(Path.Combine(Input, "image", "bg", "sample.png"));
@@ -255,7 +302,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         StringWriter error = new();
         Assert.Equal(0, await ConversionCommandLine.RunAsync(Args("--preset", "ui-defaults"), standardOutput: new StringWriter(), standardError: error));
         Assert.Equal("", error.ToString());
-        await AssertDefaultOutput(font, originalFont);
+        await AssertDefaultOutput(font, originalFont, .75);
         Assert.Equal(originalPfs, await File.ReadAllBytesAsync(Path.Combine(Input, "root.pfs")));
         Assert.Equal(originalPng, await File.ReadAllBytesAsync(Path.Combine(Input, "image", "bg", "sample.png")));
         if (font != null) Assert.Equal(originalFont, await File.ReadAllBytesAsync(font));
@@ -341,12 +388,12 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.Contains("ONE game", help.Output);
         Assert.Equal(2, (await Launch("--convert", "--ratio", "0")).Code);
         Assert.Equal(2, (await Launch("--unknown")).Code);
-        await CreatePfs(Input);
+        await CreatePfs(Input, 1280, 720);
         string? font = await CreateDefaultTestAssets();
         byte[]? originalFont = font is null ? null : await File.ReadAllBytesAsync(font);
         byte[] original = await File.ReadAllBytesAsync(Path.Combine(Input, "root.pfs"));
         var preview = await Launch(Args("--dry-run"));
-        Assert.Equal(0, preview.Code); Assert.Contains("ratio=0.5", preview.Output);
+        Assert.Equal(0, preview.Code); Assert.Contains("ratio=0.75; target=960x540", preview.Output);
         Assert.False(Directory.Exists(Output));
         string lockPath = Output + ".conversion.lock";
         using (var owner = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
@@ -358,10 +405,13 @@ public sealed class ConversionCommandLineTests : IDisposable
         var converted = await Launch(Args());
         Assert.True(converted.Code == 0, converted.Error);
         Assert.Contains("DONE output=", converted.Output);
+        int scanFinished = converted.Output.IndexOf("TEXTURE_SCAN_COMPLETE", StringComparison.Ordinal);
+        Assert.True(scanFinished >= 0);
+        Assert.True(scanFinished < converted.Output.IndexOf("CONVERT_START", StringComparison.Ordinal));
         Assert.True(File.Exists(Path.Combine(Output, "root.pfs")));
         Assert.False(Directory.Exists(Path.Combine(Output, "sample01")));
         Assert.Equal(original, await File.ReadAllBytesAsync(Path.Combine(Input, "root.pfs")));
-        await AssertDefaultOutput(font, originalFont);
+        await AssertDefaultOutput(font, originalFont, .75);
         Assert.False(File.Exists(lockPath));
         string successfulErrors = Path.Combine(_root, "logs", "sample01", "sample01.errors.log");
         Assert.True(File.Exists(successfulErrors));
@@ -391,6 +441,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         await File.WriteAllBytesAsync(Path.Combine(failedInput, "sample02.png"), [3, 4]);
         var failed = await Launch("--convert", failedInput, failedOutput, "--subset-fonts", "true", "--font-profile", "simplified");
         Assert.Equal(1, failed.Code);
+        Assert.DoesNotContain("CONVERT_START", failed.Output);
         string errors = Directory.GetFiles(Path.Combine(_root, "logs", "sample03"), "*.errors.log").Single();
         string details = await File.ReadAllTextAsync(errors);
         Assert.Contains("IMAGE_SCAN_FAILED", details);
@@ -426,13 +477,13 @@ public sealed class ConversionCommandLineTests : IDisposable
         return font;
     }
 
-    private async Task AssertDefaultOutput(string? font, byte[]? originalFont)
+    private async Task AssertDefaultOutput(string? font, byte[]? originalFont, double ratio = .5)
     {
         byte[] texture = await File.ReadAllBytesAsync(Path.Combine(Output, "image", "bg", "sample.dds"));
         Assert.Equal("DXT1", Encoding.ASCII.GetString(texture, 84, 4));
         Assert.Equal("GXMSW", Encoding.ASCII.GetString(texture, 32, 5));
-        Assert.Equal(32, BitConverter.ToInt32(texture, 16));
-        Assert.Equal(16, BitConverter.ToInt32(texture, 12));
+        Assert.Equal((int)(64 * ratio), BitConverter.ToInt32(texture, 16));
+        Assert.Equal((int)(32 * ratio), BitConverter.ToInt32(texture, 12));
         if (font != null)
         {
             byte[] subset = await File.ReadAllBytesAsync(Path.Combine(Output, "sample.ttf"));
@@ -449,10 +500,10 @@ public sealed class ConversionCommandLineTests : IDisposable
         }
     }
 
-    private async Task CreatePfs(string project)
+    private async Task CreatePfs(string project, int width = 1920, int height = 1080)
     {
         string payload = Path.Combine(_root, "system.ini");
-        await File.WriteAllTextAsync(payload, "[WINDOWS]\nWIDTH=1920\nHEIGHT=1080\nCHARSET=UTF-8\n");
+        await File.WriteAllTextAsync(payload, $"[WINDOWS]\nWIDTH={width}\nHEIGHT={height}\nCHARSET=UTF-8\n");
         await new PfsCodec().PackPf8Async(new ExtractedArchive('8', [new PfsEntry(Encoding.UTF8.GetBytes("system.ini"), "system.ini", 0, (uint)new FileInfo(payload).Length, payload)]), Path.Combine(project, "root.pfs"));
     }
     private Task<int> Run(string[] args, FakeConverter converter) => ConversionCommandLine.RunAsync(args,

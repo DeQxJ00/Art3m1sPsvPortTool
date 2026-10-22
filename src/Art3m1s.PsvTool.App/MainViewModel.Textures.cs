@@ -50,12 +50,8 @@ public sealed partial class MainViewModel
             var previous = TextureCategories.ToDictionary(x => x.Key, x => x.Rule);
             TextureCategories.Clear();
             double ratio = TryRatio(out var r) ? r : 1;
-            foreach (var group in images.GroupBy(x => x.GroupKey).OrderBy(x => x.Key, StringComparer.Ordinal))
-            {
-                var item = new TextureCategoryViewModel(group.ToArray(), ratio, IgnoreBackgroundAlpha, English);
-                if (previous.TryGetValue(group.Key, out var rule)) { item.Enabled = rule.Enabled; item.SelectedFormat = NativeTextureFormats.IndexOf(rule.Format); }
+            foreach (var item in TextureCategoryViewModel.FromScan(images, ratio, IgnoreBackgroundAlpha, English, previous))
                 TextureCategories.Add(item);
-            }
             Progress = 100;
             Status = English ? $"Scanned {images.Count} images / {TextureCategories.Count} categories" : $"已扫描 {images.Count} 张图片 / {TextureCategories.Count} 类";
             scanLog.Complete(images.Any(image => image.Error != null) ? "scan-with-errors" : "scan-success", images.Any(image => image.Error != null) ? 1 : 0);

@@ -24,7 +24,7 @@ internal static class ConversionCommandLine
           -i, --input PATH             Required game root directory containing PFS
           -o, --output PATH            Required exact output directory; no nesting added
           --preset ui-defaults         Shared fresh-UI defaults (also used when omitted)
-          --ratio auto|NUMBER          Default {{ConversionDefaults.Ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)}}; auto fits --fit, NUMBER > 0 and <= 1
+          --ratio auto|NUMBER          Default auto (GUI automatic resolution scan); NUMBER > 0 and <= 1
           --source-resolution WxH      Override this game's detected source size
           --fit WxH                    Auto-ratio bounds, default 960x540 (no upscale)
           --types LIST                 all (default), none, or comma-separated
@@ -55,7 +55,8 @@ internal static class ConversionCommandLine
 
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default,
         IProjectScanner? scanner = null, IConversionService? converter = null,
-        TextWriter? standardOutput = null, TextWriter? standardError = null, string? fallbackLogDirectory = null)
+        TextWriter? standardOutput = null, TextWriter? standardError = null, string? fallbackLogDirectory = null,
+        ITextureScanner? textureScanner = null)
     {
         TextWriter output = standardOutput ?? Console.Out, error = standardError ?? Console.Error;
         if (args.Skip(1).Any(x => x is "--help" or "-h")) { output.WriteLine(Help); return 0; }
@@ -97,7 +98,7 @@ internal static class ConversionCommandLine
             }
             runLog = new ConversionRunLog(source, destination, logPath, !settings.DryRun, settings.Verbose, output, error);
             Log($"START input={source}; output={destination}; dry-run={settings.DryRun}");
-            Log($"OPTIONS preset=ui-defaults; types={settings.Types}; native-textures={settings.NativeTextures}; psb-format={settings.PsbFormat?.ToString() ?? "preserve"}; layout={settings.Layout}; subset-fonts={settings.SubsetFonts}; font-profile={settings.FontProfile}; ignore-pfs-videos={settings.IgnorePfsVideos}; existing={settings.Existing}; parallel={settings.Parallelism}; encoding={settings.Encoding}; ignore-bg-alpha={settings.IgnoreBackgroundAlpha}");
+            Log($"OPTIONS preset=ui-defaults; ratio-mode={(settings.Ratio is null ? "auto" : "manual")}; types={settings.Types}; native-textures={settings.NativeTextures}; psb-format={settings.PsbFormat?.ToString() ?? "preserve"}; layout={settings.Layout}; subset-fonts={settings.SubsetFonts}; font-profile={settings.FontProfile}; ignore-pfs-videos={settings.IgnorePfsVideos}; existing={settings.Existing}; parallel={settings.Parallelism}; encoding={settings.Encoding}; ignore-bg-alpha={settings.IgnoreBackgroundAlpha}");
             scanner ??= new ProjectScanner();
             converter ??= new ConversionService();
             try
@@ -111,15 +112,13 @@ internal static class ConversionCommandLine
                 bool exists = Directory.Exists(destination) || File.Exists(destination);
                 if (exists && settings.Existing == "skip") { Log("SKIP existing output: " + destination); return Finish(0, "skipped"); }
                 if (exists && settings.Existing == "error") throw new IOException("Output already exists: " + destination);
-                var preferred = scan.Resolutions.FirstOrDefault(x => x.Width > 0 && x.Height > 0);
-                preferred = scan.Resolutions.FirstOrDefault(x => x.Source == preferred?.Source &&
-                    x.Section.Equals("WINDOWS", StringComparison.OrdinalIgnoreCase) && x.Width > 0 && x.Height > 0) ?? preferred;
-                int? width = settings.SourceResolution?.Width ?? preferred?.Width ?? scan.Width;
-                int? height = settings.SourceResolution?.Height ?? preferred?.Height ?? scan.Height;
+                var automatic = AutomaticResolution.FromScan(scan);
+                int? width = settings.SourceResolution?.Width ?? automatic.Width;
+                int? height = settings.SourceResolution?.Height ?? automatic.Height;
                 bool hasSize = width > 0 && height > 0;
                 if (!hasSize && settings.Ratio is null)
                     throw new InvalidDataException("Cannot detect resolution. Set --source-resolution WIDTHxHEIGHT or --ratio NUMBER.");
-                double ratio = settings.Ratio ?? Math.Min(1d, Math.Min((double)settings.Fit.Width / width!.Value, (double)settings.Fit.Height / height!.Value));
+                double ratio = settings.Ratio ?? AutomaticResolution.FitRatio(width!.Value, height!.Value, settings.Fit.Width, settings.Fit.Height);
                 int? targetWidth = hasSize ? Math.Max(1, (int)(width!.Value * ratio)) : null;
                 int? targetHeight = hasSize ? Math.Max(1, (int)(height!.Value * ratio)) : null;
                 Log(FormattableString.Invariant($"RESOLUTION {width}x{height}; ratio={ratio:R}; target={targetWidth}x{targetHeight}"));
@@ -127,13 +126,20 @@ internal static class ConversionCommandLine
                 NativeTextureRule[] rules = [];
                 if (settings.NativeTextures && settings.Types.HasFlag(AssetCategories.Images))
                 {
-                    var images = await new TextureScanner().ScanAsync(source, settings.Encoding,
+                    Log("TEXTURE_SCAN_START; waiting for image categories and recommendations");
+                    var images = await (textureScanner ?? new TextureScanner()).ScanAsync(source, settings.Encoding,
                         runLog, cancellationToken);
-                    rules = images.GroupBy(x => x.GroupKey).OrderBy(x => x.Key, StringComparer.Ordinal)
-                        .Select(group => new TextureCategoryViewModel(group.ToArray(), ratio, settings.IgnoreBackgroundAlpha, true).Rule)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (images.FirstOrDefault(image => image.Error != null) is { } failed)
+                        throw new ConversionItemException(failed.Archive, failed.Path,
+                            new InvalidDataException(failed.Error), "texture-scan");
+                    rules = TextureCategoryViewModel.FromScan(images, ratio, settings.IgnoreBackgroundAlpha, true)
+                        .Select(category => category.Rule)
                         .Select(rule => settings.Layout == PsbDxt5Layout.Linear && rule.Format == NativeTextureFormat.Auto
                             ? rule with { Format = NativeTextureFormat.AutoLinear } : rule).ToArray();
                     Log($"CLASSIFIED images={images.Count}; categories={rules.Length}");
+                    foreach (var rule in rules) Log($"TEXTURE_CATEGORY category={rule.Category}; selected={rule.Enabled}; format={rule.Format}");
+                    Log($"TEXTURE_SCAN_COMPLETE images={images.Count}; categories={rules.Length}; selected={rules.Count(rule => rule.Enabled)}");
                 }
                 ConversionOptions options = new(source, destination, ratio, settings.Types,
                     MaxParallelism: settings.Parallelism, NameEncoding: settings.Encoding,
@@ -145,6 +151,8 @@ internal static class ConversionCommandLine
                     PsbTextures: new PsbTextureOptions(Enabled: ConversionDefaults.IndependentPsbScaling, CompensateRendering: ConversionDefaults.PsbRenderCompensation),
                     PsbOutputFormat: settings.PsbFormat ?? PsbTextureFormat.Dxt5, Dxt5Layout: settings.Layout,
                     TargetWidth: targetWidth, TargetHeight: targetHeight);
+                cancellationToken.ThrowIfCancellationRequested();
+                Log("CONVERT_START; resolution and image-category preparation finished");
                 await converter.ConvertAsync(options, runLog, cancellationToken);
                 Log("DONE output=" + destination);
                 return Finish(0, "success");

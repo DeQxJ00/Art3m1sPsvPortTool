@@ -8,7 +8,8 @@ internal sealed class ConversionCommandLineOptions
     public string Input { get; set; } = "";
     public string Output { get; set; } = "";
     public string? Log { get; set; }
-    public double? Ratio { get; set; } = ConversionDefaults.Ratio;
+    // Null uses the same scan selection and fit calculation as the UI automatic-resolution action.
+    public double? Ratio { get; set; }
     public (int Width, int Height)? SourceResolution { get; set; }
     public (int Width, int Height) Fit { get; set; } = (ConversionDefaults.FitWidth, ConversionDefaults.FitHeight);
     public int Parallelism { get; set; } = ConversionDefaults.MaxParallelism;
