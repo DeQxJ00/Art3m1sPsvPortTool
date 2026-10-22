@@ -27,7 +27,7 @@ internal sealed class ConversionRunLog : IProgress<ConversionProgress>, IDisposa
         _output = standardOutput ?? Console.Out; _error = standardError ?? Console.Error;
         _verbose = verbose; _persist = persist;
         Game = GameName(input);
-        string file = $"{Game}-{DateTimeOffset.Now:yyyyMMdd-HHmmssfff}-{RunId}.log";
+        string file = $"{Game}.log";
         LogPath = Path.GetFullPath(logPath ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "logs", Game, file));
         ErrorLogPath = Path.Combine(Path.GetDirectoryName(LogPath)!, Path.GetFileNameWithoutExtension(LogPath) + ".errors.log");
         ValidatePaths(input, output, LogPath, ErrorLogPath);
@@ -54,7 +54,7 @@ internal sealed class ConversionRunLog : IProgress<ConversionProgress>, IDisposa
         try { _ = Path.GetFullPath(source); }
         catch (ArgumentException) { source = "command-line"; }
         return new(source, Path.Combine(root, "fallback-output"),
-            Path.Combine(root, GameName(input), $"{GameName(input)}-{DateTimeOffset.Now:yyyyMMdd-HHmmssfff}-{Guid.NewGuid():N}.log"),
+            Path.Combine(root, GameName(input), $"{GameName(input)}.log"),
             standardOutput: output, standardError: error);
     }
 

@@ -39,7 +39,7 @@ internal static class ConversionCommandLine
           --font-profile PROFILE       simplified (default), japanese, traditional
           --ignore-pfs-videos true|false  Default true; excludes OGV
           --existing POLICY            skip (default), error, overwrite
-          --log PATH                   Full UTF-8 log; default OUTPUT_PARENT/logs/GAME/GAME-TIME-RUN.log
+          --log PATH                   Full UTF-8 log; default OUTPUT_PARENT/logs/GAME/GAME.log (append)
           --dry-run                    Scan/preview only; no files are written
           --verbose                    Every progress event and exception stack
           -h, --help                   Show help without conversion

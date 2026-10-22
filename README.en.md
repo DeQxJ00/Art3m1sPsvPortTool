@@ -151,17 +151,17 @@ Exit codes: `0` success/skip/preview, `1` conversion failure (including a parent
 
 ### Logs and error diagnosis
 
-Both GUI and CLI conversions save full logs grouped by the **input game directory name**, not the output name. Defaults are under `OUTPUT_PARENT/logs/GAME/`, with a timestamp and unique run ID:
+Both GUI and CLI conversions (including batch-script invocations) **automatically save full logs by default; `--log` is optional**. Files use the input game directory name, not the output name, under `OUTPUT_PARENT/logs/GAME/`:
 
 ```text
 D:\converted\logs\sample01\
-  sample01-20261022-153000000-a1b2c3d4.log
-  sample01-20261022-153000000-a1b2c3d4.errors.log
+  sample01.log
+  sample01.errors.log
 ```
 
 - The full `.log` retains every resource, preservation/conversion result, font before/after sizes, effective options, stages, duration and final exit state. Only console progress is throttled; file events are not discarded.
 - `.errors.log` is created only for warnings/errors, which also remain in the full log. Exception types, stack traces, all inner exceptions and original FFmpeg stderr are always retained without `--verbose`. FFmpeg commands, exit codes, retries and DAT preservation reasons are logged too.
-- Records include time, severity, game, run ID, stage, PFS (or loose resources) and resource path. Errors reported by concurrent tasks are recorded individually.
+- Repeated runs append to the same files without overwriting earlier records. Each record includes time, severity, game, unique run ID, stage, PFS (or loose resources) and resource path. Errors from concurrent resource tasks are recorded individually. Run same-named games sharing a log directory sequentially, or specify separate paths with `--log`.
 - Ordinary images and E-mote PSB atlases with width or height **over 4096** log original/target dimensions, limit and atlas name. `SOURCE_DIMENSIONS_GT_4096` is informational when downscaling brings the target within the limit; `TARGET_DIMENSIONS_GT_4096` warns when the target still exceeds it. Ratio and cropping are not changed automatically. Oversized ordinary images may remain resized PNGs, which does not imply PSV compatibility; a failed PSB Swizzled encode records the full exception and prevents publication.
 - Setup/argument failures that cannot open the requested log fall back to the system application-data directory under `art3m1s_psv_port_tool/logs/GAME/` (`%LOCALAPPDATA%` on Windows). Missing input names use `command-line`. Logging failures are explicitly reported. The GUI log pane and CLI output show actual log paths.
 - With `--log PATH`, warnings/errors go beside it as `NAME.errors.log`; repeated invocations append and use run IDs for correlation. `--dry-run` creates no logs or error files, including on setup errors.

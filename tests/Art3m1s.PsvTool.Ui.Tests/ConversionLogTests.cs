@@ -30,8 +30,8 @@ public sealed class ConversionLogTests : IDisposable
                 new InvalidDataException("encode failed", new IOException("ffmpeg exit=69\nfull stderr details")), "resource"));
             log.Complete("failed", 1);
         }
-        Assert.Contains(Path.Combine("logs", "sample01"), full);
-        Assert.StartsWith("sample01-", Path.GetFileName(full));
+        Assert.Equal(Path.Combine(Path.GetDirectoryName(Output)!, "logs", "sample01", "sample01.log"), full);
+        Assert.Equal(Path.Combine(Path.GetDirectoryName(full)!, "sample01.errors.log"), issues);
         string all = File.ReadAllText(full), errors = File.ReadAllText(issues);
         for (int i = 0; i < 80; i++) Assert.Contains($"script/{i:D3}.ast", all);
         Assert.DoesNotContain("script/079.ast", console.ToString());
@@ -44,15 +44,30 @@ public sealed class ConversionLogTests : IDisposable
     }
 
     [Fact]
-    public void RunsAreDistinctAndWarningsDoNotRequireAnException()
+    public void RepeatedRunsAppendToGameNamedLogsWithDistinctRunIds()
     {
-        using var first = new ConversionRunLog(Input, Output, standardOutput: TextWriter.Null, standardError: TextWriter.Null);
-        using var second = new ConversionRunLog(Input, Output, standardOutput: TextWriter.Null, standardError: TextWriter.Null);
-        Assert.NotEqual(first.LogPath, second.LogPath);
-        Assert.False(File.Exists(first.ErrorLogPath));
-        first.Report(new(0, "texture-scan", null, "broken.png", new(ConversionLogLevel.Warning, "PRESERVED", "kept original")));
-        first.Dispose();
-        Assert.Contains("kept original", File.ReadAllText(first.ErrorLogPath));
+        string path, errorPath, firstRun, secondRun;
+        using (var first = new ConversionRunLog(Input, Output, standardOutput: TextWriter.Null, standardError: TextWriter.Null))
+        {
+            path = first.LogPath; errorPath = first.ErrorLogPath; firstRun = first.RunId;
+            Assert.False(File.Exists(errorPath));
+            first.Report(new(0, "texture-scan", null, "broken.png", new(ConversionLogLevel.Warning, "PRESERVED", "kept original")));
+            first.Complete("success", 0);
+        }
+        using (var second = new ConversionRunLog(Input, Output, standardOutput: TextWriter.Null, standardError: TextWriter.Null))
+        {
+            Assert.Equal(path, second.LogPath); Assert.Equal(errorPath, second.ErrorLogPath);
+            secondRun = second.RunId;
+            Assert.NotEqual(firstRun, secondRun);
+            second.Info("SECOND_RUN", "second invocation");
+            second.Complete("success", 0);
+        }
+        string all = File.ReadAllText(path), errors = File.ReadAllText(errorPath);
+        Assert.Equal(2, all.Split("code=RUN_START", StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, all.Split("code=RUN_END", StringSplitOptions.None).Length - 1);
+        Assert.Contains("kept original", all); Assert.Contains("second invocation", all);
+        Assert.Contains("run=" + firstRun, errors); Assert.Contains("kept original", errors);
+        Assert.DoesNotContain("run=" + secondRun, errors);
     }
 
     [Fact]
@@ -62,7 +77,7 @@ public sealed class ConversionLogTests : IDisposable
         Assert.Equal(2, await ConversionCommandLine.RunAsync(["--convert", Input, Output, "--ratio", "2"],
             standardOutput: new StringWriter(), standardError: new StringWriter(), fallbackLogDirectory: fallback));
         string error = Directory.GetFiles(fallback, "*.errors.log", SearchOption.AllDirectories).Single();
-        Assert.Contains("sample01", Path.GetFileName(error));
+        Assert.Equal(Path.Combine(fallback, "sample01", "sample01.errors.log"), error);
         string text = await File.ReadAllTextAsync(error);
         Assert.Contains("--ratio", text); Assert.Contains("stage=\"setup\"", text);
         Assert.False(Directory.Exists(Output));

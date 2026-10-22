@@ -6,6 +6,8 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 批处理 / CLI 默认自动保存日志，文件名简化为 `游戏文件夹名.log` 和 `游戏文件夹名.errors.log`；重复运行追加，按记录中的运行编号区分，无需指定 `--log`。
+- Batch/CLI logs are saved automatically as `GAME.log` and `GAME.errors.log`; repeated runs append with per-record run IDs, without requiring `--log`.
 - 完善 UI / CLI 日志：按游戏目录名及运行编号保存完整日志，警告 / 错误单独存档；不再因控制台节流丢弃资源记录。补全阶段、PFS、资源路径、异常链、FFmpeg 命令 / stderr / 重试、字体字节变化及初始化错误回退；图片与 PSB 图集超过 4096 时明确记录源 / 目标尺寸。
 - Improved GUI/CLI logs grouped by game and run ID, with separate warnings/errors and unthrottled file records. Added stage/archive/resource context, exception chains, FFmpeg commands/stderr/retries, font byte changes, setup-error fallback and explicit original/target dimensions for images/PSB atlases exceeding 4096.
 - UI 与 CLI 共用转换默认值，新增可省略的 `--preset ui-defaults`：Ratio 默认 0.5、字体削减默认关闭，自动适配需显式 `--ratio auto`。默认配置验收只开启字体削减并选择简体中文，其余保持默认，校验参数一致性、纹理排列与实际字体输出。
