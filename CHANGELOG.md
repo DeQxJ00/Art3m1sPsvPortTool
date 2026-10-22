@@ -6,6 +6,8 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.24] - 2026-10-22
+
 - 程序每次转换默认创建独立的 `游戏文件夹名.errors.log`，无需 BAT 重定向；仅保存运行边界、结果、警告及详细错误，普通进度保留在完整日志。正常完成时也记录零错误状态，预览仍不写文件。
 - The application now creates a separate `GAME.errors.log` for every conversion without BAT redirection, retaining run boundaries, outcome, warnings and detailed errors but excluding ordinary progress. Successful runs record zero-error status; previews still write no files.
 - 批处理 / CLI 默认自动保存日志，文件名简化为 `游戏文件夹名.log` 和 `游戏文件夹名.errors.log`；重复运行追加，按记录中的运行编号区分，无需指定 `--log`。
