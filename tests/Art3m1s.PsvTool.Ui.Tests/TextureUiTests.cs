@@ -10,14 +10,14 @@ namespace Art3m1s.PsvTool.Ui.Tests;
 public sealed class TextureUiTests
 {
     [Fact]
-    public void TextureTitleRecommendsConversionWithoutEnablingMasterSwitch()
+    public void TextureTitleRecommendsConversionAndMasterSwitchStartsEnabled()
     {
         var vm = new MainViewModel(settings: new MemoryStore());
         Assert.Equal("图片压制为 PSV 专用纹理（建议转换）", vm.NativeTexturesLabel);
-        Assert.False(vm.NativeTextures);
+        Assert.True(vm.NativeTextures);
         vm.SetLanguage("en-US");
         Assert.Equal("Convert images to PSV textures (recommended)", vm.NativeTexturesLabel);
-        Assert.False(vm.NativeTextures);
+        Assert.True(vm.NativeTextures);
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class TextureUiTests
             Assert.Equal(alpha ? NativeTextureFormat.Bc3Swizzled : NativeTextureFormat.Bc1Swizzled,
                 NativeTextureFormats.Resolve(vm.Images[0], vm.Rule.Format, false));
         }
-        Assert.False(new AppSettings().NativeTextures);
+        Assert.True(new AppSettings().NativeTextures);
     }
 
     [Fact]
@@ -90,8 +90,10 @@ public sealed class TextureUiTests
         Assert.True(resized.Enabled);
     }
 
-    [Fact]
-    public async Task ScanSelectsDetectedLooseAndArchivedCategoriesAndPreservesManualChoicesOnRescan()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScanSelectsDetectedLooseAndArchivedCategoriesAndPreservesManualChoicesOnRescan(bool enabled)
     {
         string root = Path.Combine(Path.GetTempPath(), "texture-scan-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -120,12 +122,12 @@ public sealed class TextureUiTests
             var codec = new PfsCodec();
             await codec.PackPf8Async(new('8', [new(Encoding.UTF8.GetBytes("image/cg/test.png"),
                 "image/cg/test.png", 0, (uint)new FileInfo(source).Length, source)]), Path.Combine(root, "root.pfs.010"));
-            var vm = new MainViewModel(settings: new MemoryStore()) { InputDirectory = root };
+            var vm = new MainViewModel(settings: new MemoryStore(new(NativeTextures: enabled))) { InputDirectory = root };
             await vm.ScanTexturesAsync();
             Assert.Equal(5, vm.TextureCategories.Count);
             Assert.False(vm.IsBusy);
             Assert.Equal(100, vm.Progress);
-            Assert.False(vm.NativeTextures);
+            Assert.Equal(enabled, vm.NativeTextures);
             foreach (string category in new[] { "image/bg", "image/fg", "image/cg" })
             {
                 var item = Assert.Single(vm.TextureCategories, item => item.Key == category);
@@ -144,14 +146,36 @@ public sealed class TextureUiTests
             Assert.False(Assert.Single(vm.TextureCategories, item => item.Key == "image/fg").Enabled);
             Assert.Equal(NativeTextureFormat.Bc3, Assert.Single(vm.TextureCategories, item => item.Key == "image/bg").Rule.Format);
             Assert.True(Assert.Single(vm.TextureCategories, item => item.Key == "image/event").Enabled);
-            Assert.False(vm.NativeTextures);
+            Assert.Equal(enabled, vm.NativeTextures);
         }
         finally { Directory.Delete(root, true); }
     }
 
-    private sealed class MemoryStore : ISettingsStore
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("{}", true)]
+    [InlineData("invalid json", true)]
+    [InlineData("{\"NativeTextures\":false}", false)]
+    [InlineData("{\"NativeTextures\":true}", true)]
+    public async Task TextureMasterDefaultsOnAndRestoresExplicitSavedChoices(string? json, bool expected)
     {
-        public AppSettings Load() => new();
+        string root = Path.Combine(Path.GetTempPath(), "texture-settings-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string path = Path.Combine(root, "settings.json");
+            if (json is not null) await File.WriteAllTextAsync(path, json);
+            var vm = new MainViewModel(settings: new LocalSettingsStore(path));
+            Assert.Equal(expected, vm.NativeTextures);
+            vm.NativeTextures = !expected;
+            Assert.Equal(!expected, new MainViewModel(settings: new LocalSettingsStore(path)).NativeTextures);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    private sealed class MemoryStore(AppSettings? initial = null) : ISettingsStore
+    {
+        public AppSettings Load() => initial ?? new();
         public void Save(AppSettings settings) { }
     }
     [Fact]

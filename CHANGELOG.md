@@ -6,6 +6,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- “图片压制为 PSV 专用纹理”首次启动默认勾选；配置缺失、损坏或未包含该设置时采用开启默认值，已有明确选择继续恢复，手动关闭状态仍可保存。扫描不改变总开关。
+- Native PSV image texture conversion now starts enabled on first launch, or when configuration is missing, invalid or omits this setting. Explicit saved choices, including disabled, still persist; scanning leaves the master switch unchanged.
+
 ## [1.0.23] - 2026-10-21
 
 - 文本坐标中的尾随全角数字不参与数值计算：只缩放前面的半角数值，例如 Ratio 0.5 时 `960４` → `480４`、`-640３` → `-320３`；全角后缀逐字保留，纯全角数字不转换，不因此中断流程。坐标串、裸数值、INI 和相关元组使用同一原则，记录保留内容所在行号；INI 平台统一不会二次覆盖此类字段。

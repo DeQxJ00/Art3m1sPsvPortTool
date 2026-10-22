@@ -8,7 +8,7 @@ public sealed record AppSettings(
     string Language = "zh-CN",
     bool IsDark = true,
     bool ConvertEmotePsbTexturesToDxt5 = true,
-    bool NativeTextures = false,
+    bool NativeTextures = true,
     PsbResolutionRule[]? PsbRatios = null,
     bool PsbRenderCompensation = true,
     PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5,
