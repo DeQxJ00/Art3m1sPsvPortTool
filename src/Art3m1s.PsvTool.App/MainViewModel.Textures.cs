@@ -5,8 +5,8 @@ namespace Art3m1s.PsvTool.App;
 
 public sealed partial class MainViewModel
 {
-    private bool _nativeTextures;
-    private bool _ignoreBackgroundAlpha;
+    private bool _nativeTextures = ConversionDefaults.NativeTextures;
+    private bool _ignoreBackgroundAlpha = ConversionDefaults.IgnoreBackgroundAlpha;
     public bool NativeTextures { get => _nativeTextures; set { if (Set(ref _nativeTextures, value)) SaveSettings(); } }
     public bool IgnoreBackgroundAlpha { get => _ignoreBackgroundAlpha; set { if (Set(ref _ignoreBackgroundAlpha, value)) RefreshTextures(); } }
     public ObservableCollection<TextureCategoryViewModel> TextureCategories { get; } = [];
@@ -33,9 +33,18 @@ public sealed partial class MainViewModel
         // Capture all options before dispatch, and prevent stale results after input changes.
         string input = InputDirectory; var encoding = (PfsNameEncoding)SelectedEncoding;
         var token = _conversionCancellation.Token;
+        ConversionRunLog? scanLog = null;
         try
         {
-            var reporter = new Progress<ConversionProgress>(p => { Progress = p.Percent; Status = $"{L("Scanning")} {p.Archive} / {p.Entry}"; });
+            scanLog = string.IsNullOrWhiteSpace(OutputDirectory) ? ConversionRunLog.Fallback(input, TextWriter.Null, TextWriter.Null)
+                : new ConversionRunLog(input, OutputDirectory, standardOutput: TextWriter.Null, standardError: TextWriter.Null);
+            ShowLogPaths(scanLog);
+            var uiReporter = new Progress<ConversionProgress>(p =>
+            {
+                Progress = p.Percent; Status = $"{L("Scanning")} {p.Archive} / {p.Entry}";
+                if (p.Diagnostic is { } diagnostic) Log += $"[{diagnostic.Level}] {p.Entry}: {diagnostic.Message}" + Environment.NewLine;
+            });
+            var reporter = new ConversionProgressRelay(scanLog, uiReporter);
             var images = await Task.Run(() => new TextureScanner().ScanAsync(input, encoding, reporter, token), token);
             if (input != InputDirectory) { Status = L("Scanning") + " — input changed"; return; }
             var previous = TextureCategories.ToDictionary(x => x.Key, x => x.Rule);
@@ -49,9 +58,10 @@ public sealed partial class MainViewModel
             }
             Progress = 100;
             Status = English ? $"Scanned {images.Count} images / {TextureCategories.Count} categories" : $"已扫描 {images.Count} 张图片 / {TextureCategories.Count} 类";
+            scanLog.Complete(images.Any(image => image.Error != null) ? "scan-with-errors" : "scan-success", images.Any(image => image.Error != null) ? 1 : 0);
         }
         catch (OperationCanceledException) { Status = L("Cancel"); }
-        catch (Exception e) { Status = L("Failed") + ": " + e.Message; }
-        finally { _conversionCancellation.Dispose(); _conversionCancellation = null; IsBusy = false; }
+        catch (Exception e) { Status = L("Failed") + ": " + e.Message; RecordFailure(e, "texture-scan", scanLog); }
+        finally { scanLog?.Dispose(); _conversionCancellation.Dispose(); _conversionCancellation = null; IsBusy = false; }
     }
 }

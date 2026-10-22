@@ -38,6 +38,136 @@ Lookup order is environment variables, the application's `tools` directory, besi
 
 The converter writes to a dedicated sibling staging directory and replaces the destination only after every operation succeeds. Cancellation or failure removes temporary output.
 
+## Command-line conversion and batch scripts (cmdline)
+
+One invocation converts **one game**. `--input` is the game root directly containing PFS; `--output` is the exact destination for that game. No parent-directory enumeration or additional game-name folder is added. For example, `D:\resources\sample01\root.pfs` becomes `D:\converted\sample01\root.pfs` with those two game directories passed explicitly.
+
+Starting without arguments opens the GUI. `--help` and `--version` print help/version. CLI mode opens no UI and does not load saved GUI settings. Only modify authorized resources and back up originals first.
+
+### Shared default preset
+
+`--preset ui-defaults` selects the fresh-UI conversion defaults and is also used when omitted. Both entry points use `ConversionDefaults`. CLI mode does not load personalized GUI settings; explicit flags override the preset regardless of where `--preset` appears.
+
+Defaults: Ratio **0.5**; text/images/animation/video enabled; native image textures enabled with recommended AUTO Swizzled categories after scanning; background alpha retained; PSB DXT5 / Swizzled; independent PSB scaling and render compensation disabled; ordinary archived videos ignored; automatic worker count and filename encoding; font subsetting disabled with Simplified Chinese as the default range. Existing-output handling remains a CLI execution policy, controlled separately by `--existing`.
+
+For the test configuration requested—enable only Simplified Chinese font subsetting and leave everything else at defaults—use:
+
+```powershell
+.\Art3m1s.PsvTool.App.exe --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --preset ui-defaults --subset-fonts true --font-profile simplified | Out-Host
+```
+
+No other switches are needed. Detecting a 720p, 2K or 4K source does not change the default Ratio. Explicitly use `--ratio auto` for the behavior of the GUI's automatic resolution-fit action.
+
+### Convert one game
+
+Windows PowerShell, from the extracted application folder (the pipe displays output and waits for this GUI-subsystem executable):
+
+```powershell
+.\Art3m1s.PsvTool.App.exe --help | Out-Host
+.\Art3m1s.PsvTool.App.exe --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --dry-run | Out-Host
+.\Art3m1s.PsvTool.App.exe --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --ratio 0.5 --subset-fonts false | Out-Host
+$LASTEXITCODE
+```
+
+Windows CMD can wait for completion with:
+
+```bat
+start "" /b /wait "Art3m1s.PsvTool.App.exe" --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --ratio 0.5 --subset-fonts false
+echo %ERRORLEVEL%
+```
+
+Linux: `./Art3m1s.PsvTool.App --convert --input /data/sample01 --output /data/output/sample01`. macOS: use `.app/Contents/MacOS/Art3m1s.PsvTool.App`. Quote paths containing spaces. `--option=value` and positional `--convert GAME_DIR OUTPUT_DIR` are supported. `--batch-convert` remains an alias for **the same single-game operation**, not a parent-folder batch mode. Checklist and continue-on-error options are not supported.
+
+### Options
+
+| Option | Default / behavior |
+| --- | --- |
+| `--preset ui-defaults` | Shared fresh-UI conversion defaults; implicit when omitted |
+| `--input PATH` / `-i PATH` | Required single game root, directly containing PFS files |
+| `--output PATH` / `-o PATH` | Required exact game output directory; no extra nesting; input/output must not overlap |
+| `--ratio auto\|R` | `0.5`, matching the initial GUI value; `auto` explicitly enables fitting; explicit numbers must satisfy `0 < R ≤ 1` and use a decimal point |
+| `--source-resolution WxH` | Override this game's source size, e.g. `1920x1080`; does not edit sources |
+| `--fit WxH` | `960x540`; bounding box for automatic Ratio, preserving aspect ratio |
+| `--types LIST` | `all`, `none`, or a comma-separated subset of `text,images,animation,video` |
+| `--parallel auto\|N` | `auto` = `max(1, logical CPU cores - 1)`, or a positive integer; workers within this game |
+| `--encoding auto\|utf-8\|shift-jis` | `auto`, PFS filename encoding |
+| `--native-textures true\|false` | `true`; scan and select recommended ordinary-image categories using safe AUTO rules |
+| `--ignore-bg-alpha true\|false` | `false`; discard background-image alpha only when explicitly requested |
+| `--psb-format dxt5\|pvrtc2-4\|pvrtc2-2\|preserve` | `dxt5`; `preserve` disables PSB texture-format compression, not global-Ratio resizing when animation is enabled |
+| `--dxt5-layout swizzled\|linear` | `swizzled`; ordinary-image automatic recommendations and PSB DXT5 layout |
+| `--subset-fonts true\|false` | `false`, matching the GUI; independent of `--types`; pass `false` to retain fonts |
+| `--font-profile simplified\|japanese\|traditional` | `simplified`; common Simplified Chinese / Japanese / Traditional Chinese ranges |
+| `--ignore-pfs-videos true\|false` | `true`; skip ordinary archived videos, excluding OGV; archived DAT still follows the existing preservation rule |
+| `--existing skip\|error\|overwrite` | `skip`; skip, fail, or replace the entire existing output; overwrite has no interactive confirmation |
+| `--log PATH` | Custom full UTF-8 append log; defaults group by input game name (below); adjacent `.errors.log` holds warnings/errors |
+| `--dry-run` | Preview this game's resolution, Ratio and target size; no conversion, output directories or log writes; not a full texture/video validation |
+| `--verbose` | Show every console progress event; file logs always retain all resources and full exceptions, regardless of console throttling |
+| `--help` / `-h`, `--version` | Print help / version without conversion |
+
+Auto Ratio prefers `[WINDOWS]` in the first usable `system.ini`, otherwise its first resolution, falling back to detected image dimensions. It computes `min(1, fitWidth/sourceWidth, fitHeight/sourceHeight)` without upscaling; 1920×1080 becomes 0.5. An unknown resolution fails that project unless `--source-resolution 1920x1080` or `--ratio 0.5` is supplied. With only a manual Ratio and no detected size, resources still scale but target INI dimensions cannot be determined in advance. Independent PSB ratios remain disabled; PSB uses the global Ratio.
+
+`--native-textures false` disables ordinary-image native texture compression, not PNG resizing: resizing requires `images` in `--types`. PSB conversion is controlled by `animation` and `--psb-format`. Unselected resources are normally copied unchanged, but missing `[VITA]` sections in `system.ini` are still appended. FFmpeg placement is identical to GUI mode; see above.
+
+### Batch by calling the CLI repeatedly
+
+List each source/destination explicitly; they may live on different drives and use different Ratios. This PowerShell script runs sequentially, reports failures and stops on cancellation. Change the failure branch to `break` if you want to stop at the first error.
+
+```powershell
+$tool = ".\Art3m1s.PsvTool.App.exe"
+$jobs = @(
+    @{ Input = "D:\resources\sample01"; Output = "D:\converted\sample01"; Ratio = "0.5" },
+    @{ Input = "E:\source\sample02"; Output = "D:\converted\sample02"; Ratio = "0.75" }
+)
+$failed = 0
+foreach ($job in $jobs) {
+    & $tool --convert --input $job.Input --output $job.Output --ratio $job.Ratio --subset-fonts false | Out-Host
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        $failed++
+        Write-Warning "Conversion failed: $($job.Input), exit=$code"
+        if ($code -eq 130) { break }
+    }
+}
+if ($failed -gt 0) { throw "$failed conversion(s) failed." }
+```
+
+A `.cmd` file beside the executable can call two games independently and stop on failure:
+
+```bat
+@echo off
+start "" /b /wait "%~dp0Art3m1s.PsvTool.App.exe" --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --ratio 0.5 --subset-fonts false
+if errorlevel 1 exit /b %ERRORLEVEL%
+start "" /b /wait "%~dp0Art3m1s.PsvTool.App.exe" --convert --input "E:\source\sample02" --output "D:\converted\sample02" --ratio 0.75 --subset-fonts false
+exit /b %ERRORLEVEL%
+```
+
+### Output safety and exit codes
+
+An existing output is skipped by default. Use `--existing error` to fail instead, or `--existing overwrite` to replace the **entire exact output directory** without prompting. The normal core staging and atomic publication mechanism preserves existing output on failure/cancellation and never publishes partial results. Ctrl+C cancels the current conversion; your calling script decides whether another invocation runs.
+
+The lock stays beside the exact output directory, e.g. `result.conversion.lock`. Its exclusive handle prevents concurrent invocations writing to the same output, and the empty sidecar remains after exit without requiring manual deletion. Custom logs must be outside input/output directories. CLI paths do not support symbolic links/junctions.
+
+Exit codes: `0` success/skip/preview, `1` conversion failure (including a parent directory passed instead of a game root), `2` invalid arguments or path/log/lock setup, `130` cancellation. There is no internal project queue or checklist. Font subsetting defaults to disabled, matching the GUI. Default-configuration conversion acceptance tests explicitly use `--subset-fonts true --font-profile simplified` and leave all other conversion settings at their shared defaults.
+
+### Logs and error diagnosis
+
+Both GUI and CLI conversions save full logs grouped by the **input game directory name**, not the output name. Defaults are under `OUTPUT_PARENT/logs/GAME/`, with a timestamp and unique run ID:
+
+```text
+D:\converted\logs\sample01\
+  sample01-20261022-153000000-a1b2c3d4.log
+  sample01-20261022-153000000-a1b2c3d4.errors.log
+```
+
+- The full `.log` retains every resource, preservation/conversion result, font before/after sizes, effective options, stages, duration and final exit state. Only console progress is throttled; file events are not discarded.
+- `.errors.log` is created only for warnings/errors, which also remain in the full log. Exception types, stack traces, all inner exceptions and original FFmpeg stderr are always retained without `--verbose`. FFmpeg commands, exit codes, retries and DAT preservation reasons are logged too.
+- Records include time, severity, game, run ID, stage, PFS (or loose resources) and resource path. Errors reported by concurrent tasks are recorded individually.
+- Ordinary images and E-mote PSB atlases with width or height **over 4096** log original/target dimensions, limit and atlas name. `SOURCE_DIMENSIONS_GT_4096` is informational when downscaling brings the target within the limit; `TARGET_DIMENSIONS_GT_4096` warns when the target still exceeds it. Ratio and cropping are not changed automatically. Oversized ordinary images may remain resized PNGs, which does not imply PSV compatibility; a failed PSB Swizzled encode records the full exception and prevents publication.
+- Setup/argument failures that cannot open the requested log fall back to the system application-data directory under `art3m1s_psv_port_tool/logs/GAME/` (`%LOCALAPPDATA%` on Windows). Missing input names use `command-line`. Logging failures are explicitly reported. The GUI log pane and CLI output show actual log paths.
+- With `--log PATH`, warnings/errors go beside it as `NAME.errors.log`; repeated invocations append and use run IDs for correlation. `--dry-run` creates no logs or error files, including on setup errors.
+
+An error log may contain a recovered FFmpeg retry, so its existence alone does not mean the whole conversion failed. Check the final `RUN_END` for outcome, exit-code, duration and warning/error event counts.
+
 ## Ratio and PSV resolution guidance
 
 The default is `0.5`; valid input is `0 < Ratio ≤ 1`. Presets are `0.75 · 720p`, `0.5 · 1080p`, `0.375 · 2K`, and `0.25 · 4K`. Aim for “game resolution × Ratio” near PSV `960×540` (or `960×544`). Larger images can exhaust PSV memory. “Detect resolution” lists every complete width/height pair from loose and PFS-contained `system.ini` files, showing the source and section. It initially selects `[WINDOWS]` in the first valid INI, or that INI's first pair; choose another item to change the preview. Only the PFS index and matching entry are read; archives are not fully extracted. If detection fails, inspect a PNG under extracted `image/bg`. Detection computes `Ratio = min(1, 960/width, 540/height)` from the default-selected resolution, preserving aspect ratio, fitting 960×540 and avoiding upscaling; for example 1920×1080 → 0.5 and 1280×720 → 0.75. Missing dimensions leave the current Ratio unchanged. Manually choosing a list entry only updates the preview; Ratio remains editable. PSBs use the detected global Ratio too; independent Ratio controls are disabled. Resolution and PSB scans keep the main viewport in place, with auto-scroll confined to the log's internal viewport.

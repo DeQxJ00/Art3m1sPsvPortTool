@@ -213,6 +213,10 @@ public sealed class UiTests
             Assert.Contains("PFS 归档: root.pfs.010", viewModel.Log);
             Assert.Contains("错误文件: image\\bg\\broken.png", viewModel.Log);
             Assert.Contains("错误原因: invalid PNG", viewModel.Log);
+            Assert.True(File.Exists(viewModel.LogFilePath));
+            Assert.True(File.Exists(viewModel.ErrorLogFilePath));
+            Assert.Contains("root.pfs.010", await File.ReadAllTextAsync(viewModel.ErrorLogFilePath));
+            Assert.Contains("invalid PNG", await File.ReadAllTextAsync(viewModel.ErrorLogFilePath));
         }
         finally
         {

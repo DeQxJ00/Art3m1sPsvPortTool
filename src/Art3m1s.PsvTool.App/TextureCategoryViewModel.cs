@@ -7,7 +7,7 @@ namespace Art3m1s.PsvTool.App;
 public sealed class TextureCategoryViewModel : INotifyPropertyChanged
 {
     private bool _enabled;
-    private int _selectedFormat = 1;
+    private int _selectedFormat = NativeTextureFormats.IndexOf(ConversionDefaults.ImageFormat);
     private double _ratio;
     private bool _ignoreAlpha;
     private bool _english;

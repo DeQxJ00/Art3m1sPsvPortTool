@@ -133,15 +133,18 @@ public sealed class ConversionService : IConversionService
         string work = Path.Combine(workParent, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         bool completed = false;
+        string stage = "extract";
         try
         {
             ExtractedArchive extracted = await _pfs.ExtractAsync(archive.Path, work, options.NameEncoding, cancellationToken);
+            stage = "resource";
             var renamed = await ProcessTreeAsync(work, options, progress, cancellationToken, textureLookup, psbRenderModels, archive.FileName, skipPfs: false, preserveDat: true,
                 progressStart: 100d * (archiveIndex + 0.05) / totalUnits,
                 progressSpan: 100d * 0.85 / totalUnits);
             string destination = Path.Combine(staging, archive.FileName);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             string temporary = destination + ".packing";
+            stage = "pack";
             progress?.Report(new ConversionProgress(100d * (archiveIndex + 0.9) / totalUnits, "pack", archive.FileName));
             // Only the ASCII extension changes; keep original Shift-JIS/UTF-8 name bytes.
             var entries = extracted.Entries.Select(e =>
@@ -160,7 +163,7 @@ public sealed class ConversionService : IConversionService
         catch (ConversionItemException) { throw; }
         catch (Exception exception)
         {
-            throw new ConversionItemException(archive.FileName, null, exception);
+            throw new ConversionItemException(archive.FileName, null, exception, stage);
         }
         finally
         {
@@ -206,10 +209,13 @@ public sealed class ConversionService : IConversionService
             string extension = Path.GetExtension(path);
             string relativePath = Path.GetRelativePath(root, path);
             string progressEntry = relativePath;
+            string itemStage = "resource";
+            void Diagnostic(ConversionDiagnostic value) => progress?.Report(new(progressStart, itemStage, archiveName, relativePath, value));
             try
             {
                 if (TextExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Text))
                 {
+                    itemStage = "text";
                     if (_text is ArtemisTextProcessor artemis)
                     {
                         IReadOnlyList<int> preserved = await artemis.ProcessWithDiagnosticsAsync(path, options.Ratio, token);
@@ -221,6 +227,7 @@ public sealed class ConversionService : IConversionService
                 }
                 else if (TextureScanner.IsImage(path) && options.Categories.HasFlag(AssetCategories.Images))
                 {
+                    itemStage = "image";
                     string normalized = relativePath.Replace('\\', '/');
                     textureLookup.TryGetValue((archiveName ?? "") + "|" + normalized, out var info);
                     // A scan failure must not silently bypass mandatory resizing
@@ -228,6 +235,19 @@ public sealed class ConversionService : IConversionService
                     if (info?.Error is { } scanError)
                         throw new InvalidDataException($"Image inspection failed; conversion stopped: {scanError}");
                     bool readable = info?.Error == null;
+                    int sourceWidth = info?.Width ?? 0, sourceHeight = info?.Height ?? 0;
+                    if (sourceWidth == 0 && extension.ToLowerInvariant() is ".png" or ".jpg" or ".jpeg")
+                    {
+                        var dimensions = await Image.IdentifyAsync(path, token);
+                        sourceWidth = dimensions.Width; sourceHeight = dimensions.Height;
+                    }
+                    bool resized = extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+                        options.NativeTextures?.Enabled == true && extension.ToLowerInvariant() is ".jpg" or ".jpeg";
+                    double dimensionRatio = resized ? options.Ratio : 1;
+                    int targetWidth = info?.IsNative == true ? sourceWidth : Math.Max(1, (int)(sourceWidth * dimensionRatio));
+                    int targetHeight = info?.IsNative == true ? sourceHeight : Math.Max(1, (int)(sourceHeight * dimensionRatio));
+                    foreach (var diagnostic in TextureDimensionDiagnostics.Create(sourceWidth, sourceHeight, targetWidth, targetHeight, relativePath))
+                        Diagnostic(diagnostic);
                     if (readable && extension.Equals(".png", StringComparison.OrdinalIgnoreCase)) await _png.ResizeAsync(path, options.Ratio, token);
                     else if (readable && options.NativeTextures?.Enabled == true && extension.ToLowerInvariant() is ".jpg" or ".jpeg")
                     {
@@ -250,10 +270,16 @@ public sealed class ConversionService : IConversionService
                 }
                 else if (options.SubsetFonts && (extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase) ||
                                                  extension.Equals(".otf", StringComparison.OrdinalIgnoreCase)))
-                    await _fonts.SubsetAsync(path, options.FontProfile, usedCodePoints, token);
+                {
+                    itemStage = "font";
+                    long before = new FileInfo(path).Length;
+                    bool changed = await _fonts.SubsetAsync(path, options.FontProfile, usedCodePoints, token);
+                    progressEntry += $" · font-profile={options.FontProfile}; subset={changed}; {before} → {new FileInfo(path).Length} B";
+                }
                 else if (extension.Equals(".psb", StringComparison.OrdinalIgnoreCase) &&
                          (options.Categories.HasFlag(AssetCategories.Animation) || options.ConvertEmotePsbTexturesToDxt5))
                 {
+                    itemStage = "psb";
                     await psbSlots.WaitAsync(token);
                     try
                     {
@@ -274,8 +300,10 @@ public sealed class ConversionService : IConversionService
                             }
                         }
                         double geometryRatio = options.Categories.HasFlag(AssetCategories.Animation) ? options.Ratio : 1;
-                        PsbProcessingResult result = await _psb.ProcessWithFormatAsync(path, psbRatio, geometryRatio,
-                            options.ConvertEmotePsbTexturesToDxt5 ? options.PsbOutputFormat : null, token, options.Dxt5Layout);
+                        PsbProcessingResult result = await _psb.ProcessWithDiagnosticsAsync(path, psbRatio, geometryRatio,
+                            options.ConvertEmotePsbTexturesToDxt5 ? options.PsbOutputFormat : null, Diagnostic, token, options.Dxt5Layout);
+                        if (result.Message.Contains("unsupported", StringComparison.OrdinalIgnoreCase) || result.Message.Contains("no supported", StringComparison.OrdinalIgnoreCase))
+                            Diagnostic(new(ConversionLogLevel.Warning, "PSB_PRESERVED_UNSUPPORTED", result.Message));
                         if (options.Categories.HasFlag(AssetCategories.Animation) && options.PsbTextures is { Enabled: true, CompensateRendering: true }
                             && result.IsEmoteMotion && result.Changed)
                             psbRenderModels.Add(new(relativePath.Replace('\\', '/'), archiveName,
@@ -287,12 +315,14 @@ public sealed class ConversionService : IConversionService
                 }
                 else if (archiveName is not null && options.IgnorePfsVideos && VideoExtensions.Contains(extension))
                 {
+                    progressEntry += " · skipped: archived video ignored; original bytes retained";
                     // Some Artemis titles store a second, engine-protected video stream inside
                     // PFS entries. The default is deliberately byte-preserving so FFmpeg never
                     // mistakes those files for ordinary media.
                 }
                 else if (preserveDat && extension.Equals(".dat", StringComparison.OrdinalIgnoreCase))
                 {
+                    progressEntry += " · skipped: archived DAT preserved; original bytes retained";
                     // DAT files inside PFS archives can be arbitrary game data (for example
                     // font caches). Preserve every archived DAT verbatim; only loose DAT files
                     // are probed and converted when they contain a video stream.
@@ -300,11 +330,12 @@ public sealed class ConversionService : IConversionService
                 else if ((AnimationExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Animation)) ||
                          (VideoExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Video)))
                 {
+                    itemStage = "video";
                     SemaphoreSlim slots = AnimationExtensions.Contains(extension) ? animationSlots : videoSlots;
                     await slots.WaitAsync(token);
                     try
                     {
-                        await _ffmpeg.ResizeAsync(path, options.Ratio,
+                        await _ffmpeg.ResizeWithDiagnosticsAsync(path, options.Ratio, Diagnostic,
                             convertToH264Mp4: archiveName is null && VideoExtensions.Contains(extension),
                             cancellationToken: token);
                     }
@@ -313,6 +344,7 @@ public sealed class ConversionService : IConversionService
 
                 if (Path.GetFileName(path).Equals("system.ini", StringComparison.OrdinalIgnoreCase))
                 {
+                    itemStage = "ini";
                     await _vita.EnsureVitaSectionAsync(path, token);
                     if (options.Categories.HasFlag(AssetCategories.Text) &&
                         options.TargetWidth is int width && options.TargetHeight is int height)
@@ -322,12 +354,13 @@ public sealed class ConversionService : IConversionService
             catch (OperationCanceledException) { throw; }
             catch (Exception exception)
             {
-                throw new ConversionItemException(archiveName, relativePath, exception);
+                Diagnostic(new(ConversionLogLevel.Error, "RESOURCE_FAILED", exception.ToString()));
+                throw new ConversionItemException(archiveName, relativePath, exception, itemStage);
             }
 
             int done = Interlocked.Increment(ref completed);
             double fraction = files.Length == 0 ? 1 : (double)done / files.Length;
-            progress?.Report(new ConversionProgress(progressStart + progressSpan * fraction, "resource", archiveName, progressEntry));
+            progress?.Report(new ConversionProgress(progressStart + progressSpan * fraction, "resource", archiveName, progressEntry, ResourcePath: relativePath));
         });
         if (options.NativeTextures?.Enabled == true)
             progress?.Report(new(progressStart + progressSpan, "resource", archiveName,

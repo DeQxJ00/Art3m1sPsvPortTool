@@ -36,7 +36,10 @@ public sealed class TextureScanner
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
         foreach (var archive in project.Archives)
         {
-            var index = await codec.ReadIndexAsync(archive.Path, encoding, token);
+            PfsIndex index;
+            try { index = await codec.ReadIndexAsync(archive.Path, encoding, token); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception exception) { throw new ConversionItemException(archive.FileName, null, exception, "texture-scan"); }
             indices.Add((archive, index));
             foreach (var e in index.Entries) names.Add(e.Path);
         }
@@ -50,11 +53,15 @@ public sealed class TextureScanner
         {
             token.ThrowIfCancellationRequested();
             TextureImageInfo image;
+            ConversionDiagnostic? diagnostic = null;
             try { image = InspectBytes(await read(), path, archive); }
             catch (Exception e) when (e is not OperationCanceledException)
-            { image = new(archive, path, CategoryFor(path), 0, 0, size, false, false, false, false, Error: e.Message); }
+            {
+                image = new(archive, path, CategoryFor(path), 0, 0, size, false, false, false, false, Error: e.Message);
+                diagnostic = new(ConversionLogLevel.Error, "IMAGE_SCAN_FAILED", e.ToString());
+            }
             result.Add(image with { ExistingPaths = names, HasStemConflict = stems.Contains(Path.ChangeExtension(path, null)) });
-            progress?.Report(new(100d * ++done / Math.Max(1, total), "texture-scan", archive, path));
+            progress?.Report(new(100d * ++done / Math.Max(1, total), "texture-scan", archive, path, diagnostic));
         }
         foreach (var (archive, index) in indices)
         {

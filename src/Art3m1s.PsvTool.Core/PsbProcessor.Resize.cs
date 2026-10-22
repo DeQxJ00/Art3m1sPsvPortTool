@@ -50,6 +50,11 @@ public sealed partial class PsbProcessor
     public async Task<PsbProcessingResult> ProcessWithFormatAsync(string path, double textureRatio, double geometryRatio,
         PsbTextureFormat? outputFormat, CancellationToken cancellationToken = default,
         PsbDxt5Layout dxt5Layout = PsbDxt5Layout.Linear)
+        => await ProcessWithDiagnosticsAsync(path, textureRatio, geometryRatio, outputFormat, null, cancellationToken, dxt5Layout);
+
+    public async Task<PsbProcessingResult> ProcessWithDiagnosticsAsync(string path, double textureRatio, double geometryRatio,
+        PsbTextureFormat? outputFormat, Action<ConversionDiagnostic>? diagnostics,
+        CancellationToken cancellationToken = default, PsbDxt5Layout dxt5Layout = PsbDxt5Layout.Linear)
     {
         if (!Enum.IsDefined(dxt5Layout)) throw new ArgumentOutOfRangeException(nameof(dxt5Layout));
         if (outputFormat.HasValue) _ = PsbTextureFormats.Name(outputFormat.Value);
@@ -74,7 +79,7 @@ public sealed partial class PsbProcessor
             return new PsbProcessingResult(false, false, "non-E-mote motion PSB preserved");
 
         Dictionary<ResourceKey, byte[]> replacements = [];
-        ProcessingSummary summary = ProcessModel(document, textureRatio, geometryRatio, outputFormat, dxt5Layout, replacements, cancellationToken);
+        ProcessingSummary summary = ProcessModel(document, textureRatio, geometryRatio, outputFormat, dxt5Layout, replacements, cancellationToken, diagnostics);
         if (summary.UnsupportedFormats.Count > 0)
             return new PsbProcessingResult(true, false,
                 $"unsupported PSB texture format(s) preserved: {string.Join(", ", summary.UnsupportedFormats.Order(StringComparer.OrdinalIgnoreCase))}");
@@ -103,7 +108,7 @@ public sealed partial class PsbProcessor
 
     private static ProcessingSummary ProcessModel(MutableDocument document, double ratio, double geometryRatio, PsbTextureFormat? outputFormat,
         PsbDxt5Layout outputLayout,
-        Dictionary<ResourceKey, byte[]> replacements, CancellationToken cancellationToken)
+        Dictionary<ResourceKey, byte[]> replacements, CancellationToken cancellationToken, Action<ConversionDiagnostic>? diagnostics)
     {
         ObjectNode root = document.Root as ObjectNode ?? throw new InvalidDataException("PSB root is not an object.");
         ObjectNode sources = root.GetObject("source") ?? throw new InvalidDataException(
@@ -134,6 +139,8 @@ public sealed partial class PsbProcessor
             if (width <= 0 || height <= 0) throw new InvalidDataException("PSB texture dimensions must be positive.");
             int targetWidth = Math.Max(1, (int)(width * ratio));
             int targetHeight = Math.Max(1, (int)(height * ratio));
+            foreach (var diagnostic in TextureDimensionDiagnostics.Create(width, height, targetWidth, targetHeight, sourceName))
+                diagnostics?.Invoke(diagnostic);
             ResourceKey key = new(resource.Index, resource.Extra);
             bool needsResize = targetWidth != width || targetHeight != height;
             PsbTextureFormat? targetFormat = outputFormat ?? sourceFormat;

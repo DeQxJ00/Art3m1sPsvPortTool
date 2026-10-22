@@ -17,7 +17,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private CancellationTokenSource? _conversionCancellation;
     private string _inputDirectory = string.Empty;
     private string _outputDirectory = string.Empty;
-    private string _ratio = "0.5";
+    private string _ratio = ConversionDefaults.Ratio.ToString(CultureInfo.InvariantCulture);
     private int? _width;
     private int? _height;
     private IReadOnlyList<IniResolution> _resolutions = [];
@@ -28,13 +28,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private double _progress;
     private string _status = string.Empty;
     private string _log = string.Empty;
-    private bool _text = true, _images = true, _animation = true, _video = true;
-    private bool _ignorePfsVideos = true;
-    private bool _convertEmotePsbTexturesToDxt5 = true;
-    private bool _subsetFonts;
-    private int _fontProfile;
-    private int _selectedParallel;
-    private int _selectedEncoding;
+    private bool _text = ConversionDefaults.Categories.HasFlag(AssetCategories.Text);
+    private bool _images = ConversionDefaults.Categories.HasFlag(AssetCategories.Images);
+    private bool _animation = ConversionDefaults.Categories.HasFlag(AssetCategories.Animation);
+    private bool _video = ConversionDefaults.Categories.HasFlag(AssetCategories.Video);
+    private bool _ignorePfsVideos = ConversionDefaults.IgnorePfsVideos;
+    private bool _convertEmotePsbTexturesToDxt5 = ConversionDefaults.ConvertEmotePsbTextures;
+    private bool _subsetFonts = ConversionDefaults.SubsetFonts;
+    private int _fontProfile = (int)ConversionDefaults.FontProfile;
+    private int _selectedParallel = ConversionDefaults.MaxParallelism;
+    private int _selectedEncoding = (int)ConversionDefaults.NameEncoding;
 
     public MainViewModel(ILocalizer? localizer = null, IProjectScanner? scanner = null, IConversionService? converter = null, ISettingsStore? settings = null,
         IPsbTextureScanner? psbScanner = null)
@@ -47,11 +50,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         AppSettings saved = _settings.Load();
         IsDark = saved.IsDark;
         _convertEmotePsbTexturesToDxt5 = saved.ConvertEmotePsbTexturesToDxt5;
-        _selectedPsbFormat = Enum.IsDefined(saved.PsbOutputFormat) ? (int)saved.PsbOutputFormat : 0;
-        _selectedPsbDxt5Layout = Enum.IsDefined(saved.Dxt5Layout) ? (int)saved.Dxt5Layout : 0;
+        _selectedPsbFormat = Enum.IsDefined(saved.PsbOutputFormat) ? (int)saved.PsbOutputFormat : (int)ConversionDefaults.PsbOutputFormat;
+        _selectedPsbDxt5Layout = Enum.IsDefined(saved.Dxt5Layout) ? (int)saved.Dxt5Layout : (int)ConversionDefaults.Dxt5Layout;
         _nativeTextures = saved.NativeTextures;
         // Independent texture scaling is a per-run opt-in, never restored from settings.
-        _independentPsbTextureScaling = false;
+        _independentPsbTextureScaling = ConversionDefaults.IndependentPsbScaling;
         _psbRenderCompensation = saved.PsbRenderCompensation;
         _localizer.SetLanguage(saved.Language);
         InitializePsb(saved.PsbRatios);
@@ -101,6 +104,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     public double Progress { get => _progress; private set => Set(ref _progress, value); }
     public string Status { get => _status; private set => Set(ref _status, value); }
     public string Log { get => _log; private set => Set(ref _log, value); }
+    public string? LogFilePath { get; private set; }
+    public string? ErrorLogFilePath { get; private set; }
     public string OriginalResolution => _width is > 0 && _height is > 0 ? $"{_width} × {_height}" : L("Unknown");
     public string ResolutionListLabel => L("ResolutionList");
     public IReadOnlyList<string> ResolutionChoices => _resolutions.Select(item =>
@@ -181,7 +186,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             SelectedResolutionIndex = preferred;
             OnPropertyChanged(nameof(SelectedResolutionIndex));
             if (resolutionOnly && _width is > 0 && _height is > 0)
-                Ratio = Math.Min(1d, Math.Min(960d / _width.Value, 540d / _height.Value)).ToString(CultureInfo.InvariantCulture);
+                Ratio = Math.Min(1d, Math.Min((double)ConversionDefaults.FitWidth / _width.Value, (double)ConversionDefaults.FitHeight / _height.Value)).ToString(CultureInfo.InvariantCulture);
             Status = resolutionOnly
                 ? _width is > 0 && _height is > 0
                     ? string.Format(CultureInfo.CurrentUICulture, L("ResolutionDetected"), OriginalResolution)
@@ -190,14 +195,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             Log = string.Join(Environment.NewLine, result.Archives.Select(item => $"{item.FileName} · pf{item.Version} · {item.Length:N0} B"));
             OnPropertyChanged(nameof(ScanSummary)); OnPropertyChanged(nameof(OriginalResolution)); OnPropertyChanged(nameof(TargetResolution));
         }
-        catch (Exception ex) { Status = ex.Message; }
+        catch (Exception ex) { Status = ex.Message; RecordFailure(ex, "scan"); }
         finally { IsBusy = false; }
     }
 
     public async Task StartAsync()
     {
         if (!Directory.Exists(InputDirectory) || string.IsNullOrWhiteSpace(OutputDirectory) || !TryRatio(out double ratio))
-        { Status = L("InvalidPaths"); return; }
+        { Status = L("InvalidPaths"); RecordFailure(new ArgumentException(Status), "validation"); return; }
         if (ProcessAnimation && IndependentPsbTextureScaling && PsbCategories.Any(x => !x.TryRatio(out _)))
         { Status = L("PsbInvalidRatio"); return; }
         if (Directory.Exists(OutputDirectory) && !_overwriteArmed)
@@ -209,34 +214,44 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         _conversionCancellation = new CancellationTokenSource(); IsBusy = true; Progress = 0; Log = string.Empty;
         string? activeArchive = null;
         string? activeEntry = null;
+        ConversionRunLog? runLog = null;
+        string outcome = "failed";
+        int exitCode = 1;
         try
         {
+            runLog = new ConversionRunLog(InputDirectory, OutputDirectory, standardOutput: TextWriter.Null, standardError: TextWriter.Null);
+            ShowLogPaths(runLog);
+            runLog.Info("OPTIONS", $"ratio={ratio.ToString(CultureInfo.InvariantCulture)}; categories={categories}; native-textures={NativeTextures}; subset-fonts={SubsetFonts}; font-profile={(FontSubsetProfile)FontProfile}; psb-format={(PsbTextureFormat)SelectedPsbFormat}; layout={(PsbDxt5Layout)SelectedPsbDxt5Layout}");
             Progress<ConversionProgress> reporter = new(value =>
             {
                 activeArchive = value.Archive;
                 activeEntry = value.Entry;
                 Progress = value.Percent; Status = LocalizeStage(value.Stage);
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
+                if (value.Diagnostic is { } diagnostic) Log += $"[{diagnostic.Level}] {diagnostic.Code}: {diagnostic.Message}" + Environment.NewLine;
             });
-            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(Enabled: false, CompensateRendering: false), (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout,
+            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(Enabled: ConversionDefaults.IndependentPsbScaling, CompensateRendering: ConversionDefaults.PsbRenderCompensation), (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout,
                 TargetWidth: _width is > 0 ? Math.Max(1, (int)(_width.Value * ratio)) : null,
                 TargetHeight: _height is > 0 ? Math.Max(1, (int)(_height.Value * ratio)) : null);
             var token = _conversionCancellation.Token;
-            await Task.Run(() => _converter.ConvertAsync(options, reporter, token), token);
+            var loggingReporter = new ConversionProgressRelay(runLog, reporter);
+            await Task.Run(() => _converter.ConvertAsync(options, loggingReporter, token), token);
             Status = L("Finished");
+            outcome = "success"; exitCode = 0;
+            if (runLog.HasWriteFailure) { Status = L("LogWriteFailed"); Log += L("LogWriteFailed") + Environment.NewLine; outcome = "completed-with-log-errors"; exitCode = 2; }
         }
-        catch (OperationCanceledException) { Status = L("Cancel"); }
+        catch (OperationCanceledException) { Status = L("Cancel"); outcome = "cancelled"; exitCode = 130; }
         catch (ConversionItemException ex)
         {
             Status = $"{L("Failed")}: {ex.Message}";
-            AppendFailure(ex.Archive ?? activeArchive, ex.Entry ?? activeEntry, ex.InnerException?.Message ?? ex.Message);
+            RecordFailure(ex, ex.Stage ?? runLog?.LastStage ?? "resource", runLog);
         }
         catch (Exception ex)
         {
             Status = $"{L("Failed")}: {ex.Message}";
-            AppendFailure(activeArchive, activeEntry, ex.Message);
+            RecordFailure(new ConversionItemException(activeArchive, activeEntry, ex, runLog?.LastStage), runLog?.LastStage ?? "setup", runLog);
         }
-        finally { _conversionCancellation.Dispose(); _conversionCancellation = null; IsBusy = false; _overwriteArmed = false; }
+        finally { runLog?.Complete(outcome, exitCode); runLog?.Dispose(); _conversionCancellation.Dispose(); _conversionCancellation = null; IsBusy = false; _overwriteArmed = false; }
     }
 
     public void Cancel() => _conversionCancellation?.Cancel();
@@ -263,14 +278,38 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         "extract" => L("StageExtract"),
         "pack" => L("StagePack"),
         "loose" => L("StageLoose"),
-        "resource" => L("StageResource"),
+        "resource" or "image" or "text" or "font" or "psb" or "video" or "ini" => L("StageResource"),
         "texture-scan" or "psb-scan" => L("Scanning"),
         "complete" => L("StageComplete"),
         _ => stage
     };
-    private void AppendFailure(string? archive, string? entry, string reason)
+    private void ShowLogPaths(ConversionRunLog log)
+    {
+        LogFilePath = log.LogPath; ErrorLogFilePath = log.ErrorLogPath;
+        Log += $"{L("LogFilePath")}: {LogFilePath}" + Environment.NewLine + $"{L("ErrorLogFilePath")}: {ErrorLogFilePath}" + Environment.NewLine;
+    }
+    private void RecordFailure(Exception exception, string stage, ConversionRunLog? log = null)
+    {
+        try
+        {
+            if (log != null) log.Exception(exception, stage);
+            else
+            {
+                using var fallback = ConversionRunLog.Fallback(InputDirectory, TextWriter.Null, TextWriter.Null);
+                ShowLogPaths(fallback);
+                fallback.Exception(exception, stage); fallback.Complete("failed", 1);
+            }
+        }
+        catch (Exception loggingError) when (loggingError is IOException or UnauthorizedAccessException or ArgumentException)
+        { Log += L("LogWriteFailed") + ": " + loggingError.Message + Environment.NewLine; }
+        var item = exception as ConversionItemException;
+        AppendFailure(item?.Archive, item?.Entry, exception.Message, stage);
+        Log += exception.ToString() + Environment.NewLine;
+    }
+    private void AppendFailure(string? archive, string? entry, string reason, string? stage = null)
     {
         List<string> details = [$"--- {L("FailureDetails")} ---"];
+        if (stage != null) details.Add($"{L("ErrorStage")}: {stage}");
         if (!string.IsNullOrWhiteSpace(archive)) details.Add($"{L("ErrorArchive")}: {archive}");
         if (!string.IsNullOrWhiteSpace(entry)) details.Add($"{L("ErrorFile")}: {entry}");
         details.Add($"{L("ErrorReason")}: {reason}");

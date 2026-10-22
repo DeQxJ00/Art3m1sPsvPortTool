@@ -6,6 +6,12 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 完善 UI / CLI 日志：按游戏目录名及运行编号保存完整日志，警告 / 错误单独存档；不再因控制台节流丢弃资源记录。补全阶段、PFS、资源路径、异常链、FFmpeg 命令 / stderr / 重试、字体字节变化及初始化错误回退；图片与 PSB 图集超过 4096 时明确记录源 / 目标尺寸。
+- Improved GUI/CLI logs grouped by game and run ID, with separate warnings/errors and unthrottled file records. Added stage/archive/resource context, exception chains, FFmpeg commands/stderr/retries, font byte changes, setup-error fallback and explicit original/target dimensions for images/PSB atlases exceeding 4096.
+- UI 与 CLI 共用转换默认值，新增可省略的 `--preset ui-defaults`：Ratio 默认 0.5、字体削减默认关闭，自动适配需显式 `--ratio auto`。默认配置验收只开启字体削减并选择简体中文，其余保持默认，校验参数一致性、纹理排列与实际字体输出。
+- UI and CLI now share conversion defaults through optional `--preset ui-defaults`: Ratio 0.5, font subsetting off; automatic fitting requires `--ratio auto`. Default-configuration acceptance enables only Simplified Chinese font subsetting, checking option parity, texture layout and actual font output.
+- 完善单游戏命令行：`--convert` 的输入为直接包含 PFS 的游戏根目录，输出为指定的最终目录；支持 Ratio、处理类型、纹理 / 字体、日志、预览、取消及覆盖策略。`--batch-convert` 为同义别名，不再遍历父目录或维护待办清单；中英文 README 增加逐游戏调用及 CMD / PowerShell 批量脚本示例。
+- Expanded single-game CLI: `--convert` takes the game root containing PFS and the exact output directory, with Ratio, resource/texture/font options, logs, previews, cancellation and overwrite policies. `--batch-convert` is an alias with no parent-directory traversal or checklist. Bilingual READMEs show per-game usage and CMD/PowerShell scripts for repeated calls.
 - “图片压制为 PSV 专用纹理”首次启动默认勾选；配置缺失、损坏或未包含该设置时采用开启默认值，已有明确选择继续恢复，手动关闭状态仍可保存。扫描不改变总开关。
 - Native PSV image texture conversion now starts enabled on first launch, or when configuration is missing, invalid or omits this setting. Explicit saved choices, including disabled, still persist; scanning leaves the master switch unchanged.
 

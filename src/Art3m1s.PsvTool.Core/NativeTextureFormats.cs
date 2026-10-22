@@ -9,8 +9,8 @@ public enum NativeTextureFormat
     Bc3Swizzled, AutoLinear, AutoWithoutMetadataLinear, Bc1Swizzled
 }
 
-public sealed record NativeTextureRule(string Category, bool Enabled, NativeTextureFormat Format = NativeTextureFormat.Auto);
-public sealed record NativeTextureOptions(bool Enabled = true, bool IgnoreBackgroundAlpha = false,
+public sealed record NativeTextureRule(string Category, bool Enabled, NativeTextureFormat Format = ConversionDefaults.ImageFormat);
+public sealed record NativeTextureOptions(bool Enabled = ConversionDefaults.NativeTextures, bool IgnoreBackgroundAlpha = ConversionDefaults.IgnoreBackgroundAlpha,
     IReadOnlyList<NativeTextureRule>? Rules = null);
 public sealed record NativeFormatInfo(NativeTextureFormat Format, string Name, int BitsPerPixel,
     int PvrCode, string Channels, string Description, string Extension = ".pvr")

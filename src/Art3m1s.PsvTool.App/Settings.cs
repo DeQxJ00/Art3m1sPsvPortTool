@@ -7,12 +7,12 @@ namespace Art3m1s.PsvTool.App;
 public sealed record AppSettings(
     string Language = "zh-CN",
     bool IsDark = true,
-    bool ConvertEmotePsbTexturesToDxt5 = true,
-    bool NativeTextures = true,
+    bool ConvertEmotePsbTexturesToDxt5 = ConversionDefaults.ConvertEmotePsbTextures,
+    bool NativeTextures = ConversionDefaults.NativeTextures,
     PsbResolutionRule[]? PsbRatios = null,
     bool PsbRenderCompensation = true,
-    PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5,
-    PsbDxt5Layout Dxt5Layout = PsbDxt5Layout.Swizzled);
+    PsbTextureFormat PsbOutputFormat = ConversionDefaults.PsbOutputFormat,
+    PsbDxt5Layout Dxt5Layout = ConversionDefaults.Dxt5Layout);
 
 public interface ISettingsStore
 {

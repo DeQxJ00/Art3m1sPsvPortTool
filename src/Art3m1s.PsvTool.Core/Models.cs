@@ -28,19 +28,19 @@ public enum FontSubsetProfile
 public sealed record ConversionOptions(
     string InputDirectory,
     string OutputDirectory,
-    double Ratio = 0.5,
-    AssetCategories Categories = AssetCategories.All,
-    int MaxParallelism = 0,
-    PfsNameEncoding NameEncoding = PfsNameEncoding.Auto,
+    double Ratio = ConversionDefaults.Ratio,
+    AssetCategories Categories = ConversionDefaults.Categories,
+    int MaxParallelism = ConversionDefaults.MaxParallelism,
+    PfsNameEncoding NameEncoding = ConversionDefaults.NameEncoding,
     bool OverwriteExisting = false,
-    bool SubsetFonts = false,
-    FontSubsetProfile FontProfile = FontSubsetProfile.SimplifiedChinese,
-    bool IgnorePfsVideos = true,
-    bool ConvertEmotePsbTexturesToDxt5 = true,
+    bool SubsetFonts = ConversionDefaults.SubsetFonts,
+    FontSubsetProfile FontProfile = ConversionDefaults.FontProfile,
+    bool IgnorePfsVideos = ConversionDefaults.IgnorePfsVideos,
+    bool ConvertEmotePsbTexturesToDxt5 = ConversionDefaults.ConvertEmotePsbTextures,
     NativeTextureOptions? NativeTextures = null,
     PsbTextureOptions? PsbTextures = null,
-    PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5,
-    PsbDxt5Layout Dxt5Layout = PsbDxt5Layout.Swizzled,
+    PsbTextureFormat PsbOutputFormat = ConversionDefaults.PsbOutputFormat,
+    PsbDxt5Layout Dxt5Layout = ConversionDefaults.Dxt5Layout,
     int? TargetWidth = null,
     int? TargetHeight = null)
 {
@@ -90,19 +90,26 @@ public sealed record ConversionProgress(
     double Percent,
     string Stage,
     string? Archive = null,
-    string? Entry = null);
+    string? Entry = null,
+    ConversionDiagnostic? Diagnostic = null,
+    string? ResourcePath = null);
+
+public enum ConversionLogLevel { Info, Warning, Error }
+public sealed record ConversionDiagnostic(ConversionLogLevel Level, string Code, string Message);
 
 public sealed class ConversionItemException : Exception
 {
-    public ConversionItemException(string? archive, string? entry, Exception innerException)
+    public ConversionItemException(string? archive, string? entry, Exception innerException, string? stage = null)
         : base(innerException.Message, innerException)
     {
         Archive = archive;
         Entry = entry;
+        Stage = stage;
     }
 
     public string? Archive { get; }
     public string? Entry { get; }
+    public string? Stage { get; }
 }
 
 public sealed record PfsEntry(

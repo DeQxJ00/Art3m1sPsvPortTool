@@ -6,11 +6,16 @@ namespace Art3m1s.PsvTool.Core;
 
 public interface IFfmpegProcessor
 {
+    Task ResizeWithDiagnosticsAsync(string path, double ratio, Action<ConversionDiagnostic>? diagnostics,
+        bool convertToH264Mp4 = false, CancellationToken cancellationToken = default)
+        => ResizeAsync(path, ratio, convertToH264Mp4, cancellationToken);
     Task ResizeAsync(string path, double ratio, bool convertToH264Mp4 = false, CancellationToken cancellationToken = default);
 }
 
 public sealed class FfmpegProcessor : IFfmpegProcessor
 {
+    // Async-local scope keeps diagnostics tied to the correct file when videos run concurrently.
+    private static readonly AsyncLocal<Action<ConversionDiagnostic>?> DiagnosticSink = new();
     private readonly string _ffmpeg;
     private readonly string _ffprobe;
 
@@ -18,6 +23,15 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
     {
         _ffmpeg = ffmpeg ?? FindTool("ffmpeg");
         _ffprobe = ffprobe ?? FindTool("ffprobe");
+    }
+
+    public async Task ResizeWithDiagnosticsAsync(string path, double ratio, Action<ConversionDiagnostic>? diagnostics,
+        bool convertToH264Mp4 = false, CancellationToken cancellationToken = default)
+    {
+        var previous = DiagnosticSink.Value;
+        DiagnosticSink.Value = diagnostics;
+        try { await ResizeAsync(path, ratio, convertToH264Mp4, cancellationToken); }
+        finally { DiagnosticSink.Value = previous; }
     }
 
     public async Task ResizeAsync(string path, double ratio, bool convertToH264Mp4 = false, CancellationToken cancellationToken = default)
@@ -31,6 +45,7 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         }
         catch (Exception exception) when (isDat && exception is FfmpegProcessException or InvalidDataException or JsonException)
         {
+            DiagnosticSink.Value?.Invoke(new(ConversionLogLevel.Warning, "DAT_PRESERVED", exception.ToString()));
             // Artemis uses .dat for both video containers and unrelated binary data
             // such as font caches. An unrecognized DAT is not a broken video: leave it
             // byte-for-byte unchanged and let archive repacking retain its original name.
@@ -73,6 +88,7 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
                     // reference quality first, then use its next compatible quality step as a
                     // compatibility fallback rather than aborting the complete PFS archive.
                     arguments[arguments.IndexOf("-q:v") + 1] = "7";
+                    DiagnosticSink.Value?.Invoke(new(ConversionLogLevel.Warning, "THEORA_RETRY", "Theora q=8 failed; retrying with q=7. " + exception.Message));
                     await RunAsync(_ffmpeg, arguments, cancellationToken);
                 }
                 // Some libtheora/FFmpeg combinations can return success while writing
@@ -246,6 +262,7 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
 
     private static async Task<string> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
+        DiagnosticSink.Value?.Invoke(new(ConversionLogLevel.Info, "FFMPEG_COMMAND", $"executable={executable}; arguments={string.Join(" ", arguments.Select(x => "\"" + x.Replace("\"", "\\\"", StringComparison.Ordinal) + "\""))}"));
         ProcessStartInfo start = new(executable)
         {
             RedirectStandardOutput = true,
@@ -260,6 +277,9 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         await process.WaitForExitAsync(cancellationToken);
         string output = await stdout;
         string error = await stderr;
+        if (!string.IsNullOrWhiteSpace(error)) DiagnosticSink.Value?.Invoke(new(process.ExitCode == 0 ? ConversionLogLevel.Warning : ConversionLogLevel.Error,
+            "FFMPEG_STDERR", $"executable={executable}; exit-code={process.ExitCode}" + Environment.NewLine + error));
+        DiagnosticSink.Value?.Invoke(new(ConversionLogLevel.Info, "FFMPEG_EXIT", $"executable={executable}; exit-code={process.ExitCode}"));
         if (process.ExitCode != 0)
             throw new FfmpegProcessException($"{Path.GetFileName(executable)} failed ({process.ExitCode}): {error.Trim()}");
         return output;

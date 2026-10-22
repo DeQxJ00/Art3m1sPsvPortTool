@@ -15,6 +15,10 @@ public sealed record PsbProcessingResult(bool IsEmoteMotion, bool Changed, strin
 
 public interface IPsbProcessor
 {
+    Task<PsbProcessingResult> ProcessWithDiagnosticsAsync(string path, double textureRatio, double geometryRatio,
+        PsbTextureFormat? outputFormat, Action<ConversionDiagnostic>? diagnostics,
+        CancellationToken cancellationToken = default, PsbDxt5Layout dxt5Layout = PsbDxt5Layout.Linear)
+        => ProcessWithFormatAsync(path, textureRatio, geometryRatio, outputFormat, cancellationToken, dxt5Layout);
     Task<PsbProcessingResult> ProcessWithFormatAsync(string path, double textureRatio, double geometryRatio,
         PsbTextureFormat? outputFormat, CancellationToken cancellationToken = default,
         PsbDxt5Layout dxt5Layout = PsbDxt5Layout.Linear)

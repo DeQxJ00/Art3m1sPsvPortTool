@@ -10,6 +10,25 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length > 0) CliConsole.Attach();
+        if (args is ["--help"] or ["-h"])
+        {
+            Console.WriteLine(ConversionCommandLine.Help);
+            return 0;
+        }
+        if (args is ["--version"] or ["--convert", "--version"] or ["--batch-convert", "--version"])
+        {
+            Console.WriteLine(typeof(Program).Assembly.GetName().Version?.ToString(3));
+            return 0;
+        }
+        if (args.Length > 0 && args[0] is "--convert" or "--batch-convert")
+        {
+            using CancellationTokenSource cancellation = new();
+            ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+            Console.CancelKeyPress += cancel;
+            try { return ConversionCommandLine.RunAsync(args, cancellation.Token).GetAwaiter().GetResult(); }
+            finally { Console.CancelKeyPress -= cancel; }
+        }
         if (args.Contains("--self-test", StringComparer.Ordinal))
             return RunSelfTestAsync().GetAwaiter().GetResult();
         if (args.Length == 2 && args[0].Equals("--font-self-test", StringComparison.Ordinal))
@@ -35,6 +54,11 @@ internal static class Program
         }
         if (args.Length == 3 && args[0].Equals("--psb-pfs-self-test", StringComparison.Ordinal))
             return RunPsbPfsSelfTestAsync(args[1], args[2]).GetAwaiter().GetResult();
+        if (args.Length > 0)
+        {
+            // Preserve diagnostics for invalid commands as well as failed conversions.
+            return ConversionCommandLine.RunAsync(["--convert", .. args]).GetAwaiter().GetResult();
+        }
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
     }

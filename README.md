@@ -38,6 +38,136 @@ Release 为 `win-x64`、`linux-x64`、`osx-x64` 和 `osx-arm64` 各提供两种�
 
 转换先写入输出目录同级的专用临时目录，全部成功后再替换目标；取消或失败会清理临时结果。
 
+## 命令行转换与批量脚本（cmdline）
+
+一次调用只转换**一个游戏**：`--input` 是直接包含 PFS 的游戏根目录，`--output` 是这个游戏最终的输出目录。程序不会遍历父目录寻找其他游戏，也不会额外套一层游戏名目录。例如分别传入 `D:\resources\sample01` 和 `D:\converted\sample01`，则 `root.pfs` 直接输出到后者。
+
+不带参数启动仍为图形界面；`--help` 显示帮助，`--version` 显示版本。命令行不打开 UI，也不读取 UI 保存的设置。请只处理你有权修改的游戏资源，并先备份原项目。
+
+### 统一默认预设
+
+`--preset ui-defaults` 使用与 UI 首次启动相同的转换默认值，省略时也使用此预设。二者共用 `ConversionDefaults`，但命令行不读取 UI 已保存的个性化设置；显式传入的参数覆盖预设，且不受 `--preset` 的前后位置影响。
+
+默认值：Ratio **0.5**；文本、图片、动画、视频全部开启；图片 PSV 纹理转换开启（扫描后采用建议的 AUTO Swizzled）；保留背景 Alpha；PSB 为 DXT5 / Swizzled，独立缩放和渲染补偿关闭；忽略 PFS 内普通视频；并行度、文件名编码为自动；字体削减关闭，字体范围为简体中文。已有输出的跳过 / 覆盖策略属于命令行运行策略，仍由 `--existing` 单独控制。
+
+按“只勾选字体削减、简体中文，其余默认”测试时，只需：
+
+```powershell
+.\Art3m1s.PsvTool.App.exe --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --preset ui-defaults --subset-fonts true --font-profile simplified | Out-Host
+```
+
+不需要再罗列其他开关；默认不会因扫描到 720p、2K 或 4K 而改变 Ratio。需要类似 UI“自动扫描分辨率”后的适配比例时，明确传 `--ratio auto`。
+
+### 单个游戏调用
+
+Windows PowerShell（在解压后的程序目录执行；管道让 GUI 类型 EXE 的输出可见，并等待退出）：
+
+```powershell
+.\Art3m1s.PsvTool.App.exe --help | Out-Host
+.\Art3m1s.PsvTool.App.exe --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --dry-run | Out-Host
+.\Art3m1s.PsvTool.App.exe --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --ratio 0.5 --subset-fonts false | Out-Host
+$LASTEXITCODE
+```
+
+Windows CMD 可这样等待完成：
+
+```bat
+start "" /b /wait "Art3m1s.PsvTool.App.exe" --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --ratio 0.5 --subset-fonts false
+echo %ERRORLEVEL%
+```
+
+Linux 直接执行 `./Art3m1s.PsvTool.App --convert --input /data/sample01 --output /data/output/sample01`；macOS 使用 `.app/Contents/MacOS/Art3m1s.PsvTool.App`。支持空格路径（需引号）、`--参数=值` 及位置参数 `--convert 游戏目录 输出目录`。`--batch-convert` 保留为别名，行为同样是**单个游戏**，不再处理总文件夹，不支持待办清单和继续下一个游戏参数。
+
+### 参数
+
+| 参数 | 默认值 / 说明 |
+| --- | --- |
+| `--preset ui-defaults` | 默认预设，转换参数与 UI 首次启动一致；可省略 |
+| `--input PATH` / `-i PATH` | 必填，单个游戏根目录，直接包含 PFS 文件 |
+| `--output PATH` / `-o PATH` | 必填，该游戏的最终输出目录，不自动追加游戏文件夹名；不可与输入重合或互相包含 |
+| `--ratio auto\|R` | `0.5`，与 UI 初始值一致；`auto` 为显式启用自动适配；手动值为 `0 < R ≤ 1`，小数点使用 `.` |
+| `--source-resolution WxH` | 指定该游戏的原始分辨率，例如 `1920x1080`；不修改源文件 |
+| `--fit WxH` | `960x540`；仅自动 Ratio 使用的目标边界，不强行改变长宽比 |
+| `--types LIST` | `all`；也可 `none` 或 `text,images,animation,video` 的逗号分隔子集 |
+| `--parallel auto\|N` | `auto` = `max(1, CPU 逻辑核心数 - 1)`，或正整数；该游戏内部的并行度 |
+| `--encoding auto\|utf-8\|shift-jis` | `auto`，PFS 文件名编码 |
+| `--native-textures true\|false` | `true`，自动扫描并选择建议转换的普通图片分类，使用安全的 AUTO 规则 |
+| `--ignore-bg-alpha true\|false` | `false`，是否忽略背景图片 Alpha；谨慎开启 |
+| `--psb-format dxt5\|pvrtc2-4\|pvrtc2-2\|preserve` | `dxt5`；`preserve` 不做 PSB 纹理格式压缩，但勾选动画时仍按全局 Ratio 缩放 PSB |
+| `--dxt5-layout swizzled\|linear` | `swizzled`；同时控制普通图片的自动推荐排列和 PSB DXT5 排列 |
+| `--subset-fonts true\|false` | `false`，与 UI 一致；独立于 `--types`，不需要削减字体请明确传 `false` |
+| `--font-profile simplified\|japanese\|traditional` | `simplified`，分别保留简体 / 日文 / 繁体常用范围 |
+| `--ignore-pfs-videos true\|false` | `true`，忽略 PFS 内普通视频，不包含 OGV；PFS 内 DAT 仍按现有规则保留 |
+| `--existing skip\|error\|overwrite` | `skip`，已有输出跳过 / 记为失败 / 整个替换；`overwrite` 不交互确认，谨慎使用 |
+| `--log PATH` | 自定义完整日志（UTF-8 追加）；默认按输入游戏目录名分组，见下文；警告 / 错误另存相邻的 `.errors.log` |
+| `--dry-run` | 只扫描并显示该游戏的分辨率、Ratio 和输出尺寸，不转换、不创建输出或日志；不验证全部贴图和视频的可转换性 |
+| `--verbose` | 控制台显示每次进度；完整文件日志始终记录全部资源及完整异常，不受控制台节流影响 |
+| `--help` / `-h`、`--version` | 显示帮助 / 版本，不转换 |
+
+自动 Ratio 优先选首个有效 `system.ini` 的 `[WINDOWS]` 宽高，否则选首组，再用扫描所得图片分辨率兜底；计算 `min(1, fit宽/源宽, fit高/源高)`。例如 1920×1080 → 0.5。无法识别时该游戏报错，可用 `--source-resolution 1920x1080` 或 `--ratio 0.5`；只有手动 Ratio 且无法识别原尺寸时，仍缩放资源，但无法预先确定统一 INI 的目标宽高。PSB 独立贴图 Ratio 功能仍禁用，统一跟随全局 Ratio。
+
+`--native-textures false` 只关闭普通图片原生纹理压制，不关闭 PNG 尺寸缩放；图片缩放由 `--types` 的 `images` 控制。PSB 处理由 `animation` 和 `--psb-format` 控制。未选中的资源通常原样复制，但 `system.ini` 缺失的 `[VITA]` 仍按规则追加。视频所需 FFmpeg 放置方式与 UI 相同，见上文。
+
+### 用脚本批量调用
+
+明确列出每个游戏的输入、输出和 Ratio，源目录可以在不同磁盘，不要求放到同一个总文件夹。以下 PowerShell 顺序调用，失败会记录并继续，取消时停止；如需遇错即停，可把失败分支改为 `break`。
+
+```powershell
+$tool = ".\Art3m1s.PsvTool.App.exe"
+$jobs = @(
+    @{ Input = "D:\resources\sample01"; Output = "D:\converted\sample01"; Ratio = "0.5" },
+    @{ Input = "E:\source\sample02"; Output = "D:\converted\sample02"; Ratio = "0.75" }
+)
+$failed = 0
+foreach ($job in $jobs) {
+    & $tool --convert --input $job.Input --output $job.Output --ratio $job.Ratio --subset-fonts false | Out-Host
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        $failed++
+        Write-Warning "Conversion failed: $($job.Input), exit=$code"
+        if ($code -eq 130) { break }
+    }
+}
+if ($failed -gt 0) { throw "$failed conversion(s) failed." }
+```
+
+也可以把下面保存为 EXE 同目录的 `.cmd`，逐个调用，失败立即停止：
+
+```bat
+@echo off
+start "" /b /wait "%~dp0Art3m1s.PsvTool.App.exe" --convert --input "D:\resources\sample01" --output "D:\converted\sample01" --ratio 0.5 --subset-fonts false
+if errorlevel 1 exit /b %ERRORLEVEL%
+start "" /b /wait "%~dp0Art3m1s.PsvTool.App.exe" --convert --input "E:\source\sample02" --output "D:\converted\sample02" --ratio 0.75 --subset-fonts false
+exit /b %ERRORLEVEL%
+```
+
+### 输出安全与退出码
+
+输出已存在时默认跳过。可用 `--existing error` 改为报错，或 `--existing overwrite` 无提示替换**指定的整个输出目录**，请谨慎使用。沿用核心临时目录和原子发布机制，失败或取消不发布半成品，已有输出保持不变。Ctrl+C 取消当前转换，是否继续其他游戏由调用脚本控制。
+
+锁文件仍位于指定输出目录旁，例如 `result.conversion.lock`，退出后保留，以独占打开的方式防止多个进程同时转换到同一输出目录，无需手动删除。自定义日志不可位于输入或输出目录内。命令行路径不支持符号链接 / junction。
+
+退出码：`0` 成功 / 跳过 / 预览；`1` 转换失败（包括误把多个游戏的父目录作为输入）；`2` 参数、路径、日志或锁初始化错误；`130` 用户取消。程序内部没有游戏队列或待办清单。字体削减与 UI 一样默认关闭；本项目的默认配置转换验收会显式使用 `--subset-fonts true --font-profile simplified`，其余使用共享默认值。
+
+### 日志与错误定位
+
+UI 与命令行的转换都保存完整日志，按**输入游戏根目录名**分组，不按输出文件夹名。默认路径为 `输出父目录/logs/游戏名/`，每次运行使用时间戳和独立编号，例如：
+
+```text
+D:\converted\logs\sample01\
+  sample01-20261022-153000000-a1b2c3d4.log
+  sample01-20261022-153000000-a1b2c3d4.errors.log
+```
+
+- `.log`：完整记录每个资源、保留 / 转换结果、字体削减前后字节数、有效参数、阶段、耗时和最终退出状态；只有控制台进度节流，文件记录不丢弃。
+- `.errors.log`：出现警告或错误时才创建；同时保留在完整日志中。异常类型、调用栈、所有内层异常及 FFmpeg 原始 stderr 始终保存，不要求 `--verbose`。FFmpeg 命令、退出码、重试和 DAT 原样保留原因也会记录。
+- 每条记录包含时间、级别、游戏名、运行编号、阶段、PFS 名（散装资源标记为 loose）和资源路径。并行任务各自报告的错误会分别记录。
+- 普通图片及 E-mote PSB 图集的宽或高**超过 4096**时记录原尺寸、缩放后尺寸、上限及图集名：源图超过但目标不超过，记为 `SOURCE_DIMENSIONS_GT_4096` 信息；目标仍超过，记为 `TARGET_DIMENSIONS_GT_4096` 警告。不自动改 Ratio 或裁图。普通图片可能缩放后继续保留 PNG；这不代表 PSV 能正常加载。PSB Swizzled 编码若因此失败，会保留完整错误并取消本次输出发布。
+- 初始化 / 参数错误若尚不能打开指定日志，会回退至系统应用数据目录的 `art3m1s_psv_port_tool/logs/游戏名/`（Windows 为 `%LOCALAPPDATA%` 下）；没有可识别输入名时用 `command-line`。无法写入日志也会明确报告，不能静默忽略。UI 日志框、CLI 输出会显示实际日志路径。
+- `--log PATH` 自定义完整日志时，错误文件为同目录的 `文件名.errors.log`；多次调用追加，使用运行编号区分。`--dry-run` 始终不创建日志或错误文件，初始化失败也一样。
+
+警告 / 错误日志可能包含已恢复的 FFmpeg 编码重试，不能仅凭该文件存在就断定整体失败；应查看完整日志最后的 `RUN_END`，其中有 outcome、exit-code、耗时和警告 / 错误事件数。
+
 ## Ratio 与 PSV 分辨率建议
 
 默认 `0.5`，允许输入 `0 < Ratio ≤ 1`。参考按钮为 `0.75 · 720p`、`0.5 · 1080p`、`0.375 · 2K`、`0.25 · 4K`。以“原游戏分辨率 × Ratio”接近 PSV 的 `960×540`（或 `960×544`）为宜；设置过大会增加显存和内存压力。“自动扫描分辨率”列出游戏根目录及所有 PFS 内 `system.ini` 的完整宽高，标明来源和段落；默认优先选择首个有效 INI 的 `[WINDOWS]`，否则选其第一组，点击其他项可切换预览。扫描只读取 PFS 索引和目标条目，不解包整个归档；仍无法识别时可参考解包后的 `image/bg` PNG。点击自动扫描后，会按默认选中的宽高计算 `Ratio = min(1, 960/宽, 540/高)`，保持长宽比、适配 960×540，且不放大；例如 1920×1080 → 0.5、1280×720 → 0.75。未找到有效宽高时保留当前 Ratio。手动切换列表仅更新预览，可直接修改 Ratio。独立 PSB 比例不受影响。分辨率和 PSB 扫描均保留主页面滚动位置，日志只在框内自动滚动到底部。
