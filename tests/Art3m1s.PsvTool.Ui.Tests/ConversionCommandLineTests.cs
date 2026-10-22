@@ -126,6 +126,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.Equal(Input, call.InputDirectory);
         Assert.Equal(Output, call.OutputDirectory);
         Assert.False(Directory.Exists(Path.Combine(Output, "sample01")));
+        Assert.False(File.Exists(Output + ".conversion.lock"));
     }
 
     [Theory]
@@ -141,6 +142,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.Equal(called ? 1 : 0, converter.Calls.Count);
         if (called) Assert.True(converter.Calls[0].OverwriteExisting);
         Assert.Equal("original", File.ReadAllText(Path.Combine(Output, "keep.txt")));
+        Assert.False(File.Exists(Output + ".conversion.lock"));
     }
 
     [Fact]
@@ -270,6 +272,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.Contains("archive=\"root.pfs.010\"; file=\"script/sample.ast\"", error.ToString());
         string logDirectory = Path.Combine(_root, "logs", "sample01");
         Assert.Contains("test failure", await File.ReadAllTextAsync(Directory.GetFiles(logDirectory, "*.errors.log").Single()));
+        Assert.False(File.Exists(Output + ".conversion.lock"));
     }
 
     [Fact]
@@ -281,6 +284,7 @@ public sealed class ConversionCommandLineTests : IDisposable
             new FakeScanner(), converter, new StringWriter(), new StringWriter()));
         Assert.Single(converter.Calls);
         Assert.False(Directory.Exists(Output));
+        Assert.False(File.Exists(Output + ".conversion.lock"));
     }
 
     [Fact]
@@ -344,6 +348,13 @@ public sealed class ConversionCommandLineTests : IDisposable
         var preview = await Launch(Args("--dry-run"));
         Assert.Equal(0, preview.Code); Assert.Contains("ratio=0.5", preview.Output);
         Assert.False(Directory.Exists(Output));
+        string lockPath = Output + ".conversion.lock";
+        using (var owner = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert.Equal(2, (await Launch(Args())).Code);
+            Assert.True(File.Exists(lockPath));
+            Assert.False(Directory.Exists(Output));
+        }
         var converted = await Launch(Args());
         Assert.True(converted.Code == 0, converted.Error);
         Assert.Contains("DONE output=", converted.Output);
@@ -351,6 +362,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(Output, "sample01")));
         Assert.Equal(original, await File.ReadAllBytesAsync(Path.Combine(Input, "root.pfs")));
         await AssertDefaultOutput(font, originalFont);
+        Assert.False(File.Exists(lockPath));
         string successfulErrors = Path.Combine(_root, "logs", "sample01", "sample01.errors.log");
         Assert.True(File.Exists(successfulErrors));
         string successfulDetails = await File.ReadAllTextAsync(successfulErrors);
@@ -370,6 +382,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.Contains("ratio=0.75; target=1440x810", second.Output);
         Assert.True(File.Exists(Path.Combine(secondOutput, "root.pfs")));
         Assert.False(Directory.Exists(Path.Combine(secondOutput, "sample02")));
+        Assert.False(File.Exists(secondOutput + ".conversion.lock"));
 
         string failedInput = Path.Combine(_root, "sample03"), failedOutput = Path.Combine(_root, "failed-result");
         Directory.CreateDirectory(failedInput);
@@ -384,6 +397,7 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.Contains("sample01.png", details); Assert.Contains("sample02.png", details);
         Assert.Contains("stage=\"texture-scan\"", details);
         Assert.False(Directory.Exists(failedOutput));
+        Assert.False(File.Exists(failedOutput + ".conversion.lock"));
 
         async Task<(int Code, string Output, string Error)> Launch(params string[] arguments)
         {

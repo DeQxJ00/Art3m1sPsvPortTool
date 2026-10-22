@@ -6,6 +6,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 命令行转换结束后自动清理本任务的 `.conversion.lock`，覆盖成功、失败、取消、跳过和初始化失败；采用独占句柄关闭删除，未取得锁的任务不会清理，避免误删其他正在转换任务的锁。补充锁竞争、不同输出互不干扰及旧锁接管的回归测试。
+- CLI conversions now clean their owned `.conversion.lock` on success, failure, cancellation, skipping and setup failure. Exclusive delete-on-close handles avoid post-release path deletion; unsuccessful contenders never remove another task's lock. Added contention, independent-output and stale-sidecar regression coverage.
+
 ## [1.0.24] - 2026-10-22
 
 - 程序每次转换默认创建独立的 `游戏文件夹名.errors.log`，无需 BAT 重定向；仅保存运行边界、结果、警告及详细错误，普通进度保留在完整日志。正常完成时也记录零错误状态，预览仍不写文件。

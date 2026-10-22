@@ -90,8 +90,10 @@ internal static class ConversionCommandLine
             if (!settings.DryRun)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                // Keep the sidecar: deleting a lock file can race another process opening it.
-                conversionLock = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                // Delete through the owned handle, never by path after releasing the lock.
+                // .NET 10 also checks inode identity for this combination on Unix.
+                conversionLock = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
+                    FileShare.None, bufferSize: 1, FileOptions.DeleteOnClose);
             }
             runLog = new ConversionRunLog(source, destination, logPath, !settings.DryRun, settings.Verbose, output, error);
             Log($"START input={source}; output={destination}; dry-run={settings.DryRun}");
@@ -175,7 +177,15 @@ internal static class ConversionCommandLine
             runLog?.Exception(ex, "setup");
             return Finish(2, "setup-failed");
         }
-        finally { runLog?.Complete(outcome, resultCode); runLog?.Dispose(); conversionLock?.Dispose(); }
+        finally
+        {
+            try { runLog?.Complete(outcome, resultCode); }
+            finally
+            {
+                try { runLog?.Dispose(); }
+                finally { conversionLock?.Dispose(); }
+            }
+        }
     }
 
     private static string FullPath(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
