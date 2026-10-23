@@ -141,7 +141,15 @@ jobs:
           Copy-Item "$bundleRoot/bin/ffprobe$suffix" "ffmpeg-install/bin/ffprobe$suffix"
           Copy-Item "$bundleRoot/LICENSE.txt" ffmpeg-install/BTBN-LICENSE.txt
           Copy-Item btbn-checksums.sha256 ffmpeg-install/BTBN-checksums.sha256
-      - run: dotnet test art3m1s_psv_port_tool.slnx -c Release
+      - run: dotnet test art3m1s_psv_port_tool.slnx -c Release --logger trx
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-release-${{ matrix.rid }}
+          path: tests/**/TestResults/**/*.trx
+          if-no-files-found: warn
+          retention-days: 7
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: dotnet publish src/Art3m1s.PsvTool.App/Art3m1s.PsvTool.App.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:PublishSingleFile=true -o publish/${{ matrix.rid }}

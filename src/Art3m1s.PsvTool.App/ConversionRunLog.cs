@@ -30,7 +30,7 @@ internal sealed class ConversionRunLog : IProgress<ConversionProgress>, IDisposa
         string file = $"{Game}.log";
         LogPath = Path.GetFullPath(logPath ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "logs", Game, file));
         ErrorLogPath = Path.Combine(Path.GetDirectoryName(LogPath)!, Path.GetFileNameWithoutExtension(LogPath) + ".errors.log");
-        ValidatePaths(input, output, LogPath, ErrorLogPath);
+        LogPathSafety.Validate(input, output, LogPath, ErrorLogPath);
         if (persist) _main = Open(LogPath);
         Write(ConversionLogLevel.Info, "RUN_START", $"version={typeof(ConversionRunLog).Assembly.GetName().Version}; input={input}; output={output}; log={LogPath}; errors={ErrorLogPath}; dry-run={!persist}");
     }
@@ -144,21 +144,6 @@ internal sealed class ConversionRunLog : IProgress<ConversionProgress>, IDisposa
     }
     private static string Quote(string text) => "\"" + text.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)
         .Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal) + "\"";
-    private static void ValidatePaths(string input, string output, params string[] logs)
-    {
-        foreach (string path in logs)
-        {
-            foreach (string root in new[] { input, output })
-            {
-                string relative = Path.GetRelativePath(Path.GetFullPath(root), path);
-                if (relative == "." || !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-                    throw new ArgumentException("Logs must be outside input/output directories: " + path);
-            }
-            for (string? ancestor = path; ancestor != null; ancestor = Path.GetDirectoryName(ancestor))
-                if ((File.Exists(ancestor) || Directory.Exists(ancestor)) && (File.GetAttributes(ancestor) & FileAttributes.ReparsePoint) != 0)
-                    throw new ArgumentException("Log paths must not contain symbolic links/junctions: " + ancestor);
-        }
-    }
 }
 
 internal sealed class ConversionProgressRelay(IProgress<ConversionProgress> log, IProgress<ConversionProgress> ui) : IProgress<ConversionProgress>

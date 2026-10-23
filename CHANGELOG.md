@@ -6,6 +6,10 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.25] - 2026-10-23
+
+- 修复 macOS 日志路径校验误拒绝系统 `/var`、`/tmp`、`/etc` 别名而导致 CI / Release 多项测试连带失败的问题；仅放行解析目标与标准 `/private/...` 对应路径一致的系统链接，并以一致的别名路径检查日志不能写入输入 / 输出目录。用户自建链接、junction 及悬空链接仍拒绝。新增路径与安全回归测试，CI / Release 无论测试成功与否均保留 TRX 结果用于诊断。
+- Fixed macOS log validation rejecting standard `/var`, `/tmp` and `/etc` aliases and cascading into CI/Release test failures. Only system links resolving to their exact `/private/...` targets are allowed, with consistent alias-aware protected-directory checks. Custom links, junctions and dangling links remain forbidden. Added path/security regressions and always-uploaded CI/Release TRX results.
 - 新增 PSB ASTC 输入转换：`ASTC_8BPP`（4×4）及明确块尺寸的标准 2D ASTC 经 PVRTexLib 解码、按全局 Ratio Bicubic 缩放后，输出所选 DXT5 Linear / Swizzled、PVRTC2 4bpp / 2bpp；同步几何、资源表及大小估算。关闭格式转换时保留 ASTC 类型并按 Ratio 重编码。日志记录图集、源 / 目标格式与尺寸，损坏长度明确报错；含糊或未知的 ASTC 格式仍警告保留，不猜测块尺寸。
 - Added PSB ASTC inputs: `ASTC_8BPP` (4x4) and explicit standard 2D footprints decode through PVRTexLib, resize by the global Ratio with Bicubic and encode to selected DXT5 Linear/Swizzled or PVRTC2 4bpp/2bpp. Geometry, resource tables and size estimates stay in sync. Disabling format conversion retains/re-encodes ASTC on resize. Logs include atlas, formats and dimensions; malformed lengths fail explicitly, while ambiguous/unknown ASTC types remain preserved with warnings.
 - PNG 扫描与缩放统一使用零拷贝的结构解析层，像素解码与缩放继续由 ImageSharp 负责；统一校验长度、CRC、必要块顺序、颜色类型和位深，错误包含块名与字节偏移。覆盖所有合法颜色 / 位深组合及 Adam7、连续 IDAT、未知附加块和损坏输入；APNG 暂不支持缩放，明确报错而不误写动画帧。
