@@ -238,8 +238,18 @@ public sealed class ConversionService : IConversionService
                     int sourceWidth = info?.Width ?? 0, sourceHeight = info?.Height ?? 0;
                     if (sourceWidth == 0 && extension.ToLowerInvariant() is ".png" or ".jpg" or ".jpeg")
                     {
-                        var dimensions = await Image.IdentifyAsync(path, token);
-                        sourceWidth = dimensions.Width; sourceHeight = dimensions.Height;
+                        if (extension.Equals(".png", StringComparison.OrdinalIgnoreCase))
+                        {
+                            PngDocument png = PngDocument.Parse(await File.ReadAllBytesAsync(path, token));
+                            sourceWidth = checked((int)png.Width); sourceHeight = checked((int)png.Height);
+                            if (PngDocument.IccRecoveryDiagnostic(png.IgnoredIccProfileOffsets) is { } recovery)
+                                Diagnostic(recovery);
+                        }
+                        else
+                        {
+                            var dimensions = await Image.IdentifyAsync(path, token);
+                            sourceWidth = dimensions.Width; sourceHeight = dimensions.Height;
+                        }
                     }
                     bool resized = extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
                         options.NativeTextures?.Enabled == true && extension.ToLowerInvariant() is ".jpg" or ".jpeg";

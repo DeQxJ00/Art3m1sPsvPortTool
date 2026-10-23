@@ -10,6 +10,7 @@ internal sealed record PngChunk(string Type, ReadOnlyMemory<byte> Data, int Offs
 internal sealed record PngDocument(uint Width, uint Height, int BitDepth, int ColorType,
     IReadOnlyList<PngChunk> Chunks, ReadOnlyMemory<byte> ImageBytes, ReadOnlyMemory<byte> Trailer)
 {
+    public IReadOnlyList<int> IgnoredIccProfileOffsets { get; init; } = [];
     internal static ReadOnlySpan<byte> Signature => [137, 80, 78, 71, 13, 10, 26, 10];
     public ReadOnlyMemory<byte> Ihdr => Chunks[0].Data;
     public bool IsAnimated => Chunks.Any(static chunk => chunk.Type is "acTL" or "fcTL" or "fdAT");
@@ -19,10 +20,16 @@ internal sealed record PngDocument(uint Width, uint Height, int BitDepth, int Co
 
     public static bool HasSignature(ReadOnlySpan<byte> bytes) => bytes.StartsWith(Signature);
 
+    internal static ConversionDiagnostic? IccRecoveryDiagnostic(IReadOnlyList<int> offsets) => offsets.Count == 0 ? null :
+        new(ConversionLogLevel.Warning, "PNG_ICCP_CRC_IGNORED",
+            $"Ignored corrupt optional iCCP color profile at byte(s) {string.Join(", ", offsets)}. " +
+            "Pixel, palette and transparency CRC checks remain enabled; the source file was not modified.");
+
     public static PngDocument Parse(byte[] bytes)
     {
         if (!HasSignature(bytes)) throw Invalid("signature", 0, "Not a PNG file.");
         List<PngChunk> chunks = [];
+        List<PngChunk>? ignoredProfiles = null;
         int cursor = Signature.Length, paletteEntries = 0;
         uint width = 0, height = 0;
         int bits = 0, color = 0;
@@ -41,9 +48,17 @@ internal sealed record PngDocument(uint Width, uint Height, int BitDepth, int Co
             int count = (int)length;
             ReadOnlyMemory<byte> data = bytes.AsMemory(offset + 8, count);
             uint crc = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(offset + 8 + count, 4));
-            if (PngCrc32.Compute(typeBytes, data.Span) != crc) throw Invalid(type, offset, "PNG CRC mismatch.");
             cursor = offset + count + 12;
             if (chunks.Count == 0 && type != "IHDR") throw Invalid(type, offset, "IHDR must be first.");
+            if (PngCrc32.Compute(typeBytes, data.Span) != crc)
+            {
+                if (type != "iCCP") throw Invalid(type, offset, "PNG CRC mismatch.");
+                // A corrupt optional color profile must not prevent pixel decoding. Do not
+                // repair its CRC: discard the untrusted profile from both decoder input and output.
+                (ignoredProfiles ??= []).Add(new(type, data, offset));
+                if (hasData) dataEnded = true;
+                continue;
+            }
             switch (type)
             {
                 case "IHDR":
@@ -89,7 +104,11 @@ internal sealed record PngDocument(uint Width, uint Height, int BitDepth, int Co
                     if (!hasData) throw Invalid(type, offset, "PNG is missing IDAT.");
                     chunks.Add(new(type, data, offset));
                     // Bytes after IEND belong to the application, not the PNG chunk stream.
-                    return new(width, height, bits, color, chunks, bytes.AsMemory(0, cursor), bytes.AsMemory(cursor));
+                    return new(width, height, bits, color, chunks,
+                        DecoderBytes(bytes, cursor, ignoredProfiles), bytes.AsMemory(cursor))
+                    {
+                        IgnoredIccProfileOffsets = ignoredProfiles?.Select(c => c.Offset).ToArray() ?? []
+                    };
                 default:
                     if ((typeBytes[0] & 32) == 0) throw Invalid(type, offset, "Unsupported critical PNG chunk.");
                     break;
@@ -98,6 +117,22 @@ internal sealed record PngDocument(uint Width, uint Height, int BitDepth, int Co
             chunks.Add(new(type, data, offset));
         }
         throw Invalid("IEND", cursor, "PNG is missing IEND.");
+    }
+
+    private static ReadOnlyMemory<byte> DecoderBytes(byte[] bytes, int end, List<PngChunk>? ignoredProfiles)
+    {
+        if (ignoredProfiles is null) return bytes.AsMemory(0, end);
+        byte[] clean = new byte[end - ignoredProfiles.Sum(c => c.Data.Length + 12)];
+        int sourceOffset = 0, destinationOffset = 0;
+        foreach (PngChunk profile in ignoredProfiles)
+        {
+            int length = profile.Offset - sourceOffset;
+            bytes.AsSpan(sourceOffset, length).CopyTo(clean.AsSpan(destinationOffset));
+            destinationOffset += length;
+            sourceOffset = profile.Offset + profile.Data.Length + 12;
+        }
+        bytes.AsSpan(sourceOffset, end - sourceOffset).CopyTo(clean.AsSpan(destinationOffset));
+        return clean;
     }
 
     private static bool IsChunkName(ReadOnlySpan<byte> name)

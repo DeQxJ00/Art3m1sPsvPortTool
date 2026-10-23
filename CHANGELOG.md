@@ -6,6 +6,13 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.26] - 2026-10-24
+
+- 修复 PNG 扫描和缩放遇到可选 `iCCP` 色彩配置 CRC 错误时中断转换的问题：仅从解码输入和输出中移除损坏的配置块，保留有效配置，日志以 `PNG_ICCP_CRC_IGNORED` 警告记录资源路径及字节偏移；不修改原始资源。像素、调色板、透明度及其他数据块的 CRC 校验仍严格执行，Gray8、索引位深、`PLTE` / `tRNS` 和 IEND 后附加数据继续保留。
+- Fixed PNG scanning/resizing aborting on invalid CRCs in optional `iCCP` color profiles. Only corrupt profiles are discarded from decoder input/output; valid profiles remain intact. `PNG_ICCP_CRC_IGNORED` warnings identify resource paths and byte offsets without modifying source assets. Pixel, palette, transparency and other chunk CRC checks remain strict, preserving Gray8, indexed depths, `PLTE` / `tRNS` and post-IEND data.
+- 增加损坏 / 有效配置、其他 CRC 错误、结构错误、颜色存储类型和归档 / 散装转换回归测试，并以仓库外本地样本验证 NativeAOT 命令行输出。
+- Added regressions for corrupt/valid profiles, other CRC failures, structural errors, storage formats and archived/loose conversions, with NativeAOT CLI output verified against external local fixtures.
+
 ## [1.0.25] - 2026-10-23
 
 - 补齐 CLI 路径预检中的 macOS 系统别名支持，并统一输入 / 输出重叠、日志保护目录的别名比较，避免初始化失败及后续测试超时；自建链接和悬空链接仍拒绝。发布许可收集改为随源码保存并复制完整 PowerVR Tools EULA，避免上游网页 HTTP 401 阻断打包，其他许可下载失败会记录具体文件及 URL。

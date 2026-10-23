@@ -15,6 +15,7 @@ public sealed record TextureImageInfo(string? Archive, string Path, string Categ
     public IReadOnlyList<TextureImageInfo> OverlayPeers { get; init; } = [];
     public string? OverlayWinner { get; init; }
     public string? ConflictReason { get; init; }
+    public IReadOnlyList<int> IgnoredIccProfileOffsets { get; init; } = [];
 }
 
 public interface ITextureScanner
@@ -60,7 +61,11 @@ public sealed class TextureScanner : ITextureScanner
             token.ThrowIfCancellationRequested();
             TextureImageInfo image;
             ConversionDiagnostic? diagnostic = null;
-            try { image = InspectBytes(await read(), path, archive); }
+            try
+            {
+                image = InspectBytes(await read(), path, archive);
+                diagnostic = PngDocument.IccRecoveryDiagnostic(image.IgnoredIccProfileOffsets);
+            }
             catch (Exception e) when (e is not OperationCanceledException)
             {
                 image = new(archive, path, CategoryFor(path), 0, 0, size, false, false, false, false, Error: e.Message);
@@ -133,6 +138,9 @@ public sealed class TextureScanner : ITextureScanner
                 if (p.A is > 0 and < 255) smooth = true;
             }
         });
-        return new(archive, path, category, image.Width, image.Height, bytes.Length, gray, alpha, smooth, metadata);
+        return new(archive, path, category, image.Width, image.Height, bytes.Length, gray, alpha, smooth, metadata)
+        {
+            IgnoredIccProfileOffsets = png?.IgnoredIccProfileOffsets ?? []
+        };
     }
 }
