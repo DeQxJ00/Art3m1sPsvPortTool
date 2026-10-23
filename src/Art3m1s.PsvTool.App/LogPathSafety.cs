@@ -15,16 +15,21 @@ internal static class LogPathSafety
                 if (relative == "." || !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                     throw new ArgumentException("Logs must be outside input/output directories: " + path);
             }
-            for (string? ancestor = full; ancestor != null; ancestor = Path.GetDirectoryName(ancestor))
-            {
-                FileAttributes attributes;
-                try { attributes = File.GetAttributes(ancestor); }
-                catch (FileNotFoundException) { continue; }
-                catch (DirectoryNotFoundException) { continue; }
-                // GetAttributes also detects dangling links, unlike File/Directory.Exists.
-                if ((attributes & FileAttributes.ReparsePoint) != 0 && !IsVerifiedSystemAlias(ancestor))
-                    throw new ArgumentException("Log paths must not contain symbolic links/junctions: " + ancestor);
-            }
+            RejectLinkedAncestors(full);
+        }
+    }
+
+    internal static void RejectLinkedAncestors(string path, string message = "Log paths must not contain symbolic links/junctions: ")
+    {
+        for (string? ancestor = Path.GetFullPath(path); ancestor != null; ancestor = Path.GetDirectoryName(ancestor))
+        {
+            FileAttributes attributes;
+            try { attributes = File.GetAttributes(ancestor); }
+            catch (FileNotFoundException) { continue; }
+            catch (DirectoryNotFoundException) { continue; }
+            // GetAttributes also detects dangling links, unlike File/Directory.Exists.
+            if ((attributes & FileAttributes.ReparsePoint) != 0 && !IsVerifiedSystemAlias(ancestor))
+                throw new ArgumentException(message + ancestor);
         }
     }
 
@@ -40,7 +45,7 @@ internal static class LogPathSafety
     internal static bool IsTrustedMacOSAliasTarget(string alias, string? target) =>
         alias is "/var" or "/tmp" or "/etc" && target == "/private" + alias;
 
-    private static string NormalizeForComparison(string path)
+    internal static string NormalizeForComparison(string path)
     {
         if (!OperatingSystem.IsMacOS()) return path;
         string normalized = NormalizeMacOSSystemPath(path);

@@ -84,7 +84,8 @@ internal static class ConversionCommandLine
             if (Path.GetDirectoryName(destination) is null) throw new ArgumentException("Output must not be a filesystem root.");
             string? logPath = settings.Log is null ? null : FullPath(settings.Log);
             string lockPath = destination + ".conversion.lock";
-            foreach (string candidate in new[] { source, destination, logPath, lockPath }.OfType<string>()) RejectLinkedAncestors(candidate);
+            foreach (string candidate in new[] { source, destination, logPath, lockPath }.OfType<string>())
+                LogPathSafety.RejectLinkedAncestors(candidate, "Symbolic links/junctions are not supported in CLI paths: ");
             if (logPath != null && (Contains(source, logPath) || Contains(destination, logPath) || PathEquals(logPath, lockPath)))
                 throw new ArgumentException("Log must be outside input/output directories and differ from the lock path.");
             cancellationToken.ThrowIfCancellationRequested();
@@ -197,19 +198,13 @@ internal static class ConversionCommandLine
     }
 
     private static string FullPath(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-    private static bool PathEquals(string left, string right) => left.Equals(right,
+    private static bool PathEquals(string left, string right) => LogPathSafety.NormalizeForComparison(left).Equals(LogPathSafety.NormalizeForComparison(right),
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     private static bool Contains(string root, string path)
     {
-        string relative = Path.GetRelativePath(root, path);
+        string relative = Path.GetRelativePath(LogPathSafety.NormalizeForComparison(root), LogPathSafety.NormalizeForComparison(path));
         return relative == "." || (!Path.IsPathRooted(relative) && relative != ".." &&
             !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal));
-    }
-    private static void RejectLinkedAncestors(string path)
-    {
-        for (string? current = path; current != null; current = Path.GetDirectoryName(current))
-            if ((File.Exists(current) || Directory.Exists(current)) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
-                throw new ArgumentException("Symbolic links/junctions are not supported in CLI paths: " + current);
     }
     private static void RejectDirectoryLinks(string root, CancellationToken cancellationToken)
     {

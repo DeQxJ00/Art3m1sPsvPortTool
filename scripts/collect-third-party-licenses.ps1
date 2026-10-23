@@ -34,11 +34,14 @@ function Copy-PackageLicense {
 
 function Save-PinnedLicense {
     param([string]$Uri, [string]$DestinationName)
-    Invoke-WebRequest -Uri $Uri -OutFile (Join-Path $licensePath $DestinationName)
+    Write-Host "Collecting $DestinationName from $Uri"
+    try { Invoke-WebRequest -Uri $Uri -OutFile (Join-Path $licensePath $DestinationName) }
+    catch { throw "Unable to collect $DestinationName from ${Uri}: $($_.Exception.Message)" }
 }
 
 Save-PinnedLicense 'https://raw.githubusercontent.com/YingFengTingYu/PVRTexLib.NET/a97ebedef2c191d6a0e1309667557485f81261b2/LICENSE.txt' 'PVRTexLib.NET-MIT.txt'
-Save-PinnedLicense 'https://developer.imaginationtech.com/terms/software-end-user-licence-agreement/' 'PowerVR-Tools-EULA.html'
+# Keep the complete reviewed vendor terms in source: the live page can require authentication.
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../packaging/licenses/PowerVR-Tools-EULA.txt') -Destination (Join-Path $licensePath 'PowerVR-Tools-EULA.txt') -Force
 'This product includes components of the PowerVR Tools Software from Imagination Technologies Limited. PVRTexLib is distributed under its own PowerVR Tools EULA, not under the application GPL license.' | Set-Content (Join-Path $licensePath 'PowerVR-NOTICE.txt')
 
 Copy-PackageLicense 'sixlabors.imagesharp' '3.1.12' 'LICENSE' 'ImageSharp-LICENSE.txt'

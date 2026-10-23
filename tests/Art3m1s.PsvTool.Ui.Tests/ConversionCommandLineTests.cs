@@ -145,6 +145,27 @@ public sealed class ConversionCommandLineTests : IDisposable
         Assert.False(File.Exists(Output + ".conversion.lock"));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MacOSAliasCannotHideOverlappingOutputOrProtectedLog(bool protectedLog)
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+        string canonicalInput = LogPathSafety.NormalizeForComparison(Input);
+        string[] args = protectedLog
+            ? Args("--log", Path.Combine(canonicalInput, "bad.log"))
+            : ["--convert", Input, Path.Combine(canonicalInput, "nested-output")];
+        StringWriter error = new();
+        FakeConverter converter = new();
+        int result = await ConversionCommandLine.RunAsync(args, scanner: new FakeScanner(), converter: converter,
+            standardOutput: TextWriter.Null, standardError: error, fallbackLogDirectory: Path.Combine(_root, "fallback"));
+        Assert.True(result == 2, error.ToString());
+        Assert.Contains(protectedLog ? "Log must be outside" : "must not overlap", error.ToString());
+        Assert.Empty(converter.Calls);
+        Assert.False(File.Exists(Path.Combine(Input, "bad.log")));
+        Assert.False(Directory.Exists(Path.Combine(Input, "nested-output")));
+    }
+
     [Fact]
     public async Task DryRunUsesWindowsResolutionAndWritesNothing()
     {

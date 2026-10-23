@@ -44,6 +44,9 @@ public sealed class LogPathSafetyTests : IDisposable
     {
         string source = Path.Combine(_root, "source", "sample01"), output = Path.Combine(_root, "output", "result");
         Directory.CreateDirectory(source);
+        LogPathSafety.RejectLinkedAncestors(source);
+        LogPathSafety.RejectLinkedAncestors(output);
+        LogPathSafety.RejectLinkedAncestors(output + ".conversion.lock");
         using var log = new ConversionRunLog(source, output, standardOutput: TextWriter.Null, standardError: TextWriter.Null);
         Assert.Equal(Path.Combine(_root, "output", "logs", "sample01", "sample01.log"), log.LogPath);
         Assert.True(File.Exists(log.LogPath)); Assert.True(File.Exists(log.ErrorLogPath));
@@ -81,6 +84,7 @@ public sealed class LogPathSafetyTests : IDisposable
         Directory.CreateSymbolicLink(link, target);
         try
         {
+            Assert.Throws<ArgumentException>(() => LogPathSafety.RejectLinkedAncestors(Path.Combine(link, "bad.log")));
             Assert.Throws<ArgumentException>(() => new ConversionRunLog(source, output,
                 logPath: Path.Combine(link, "bad.log"), standardOutput: TextWriter.Null, standardError: TextWriter.Null));
             Assert.False(File.Exists(Path.Combine(target, "bad.log")));
@@ -98,6 +102,7 @@ public sealed class LogPathSafetyTests : IDisposable
         File.CreateSymbolicLink(link, target);
         try
         {
+            Assert.Throws<ArgumentException>(() => LogPathSafety.RejectLinkedAncestors(link));
             Assert.Throws<ArgumentException>(() => new ConversionRunLog(source, output,
                 logPath: link, standardOutput: TextWriter.Null, standardError: TextWriter.Null));
             Assert.False(File.Exists(target));
