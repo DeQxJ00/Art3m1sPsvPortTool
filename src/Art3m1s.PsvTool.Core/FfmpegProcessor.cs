@@ -41,11 +41,12 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         VideoProbe probe;
         try
         {
-            probe = await ProbeAsync(path, cancellationToken);
+            probe = await ProbeAsync(path, cancellationToken, isDat ? ConversionLogLevel.Info : ConversionLogLevel.Error);
         }
         catch (Exception exception) when (isDat && exception is FfmpegProcessException or InvalidDataException or JsonException)
         {
-            DiagnosticSink.Value?.Invoke(new(ConversionLogLevel.Warning, "DAT_PRESERVED", exception.ToString()));
+            DiagnosticSink.Value?.Invoke(new(ConversionLogLevel.Info, "DAT_PRESERVED",
+                "DAT was not recognized as video; preserved byte-for-byte. " + exception.Message));
             // Artemis uses .dat for both video containers and unrelated binary data
             // such as font caches. An unrecognized DAT is not a broken video: leave it
             // byte-for-byte unchanged and let archive repacking retain its original name.
@@ -175,11 +176,12 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         }
     }
 
-    private async Task<VideoProbe> ProbeAsync(string path, CancellationToken cancellationToken)
+    private async Task<VideoProbe> ProbeAsync(string path, CancellationToken cancellationToken,
+        ConversionLogLevel failureLevel = ConversionLogLevel.Error)
     {
         string json = await RunAsync(_ffprobe,
             ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height,pix_fmt,avg_frame_rate,r_frame_rate:format=format_name", "-of", "json", path],
-            cancellationToken);
+            cancellationToken, failureLevel);
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement streams = document.RootElement.GetProperty("streams");
         if (streams.GetArrayLength() == 0)
@@ -260,7 +262,8 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
             _ => "yuv420p"
         };
 
-    private static async Task<string> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+    private static async Task<string> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken cancellationToken,
+        ConversionLogLevel failureLevel = ConversionLogLevel.Error)
     {
         DiagnosticSink.Value?.Invoke(new(ConversionLogLevel.Info, "FFMPEG_COMMAND", $"executable={executable}; arguments={string.Join(" ", arguments.Select(x => "\"" + x.Replace("\"", "\\\"", StringComparison.Ordinal) + "\""))}"));
         ProcessStartInfo start = new(executable)
@@ -277,7 +280,7 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         await process.WaitForExitAsync(cancellationToken);
         string output = await stdout;
         string error = await stderr;
-        if (!string.IsNullOrWhiteSpace(error)) DiagnosticSink.Value?.Invoke(new(process.ExitCode == 0 ? ConversionLogLevel.Warning : ConversionLogLevel.Error,
+        if (!string.IsNullOrWhiteSpace(error)) DiagnosticSink.Value?.Invoke(new(process.ExitCode == 0 ? ConversionLogLevel.Warning : failureLevel,
             "FFMPEG_STDERR", $"executable={executable}; exit-code={process.ExitCode}" + Environment.NewLine + error));
         DiagnosticSink.Value?.Invoke(new(ConversionLogLevel.Info, "FFMPEG_EXIT", $"executable={executable}; exit-code={process.ExitCode}"));
         if (process.ExitCode != 0)

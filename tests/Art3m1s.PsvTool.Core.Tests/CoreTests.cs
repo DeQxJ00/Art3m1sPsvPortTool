@@ -521,10 +521,26 @@ public sealed class CoreTests : IDisposable
         await File.WriteAllBytesAsync(dat, original);
 
         FfmpegProcessor processor = new(ffmpeg: "dotnet", ffprobe: "dotnet");
-        await processor.ResizeAsync(dat, 0.75, convertToH264Mp4: true);
+        List<ConversionDiagnostic> diagnostics = [];
+        await processor.ResizeWithDiagnosticsAsync(dat, 0.75, diagnostics.Add, convertToH264Mp4: true);
 
         Assert.Equal(original, await File.ReadAllBytesAsync(dat));
         Assert.False(File.Exists(Path.ChangeExtension(dat, ".mp4")));
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "DAT_PRESERVED" && diagnostic.Level == ConversionLogLevel.Info);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Level is ConversionLogLevel.Error or ConversionLogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task RejectedNonDatVideoStillFailsInsteadOfBeingPreservedAsInfo()
+    {
+        string video = Path.Combine(_root, "sample.mp4");
+        await File.WriteAllBytesAsync(video, [1, 2, 3]);
+        List<ConversionDiagnostic> diagnostics = [];
+        var processor = new FfmpegProcessor(ffmpeg: "dotnet", ffprobe: "dotnet");
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(() =>
+            processor.ResizeWithDiagnosticsAsync(video, .5, diagnostics.Add, convertToH264Mp4: true));
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "DAT_PRESERVED");
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Level == ConversionLogLevel.Error);
     }
 
     [Fact]

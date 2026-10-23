@@ -6,10 +6,12 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.25] - 2026-10-23
+
 - 补齐 CLI 路径预检中的 macOS 系统别名支持，并统一输入 / 输出重叠、日志保护目录的别名比较，避免初始化失败及后续测试超时；自建链接和悬空链接仍拒绝。发布许可收集改为随源码保存并复制完整 PowerVR Tools EULA，避免上游网页 HTTP 401 阻断打包，其他许可下载失败会记录具体文件及 URL。
 - Completed macOS system-alias handling in CLI path preflight and overlap/protected-log checks, preventing setup failures and cascading timeouts while retaining custom/dangling-link rejection. Packages now copy the complete reviewed PowerVR Tools EULA stored in source instead of depending on an upstream page returning HTTP 401; other license download failures identify the file and URL.
-
-## [1.0.25] - 2026-10-23
+- 无法识别为视频的 DAT 原样保留属于正常回退，探测诊断和保留原因改记完整日志 INFO，不再虚增错误 / 警告数；非 DAT 视频探测及实际转码失败仍记录 ERROR 并报错。不支持的 PSB 格式及超过 4096 的长图警告继续保留。
+- Unrecognized DAT preservation is now logged as INFO, including probe diagnostics, rather than inflating warning/error counts. Non-DAT probe and actual encoding failures remain errors. Unsupported PSB formats and oversized-texture warnings are retained.
 
 - 修复 macOS 日志路径校验误拒绝系统 `/var`、`/tmp`、`/etc` 别名而导致 CI / Release 多项测试连带失败的问题；仅放行解析目标与标准 `/private/...` 对应路径一致的系统链接，并以一致的别名路径检查日志不能写入输入 / 输出目录。用户自建链接、junction 及悬空链接仍拒绝。新增路径与安全回归测试，CI / Release 无论测试成功与否均保留 TRX 结果用于诊断。
 - Fixed macOS log validation rejecting standard `/var`, `/tmp` and `/etc` aliases and cascading into CI/Release test failures. Only system links resolving to their exact `/private/...` targets are allowed, with consistent alias-aware protected-directory checks. Custom links, junctions and dangling links remain forbidden. Added path/security regressions and always-uploaded CI/Release TRX results.
