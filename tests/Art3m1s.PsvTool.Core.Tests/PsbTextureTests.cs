@@ -98,13 +98,8 @@ internal static class PsbFixture
 
     public static byte[] CreateWithOptions(ushort version, bool compact,
         Func<int, int, (byte R, byte G, byte B, byte A)> color, params (int Width, int Height)[] sizes)
-    {
-        byte[] Array(IEnumerable<uint> values) => EncodeArray(values, compact);
-        Dictionary<string, object> sources = [];
-        List<byte[]> pixels = [];
-        for (int i = 0; i < sizes.Length; i++)
+        => CreateWithEncodedResources(version, compact, (_, width, height) =>
         {
-            var (width, height) = sizes[i];
             byte[] bgra = new byte[width * height * 4];
             for (int y = 0; y < height; y++)
                 for (int x = 0; x < width; x++)
@@ -112,7 +107,20 @@ internal static class PsbFixture
                     var pixel = color(x, y); int p = (y * width + x) * 4;
                     bgra[p] = pixel.B; bgra[p + 1] = pixel.G; bgra[p + 2] = pixel.R; bgra[p + 3] = pixel.A;
                 }
-            pixels.Add(bgra);
+            return ("RGBA8", bgra);
+        }, sizes);
+
+    public static byte[] CreateWithEncodedResources(ushort version, bool compact,
+        Func<int, int, int, (string Type, byte[] Pixels)> encode, params (int Width, int Height)[] sizes)
+    {
+        byte[] Array(IEnumerable<uint> values) => EncodeArray(values, compact);
+        Dictionary<string, object> sources = [];
+        List<byte[]> pixels = [];
+        for (int i = 0; i < sizes.Length; i++)
+        {
+            var (width, height) = sizes[i];
+            var encoded = encode(i, width, height);
+            pixels.Add(encoded.Pixels);
             sources["atlas" + i] = new Dictionary<string, object>
             {
                 ["texture"] = new Dictionary<string, object>
@@ -121,7 +129,7 @@ internal static class PsbFixture
                     ["height"] = height,
                     ["truncated_width"] = width,
                     ["truncated_height"] = height,
-                    ["type"] = "RGBA8",
+                    ["type"] = encoded.Type,
                     ["pixel"] = new Resource(i)
                 },
                 ["icon"] = new Dictionary<string, object>

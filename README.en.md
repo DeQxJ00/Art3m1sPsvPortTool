@@ -193,6 +193,8 @@ Default parallelism is `max(1, logical CPU count - 1)`. OGV animation is always 
 
 ### PSB texture-format selection
 
+ASTC inputs are supported for `ASTC_8BPP` (4x4) and explicit `ASTC_WXH` names for the 14 standard 2D footprints. Linear, headerless blocks decode through PVRTexLib to RGBA, resize with Bicubic using the global Ratio, then encode to the selected DXT5 Linear/Swizzled or PVRTC2 4bpp/2bpp format. Atlas/icon geometry, resource tables and size estimates are updated together. Disabling format conversion keeps the original ASTC type and re-encodes only when resizing; this does not imply PSV ASTC compatibility, so leave conversion enabled for PSV output. Ambiguous names such as `ASTC` or `ASTC_4BPP`, 3D formats and unknown layouts are not guessed and remain preserved with warnings. Payload length mismatches fail explicitly with resource context. [Standard ASTC footprints](https://docs.imgtec.com/tools-manuals/pvrtextool-manual/html/topics/cli/command-line-options.html).
+
 Enable “Convert E-mote PSB texture format” in Advanced settings, then choose the format below it. New and legacy settings default to `DXT5 (BC3)`; the selection is saved. Choosing a format does not enable independent Ratio: textures and associated geometry still follow the global Ratio.
 
 The adjacent “Estimate size” button asynchronously reads all archived and loose PSB metadata without extracting whole archives or modifying assets. It shows source/target payload totals and groups details by full width × height and format, counting all atlases and shared pixel resources only once per PSB. Estimates include block alignment and padding for the global Ratio, DXT5 layout or PVRTC2 format; changing options after scanning updates the result immediately. Unchecked Animation uses Ratio 1, and disabled format conversion retains source formats/layouts. Unreadable, non-E-mote, unsupported-format or out-of-range PSBs are explicitly excluded, with failed paths also logged. This excludes PSB tables, container headers, GPU allocation alignment and caches: it is not whole-PSB file size or total game VRAM. Click again after source-file changes. The button does not enable the disabled independent Ratio/scan panel or move the main viewport.
@@ -235,6 +237,10 @@ These guarantees apply to images retained as PNG.
 
 RGB24 stays RGB24 without Alpha; RGBA, grayscale, and transparent grayscale retain their color type. Gray8 PNG masks are forced to remain 8-bit grayscale (PNG color type 0) and are never converted to RGB, RGBA, or grayscale-alpha. Indexed PNGs keep their original 1/2/4/8-bit depth. Original `PLTE` and `tRNS` chunks are written back byte-for-byte—the built-in palette is never edited, reordered, or reduced. Bicubic pixels are mapped back to the original palette and only pixel indices change. PNG coordinate text is scaled; every other PNG chunk is retained byte-for-byte apart from dimensions and image data.
 
+Bytes following a valid IEND are no longer parsed as PNG chunks. Such images are protected as unknown attached data and remain PNG rather than native textures; resizing preserves the trailer byte-for-byte. Actual truncated chunks before IEND still fail validation.
+
+Scanning and resizing share one container parser, validating chunk lengths, CRCs, required ordering and color/depth combinations. Errors include the chunk name and byte offset; outer logs identify the archive and resource path. ImageSharp still handles pixel decoding and Bicubic resizing. Adam7 input is supported. APNG resizing is not supported: conversion explicitly fails without modifying the original input rather than silently producing a static image.
+
 ## Build, tests, and GitHub Actions
 
 .NET SDK 10.0.303 is required:
@@ -256,7 +262,7 @@ For each new version, update `CHANGELOG.md`, `Directory.Build.props`, and macOS 
 - The first macOS release is unsigned and unnotarized.
 - Unsupported video container/codec combinations stop with the original FFmpeg diagnostic instead of silently degrading.
 - pf2/pf6 can be read, while rebuilt files are pf8. Individual PFS entries over 4 GiB are unsupported.
-- PSB rebuilding currently supports plaintext bodies and encrypted headers whose key can be inferred automatically. Encrypted bodies, external textures, and atlas formats other than `RGBA8` / `DXT5` / `DXT5_SWIZZLED` / `PVRTC2_4BPP` / `PVRTC2_2BPP` fail explicitly instead of being silently copied as “converted.” Block re-encoding is lossy. If an added string cannot fit the original node's index width and no index is reusable, conversion fails safely instead of corrupting output.
+- PSB rebuilding supports plaintext bodies and encrypted headers whose key can be inferred automatically. Embedded RGBA8, DXT5 (Linear/Swizzled), PVRTC2 and the ASTC inputs described above are supported. Unsupported bodies/formats or external textures may be preserved with an explicit diagnostic rather than reported as converted; inspect warnings. Block re-encoding is lossy. If an added string cannot fit the original node's index width and no index is reusable, conversion fails safely instead of corrupting output.
 - Automatic text rules target common Artemis scripts; verify subtitles, hit areas, and animation coordinates in the actual game.
 
 ## Native PSV textures

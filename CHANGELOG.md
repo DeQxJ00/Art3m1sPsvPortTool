@@ -6,6 +6,12 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 新增 PSB ASTC 输入转换：`ASTC_8BPP`（4×4）及明确块尺寸的标准 2D ASTC 经 PVRTexLib 解码、按全局 Ratio Bicubic 缩放后，输出所选 DXT5 Linear / Swizzled、PVRTC2 4bpp / 2bpp；同步几何、资源表及大小估算。关闭格式转换时保留 ASTC 类型并按 Ratio 重编码。日志记录图集、源 / 目标格式与尺寸，损坏长度明确报错；含糊或未知的 ASTC 格式仍警告保留，不猜测块尺寸。
+- Added PSB ASTC inputs: `ASTC_8BPP` (4x4) and explicit standard 2D footprints decode through PVRTexLib, resize by the global Ratio with Bicubic and encode to selected DXT5 Linear/Swizzled or PVRTC2 4bpp/2bpp. Geometry, resource tables and size estimates stay in sync. Disabling format conversion retains/re-encodes ASTC on resize. Logs include atlas, formats and dimensions; malformed lengths fail explicitly, while ambiguous/unknown ASTC types remain preserved with warnings.
+- PNG 扫描与缩放统一使用零拷贝的结构解析层，像素解码与缩放继续由 ImageSharp 负责；统一校验长度、CRC、必要块顺序、颜色类型和位深，错误包含块名与字节偏移。覆盖所有合法颜色 / 位深组合及 Adam7、连续 IDAT、未知附加块和损坏输入；APNG 暂不支持缩放，明确报错而不误写动画帧。
+- PNG scanning and resizing now share a zero-copy container parser, with pixel decoding/resampling still handled by ImageSharp. Lengths, CRCs, required chunk ordering and color/depth combinations are validated consistently, with chunk names and byte offsets in errors. Tests cover legal color/depth combinations, Adam7, consecutive IDATs, unknown ancillary chunks and malformed input. APNG resizing explicitly fails instead of rewriting stale animation data.
+- 修复合法 PNG 在 IEND 后带额外数据时，图片分类扫描误报数据块截断并中止的问题。扫描在 IEND 停止，附加数据作为不透明尾部逐字节保留；RGB、RGBA、Gray8 及索引色缩放均保留尾部，且不将带尾部的 PNG 转为会丢失附加数据的原生纹理。
+- Fixed category scans reporting truncated chunks for valid PNGs carrying bytes after IEND. Scanning stops at IEND and preserves the opaque trailer byte-for-byte through RGB/RGBA/Gray8/indexed resizing; trailer-bearing PNGs stay out of native conversion to avoid losing attached data.
 - UI 和命令行共用扫描图片后的分类与建议勾选规则；命令行等待分辨率、图片分类扫描及规则生成全部完成才开始转换，记录各分类勾选 / 格式及扫描完成标记。图片扫描失败或取消时不进入转换，新增异步顺序和 UI / CLI 分类一致性测试。
 - GUI and CLI now share scanned-image category/recommendation construction. CLI waits for resolution detection, image scanning and rule generation before conversion, logging category selections/formats and scan completion. Failed or cancelled image scans never start conversion; added async-ordering and GUI/CLI category parity tests.
 - 命令行默认执行 UI“自动扫描分辨率”同一套选择与适配逻辑：首个有效 INI 优先 WINDOWS，否则首组，图片检测兜底；自动计算不放大且适配 960×540 的 Ratio，不再默认固定 0.5。只有显式数值参数才固定 Ratio；新增 UI / CLI 一致性及 720p 实际 EXE 转换测试。

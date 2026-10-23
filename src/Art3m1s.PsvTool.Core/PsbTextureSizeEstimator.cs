@@ -57,12 +57,14 @@ public static class PsbTextureSizeEstimator
         return new(files.Count, estimated, rows, issues);
     }
 
-    private static bool Supported(string type) => type.Equals("RGBA8", StringComparison.OrdinalIgnoreCase) || PsbTextureFormats.ParseType(type).HasValue;
+    private static bool Supported(string type) => type.Equals("RGBA8", StringComparison.OrdinalIgnoreCase) ||
+        PsbTextureFormats.ParseType(type).HasValue || PsbAstcFormat.ParseType(type).HasValue;
 
     public static long PayloadBytes(string type, int width, int height)
     {
         if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
         if (type.Equals("RGBA8", StringComparison.OrdinalIgnoreCase)) return checked((long)width * height * 4);
+        if (PsbAstcFormat.ParseType(type) is { } astc) return astc.PayloadBytes(width, height);
         return PsbTextureFormats.ParseType(type) switch
         {
             PsbTextureFormat.Dxt5 => PsbTextureFormats.ParseDxt5Layout(type) == PsbDxt5Layout.Swizzled

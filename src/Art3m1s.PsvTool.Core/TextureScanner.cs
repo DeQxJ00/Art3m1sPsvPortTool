@@ -89,8 +89,11 @@ public sealed class TextureScanner : ITextureScanner
             bool ordered = ranks.All(r => r != null)
                 && ranks.Select(r => r!.Value.Family).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1
                 && ranks.Select(r => r!.Value.Priority).Distinct().Count() == peers.Length;
-            if (!ordered) return image with { HasStemConflict = true,
-                ConflictReason = "同路径重复，无法确定包覆盖顺序 / Duplicate path with ambiguous archive priority" };
+            if (!ordered) return image with
+            {
+                HasStemConflict = true,
+                ConflictReason = "同路径重复，无法确定包覆盖顺序 / Duplicate path with ambiguous archive priority"
+            };
             int winner = Enumerable.Range(0, peers.Length).MaxBy(i => ranks[i]!.Value.Priority);
             return image with { OverlayPeers = peers, OverlayWinner = peers[winner].Archive };
         }).ToArray();
@@ -115,8 +118,9 @@ public sealed class TextureScanner : ITextureScanner
             int h = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(dds ? 12 : 24)));
             return new(archive, path, category, w, h, bytes.Length, false, false, false, false, true);
         }
-        bool metadata = HasPngMetadata(bytes);
-        using Image<Rgba32> image = Image.Load<Rgba32>(bytes);
+        PngDocument? png = PngDocument.HasSignature(bytes) ? PngDocument.Parse(bytes) : null;
+        bool metadata = png?.HasProtectedMetadata ?? false;
+        using Image<Rgba32> image = Image.Load<Rgba32>(png is null ? bytes.AsSpan() : png.ImageBytes.Span);
         if (image.Frames.Count > 1) metadata = true;
         bool gray = true, alpha = false, smooth = false;
         image.ProcessPixelRows(rows =>
@@ -130,20 +134,5 @@ public sealed class TextureScanner : ITextureScanner
             }
         });
         return new(archive, path, category, image.Width, image.Height, bytes.Length, gray, alpha, smooth, metadata);
-    }
-    private static bool HasPngMetadata(byte[] data)
-    {
-        if (data.Length < 8 || !data.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 })) return false;
-        int pos = 8;
-        while (pos + 12 <= data.Length)
-        {
-            int length = checked((int)BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos)));
-            if (length > data.Length - pos - 12) throw new InvalidDataException("Truncated PNG chunk.");
-            string type = System.Text.Encoding.ASCII.GetString(data, pos + 4, 4);
-            if (type is "tEXt" or "zTXt" or "iTXt" or "oFFs" or "acTL" ||
-                type is not ("IHDR" or "IDAT" or "IEND" or "PLTE" or "tRNS" or "gAMA" or "sRGB" or "cHRM" or "iCCP" or "pHYs" or "tIME" or "bKGD" or "sBIT")) return true;
-            pos += length + 12;
-        }
-        return false;
     }
 }

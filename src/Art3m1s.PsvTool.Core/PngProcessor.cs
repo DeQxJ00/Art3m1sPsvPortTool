@@ -17,13 +17,14 @@ public interface IPngProcessor
 
 public sealed class PngProcessor : IPngProcessor
 {
-    private static readonly byte[] Signature = [137, 80, 78, 71, 13, 10, 26, 10];
-
     public async Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (!double.IsFinite(ratio) || ratio <= 0 || ratio > 1) throw new ArgumentOutOfRangeException(nameof(ratio));
         byte[] source = await File.ReadAllBytesAsync(path, cancellationToken);
         PngDocument document = PngDocument.Parse(source);
+        if (document.IsAnimated)
+            throw new NotSupportedException("Animated PNG resizing is not supported; the original file has not been changed.");
         int width = checked((int)document.Width);
         int height = checked((int)document.Height);
         int targetWidth = Math.Max(1, (int)(width * ratio));
@@ -32,9 +33,9 @@ public sealed class PngProcessor : IPngProcessor
         try
         {
             if (document.ColorType == 3)
-                await ResizeIndexedAsync(source, document, targetWidth, targetHeight, ratio, temporary, cancellationToken);
+                await ResizeIndexedAsync(document, targetWidth, targetHeight, ratio, temporary, cancellationToken);
             else
-                ResizeTrueColor(source, document, targetWidth, targetHeight, ratio, temporary);
+                ResizeTrueColor(document, targetWidth, targetHeight, ratio, temporary);
             File.Move(temporary, path, true);
         }
         finally
@@ -45,7 +46,6 @@ public sealed class PngProcessor : IPngProcessor
     }
 
     private static async Task ResizeIndexedAsync(
-        byte[] source,
         PngDocument document,
         int width,
         int height,
@@ -57,18 +57,18 @@ public sealed class PngProcessor : IPngProcessor
             ?? throw new InvalidDataException("Indexed PNG is missing PLTE.");
         if (paletteChunk.Data.Length is 0 || paletteChunk.Data.Length % 3 != 0 || paletteChunk.Data.Length > 768)
             throw new InvalidDataException("Invalid PNG palette.");
-        byte[] transparency = document.Chunks.FirstOrDefault(static chunk => chunk.Type == "tRNS")?.Data ?? [];
+        byte[] transparency = document.Chunks.FirstOrDefault(static chunk => chunk.Type == "tRNS")?.Data.ToArray() ?? [];
         Rgba32[] palette = new Rgba32[paletteChunk.Data.Length / 3];
         for (int i = 0; i < palette.Length; i++)
         {
             palette[i] = new Rgba32(
-                paletteChunk.Data[i * 3],
-                paletteChunk.Data[i * 3 + 1],
-                paletteChunk.Data[i * 3 + 2],
+                paletteChunk.Data.Span[i * 3],
+                paletteChunk.Data.Span[i * 3 + 1],
+                paletteChunk.Data.Span[i * 3 + 2],
                 i < transparency.Length ? transparency[i] : (byte)255);
         }
 
-        using Image<Rgba32> image = Image.Load<Rgba32>(source);
+        using Image<Rgba32> image = Image.Load<Rgba32>(document.ImageBytes.Span);
         image.Mutate(context => context.Resize(CreateResizeOptions(width, height)));
         byte[] scanlines = new byte[checked(height * (1 + ((width * document.BitDepth + 7) / 8)))];
         Dictionary<uint, byte> colorCache = new();
@@ -98,7 +98,7 @@ public sealed class PngProcessor : IPngProcessor
         }
 
         await using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, true);
-        await output.WriteAsync(Signature, cancellationToken);
+        await output.WriteAsync(PngDocument.Signature.ToArray(), cancellationToken);
         byte[] ihdr = document.Ihdr.ToArray();
         BinaryPrimitives.WriteUInt32BigEndian(ihdr.AsSpan(0, 4), checked((uint)width));
         BinaryPrimitives.WriteUInt32BigEndian(ihdr.AsSpan(4, 4), checked((uint)height));
@@ -120,15 +120,16 @@ public sealed class PngProcessor : IPngProcessor
                 }
                 continue;
             }
-            byte[] data = ScaleTextualChunk(chunk, ratio);
+            ReadOnlyMemory<byte> data = ScaleTextualChunk(chunk, ratio);
             await WriteChunkAsync(output, chunk.Type, data, cancellationToken);
         }
         if (!wroteData)
             await WriteChunkAsync(output, "IDAT", compressed, cancellationToken);
-        await WriteChunkAsync(output, "IEND", [], cancellationToken);
+        await WriteChunkAsync(output, "IEND", ReadOnlyMemory<byte>.Empty, cancellationToken);
+        await output.WriteAsync(document.Trailer, cancellationToken);
     }
 
-    private static void ResizeTrueColor(byte[] source, PngDocument document, int width, int height, double ratio, string outputPath)
+    private static void ResizeTrueColor(PngDocument document, int width, int height, double ratio, string outputPath)
     {
         PngColorType colorType = document.ColorType switch
         {
@@ -158,25 +159,23 @@ public sealed class PngProcessor : IPngProcessor
         using MemoryStream resized = new();
         if (document.BitDepth == 16)
         {
-            if (document.ColorType == 0) ResizeAndSave<L16>(source, width, height, resized, encoder);
-            else if (document.ColorType == 2) ResizeAndSave<Rgb48>(source, width, height, resized, encoder);
-            else if (document.ColorType == 4) ResizeAndSave<La32>(source, width, height, resized, encoder);
-            else ResizeAndSave<Rgba64>(source, width, height, resized, encoder);
+            if (document.ColorType == 0) ResizeAndSave<L16>(document.ImageBytes, width, height, resized, encoder);
+            else if (document.ColorType == 2) ResizeAndSave<Rgb48>(document.ImageBytes, width, height, resized, encoder);
+            else if (document.ColorType == 4) ResizeAndSave<La32>(document.ImageBytes, width, height, resized, encoder);
+            else ResizeAndSave<Rgba64>(document.ImageBytes, width, height, resized, encoder);
         }
         else
         {
-            if (document.ColorType == 0) ResizeAndSave<L8>(source, width, height, resized, encoder);
-            else if (document.ColorType == 2) ResizeAndSave<Rgb24>(source, width, height, resized, encoder);
-            else if (document.ColorType == 4) ResizeAndSave<La16>(source, width, height, resized, encoder);
-            else ResizeAndSave<Rgba32>(source, width, height, resized, encoder);
+            if (document.ColorType == 0) ResizeAndSave<L8>(document.ImageBytes, width, height, resized, encoder);
+            else if (document.ColorType == 2) ResizeAndSave<Rgb24>(document.ImageBytes, width, height, resized, encoder);
+            else if (document.ColorType == 4) ResizeAndSave<La16>(document.ImageBytes, width, height, resized, encoder);
+            else ResizeAndSave<Rgba32>(document.ImageBytes, width, height, resized, encoder);
         }
 
         PngDocument encoded = PngDocument.Parse(resized.ToArray());
         using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        output.Write(Signature);
+        output.Write(PngDocument.Signature);
         WriteChunk(output, "IHDR", encoded.Ihdr);
-        byte[] imageData = encoded.Chunks.Where(static chunk => chunk.Type == "IDAT")
-            .SelectMany(static chunk => chunk.Data).ToArray();
         bool wroteData = false;
         foreach (PngChunk chunk in document.Chunks.Skip(1))
         {
@@ -186,22 +185,22 @@ public sealed class PngProcessor : IPngProcessor
             {
                 if (!wroteData)
                 {
-                    WriteChunk(output, "IDAT", imageData);
+                    foreach (PngChunk encodedChunk in encoded.Chunks.Where(static item => item.Type == "IDAT"))
+                        WriteChunk(output, "IDAT", encodedChunk.Data);
                     wroteData = true;
                 }
                 continue;
             }
             WriteChunk(output, chunk.Type, ScaleTextualChunk(chunk, ratio));
         }
-        if (!wroteData)
-            WriteChunk(output, "IDAT", imageData);
-        WriteChunk(output, "IEND", []);
+        WriteChunk(output, "IEND", ReadOnlyMemory<byte>.Empty);
+        output.Write(document.Trailer.Span);
     }
 
-    private static void ResizeAndSave<TPixel>(byte[] source, int width, int height, Stream output, PngEncoder encoder)
+    private static void ResizeAndSave<TPixel>(ReadOnlyMemory<byte> source, int width, int height, Stream output, PngEncoder encoder)
         where TPixel : unmanaged, IPixel<TPixel>
     {
-        using Image<TPixel> image = Image.Load<TPixel>(source);
+        using Image<TPixel> image = Image.Load<TPixel>(source.Span);
         image.Mutate(context => context.Resize(CreateResizeOptions(width, height)));
         image.Save(output, encoder);
     }
@@ -255,13 +254,13 @@ public sealed class PngProcessor : IPngProcessor
         row[bitOffset / 8] |= checked((byte)((index & mask) << shift));
     }
 
-    private static byte[] ScaleTextualChunk(PngChunk chunk, double ratio)
+    private static ReadOnlyMemory<byte> ScaleTextualChunk(PngChunk chunk, double ratio)
     {
         return chunk.Type switch
         {
-            "tEXt" => ScaleTextChunk(chunk.Data, ratio),
-            "zTXt" => ScaleCompressedTextChunk(chunk.Data, ratio),
-            "iTXt" => ScaleInternationalTextChunk(chunk.Data, ratio),
+            "tEXt" => ScaleTextChunk(chunk.Data.ToArray(), ratio),
+            "zTXt" => ScaleCompressedTextChunk(chunk.Data.ToArray(), ratio),
+            "iTXt" => ScaleInternationalTextChunk(chunk.Data.ToArray(), ratio),
             _ => chunk.Data
         };
     }
@@ -368,7 +367,7 @@ public sealed class PngProcessor : IPngProcessor
         return changed ? string.Join(',', fields) : value;
     }
 
-    private static async Task WriteChunkAsync(Stream output, string type, byte[] data, CancellationToken cancellationToken)
+    private static async Task WriteChunkAsync(Stream output, string type, ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
     {
         byte[] typeBytes = Encoding.ASCII.GetBytes(type);
         byte[] length = new byte[4];
@@ -376,80 +375,21 @@ public sealed class PngProcessor : IPngProcessor
         await output.WriteAsync(length, cancellationToken);
         await output.WriteAsync(typeBytes, cancellationToken);
         await output.WriteAsync(data, cancellationToken);
-        uint crc = Crc32.Compute(typeBytes, data);
+        uint crc = PngCrc32.Compute(typeBytes, data.Span);
         BinaryPrimitives.WriteUInt32BigEndian(length, crc);
         await output.WriteAsync(length, cancellationToken);
     }
 
-    private static void WriteChunk(Stream output, string type, byte[] data)
+    private static void WriteChunk(Stream output, string type, ReadOnlyMemory<byte> data)
     {
         byte[] typeBytes = Encoding.ASCII.GetBytes(type);
         Span<byte> value = stackalloc byte[4];
         BinaryPrimitives.WriteUInt32BigEndian(value, checked((uint)data.Length));
         output.Write(value);
         output.Write(typeBytes);
-        output.Write(data);
-        BinaryPrimitives.WriteUInt32BigEndian(value, Crc32.Compute(typeBytes, data));
+        output.Write(data.Span);
+        BinaryPrimitives.WriteUInt32BigEndian(value, PngCrc32.Compute(typeBytes, data.Span));
         output.Write(value);
     }
 
-    private sealed record PngChunk(string Type, byte[] Data);
-
-    private sealed record PngDocument(uint Width, uint Height, int BitDepth, int ColorType, byte[] Ihdr, IReadOnlyList<PngChunk> Chunks)
-    {
-        public static PngDocument Parse(byte[] bytes)
-        {
-            if (bytes.Length < Signature.Length || !bytes.AsSpan(0, Signature.Length).SequenceEqual(Signature))
-                throw new InvalidDataException("Not a PNG file.");
-            int cursor = Signature.Length;
-            List<PngChunk> chunks = [];
-            while (cursor <= bytes.Length - 12)
-            {
-                uint length = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(cursor, 4));
-                cursor += 4;
-                if (length > int.MaxValue || cursor > bytes.Length - checked((int)length + 8))
-                    throw new InvalidDataException("Truncated PNG chunk.");
-                string type = Encoding.ASCII.GetString(bytes, cursor, 4);
-                cursor += 4;
-                byte[] data = bytes.AsSpan(cursor, checked((int)length)).ToArray();
-                cursor += checked((int)length) + 4; // data + CRC
-                chunks.Add(new PngChunk(type, data));
-                if (type == "IEND") break;
-            }
-            PngChunk ihdr = chunks.FirstOrDefault(static chunk => chunk.Type == "IHDR")
-                ?? throw new InvalidDataException("PNG is missing IHDR.");
-            if (ihdr.Data.Length != 13)
-                throw new InvalidDataException("Invalid PNG IHDR.");
-            return new PngDocument(
-                BinaryPrimitives.ReadUInt32BigEndian(ihdr.Data.AsSpan(0, 4)),
-                BinaryPrimitives.ReadUInt32BigEndian(ihdr.Data.AsSpan(4, 4)),
-                ihdr.Data[8], ihdr.Data[9], ihdr.Data, chunks);
-        }
-    }
-
-    private static class Crc32
-    {
-        private static readonly uint[] Table = CreateTable();
-
-        public static uint Compute(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second)
-        {
-            uint crc = uint.MaxValue;
-            foreach (byte value in first) crc = Table[(crc ^ value) & 0xFF] ^ (crc >> 8);
-            foreach (byte value in second) crc = Table[(crc ^ value) & 0xFF] ^ (crc >> 8);
-            return ~crc;
-        }
-
-        private static uint[] CreateTable()
-        {
-            uint[] table = new uint[256];
-            for (uint i = 0; i < table.Length; i++)
-            {
-                uint value = i;
-                for (int bit = 0; bit < 8; bit++)
-                    value = (value & 1) != 0 ? 0xEDB88320u ^ (value >> 1) : value >> 1;
-                table[i] = value;
-            }
-            return table;
-        }
-    }
 }

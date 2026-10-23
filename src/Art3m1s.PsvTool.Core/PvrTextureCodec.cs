@@ -40,15 +40,34 @@ internal static class PvrTextureCodec
                 PVRTexLibVariableType.UnsignedByteNorm, checked(width * height * 4));
     }
 
+    public static byte[] DecodeAstc(byte[] payload, int width, int height, PsbAstcFormat format)
+    {
+        if (payload.Length != format.PayloadBytes(width, height))
+            throw new InvalidDataException($"ASTC {format.BlockWidth}x{format.BlockHeight} payload length {payload.Length} does not match {width}x{height} ({format.PayloadBytes(width, height)} bytes expected).");
+        lock (Gate)
+            return Transcode(payload, width, height, (ulong)format.PixelFormat, RgbaFormat,
+                PVRTexLibVariableType.UnsignedByteNorm, checked(width * height * 4));
+    }
+
+    public static byte[] EncodeAstc(byte[] rgba, int width, int height, PsbAstcFormat format)
+    {
+        if (rgba.Length != checked(width * height * 4)) throw new InvalidDataException("Invalid RGBA pixel length.");
+        lock (Gate)
+            return Transcode(rgba, width, height, RgbaFormat, (ulong)format.PixelFormat,
+                PVRTexLibVariableType.UnsignedByteNorm, checked((int)format.PayloadBytes(width, height)),
+                PVRTexLibCompressorQuality.ASTCMedium);
+    }
+
     private static unsafe byte[] Transcode(byte[] pixels, int width, int height, ulong sourceFormat,
-        ulong targetFormat, PVRTexLibVariableType targetType, int expectedLength)
+        ulong targetFormat, PVRTexLibVariableType targetType, int expectedLength,
+        PVRTexLibCompressorQuality quality = PVRTexLibCompressorQuality.PVRTCHigh)
     {
         fixed (byte* data = pixels)
         {
             using var header = new PVRTextureHeader(sourceFormat, (uint)width, (uint)height, 1, 1, 1, 1,
                 PVRTexLibColourSpace.Linear, PVRTexLibVariableType.UnsignedByteNorm, false);
             using var texture = new PVRTexture(header, data);
-            if (!texture.Transcode(targetFormat, targetType, PVRTexLibColourSpace.Linear, PVRTexLibCompressorQuality.PVRTCHigh))
+            if (!texture.Transcode(targetFormat, targetType, PVRTexLibColourSpace.Linear, quality))
                 throw new InvalidDataException("PVRTexLib texture transcode failed.");
             int length = checked((int)texture.GetTextureDataSize(0));
             if (length != expectedLength) throw new InvalidDataException("Encoder returned an unexpected block layout.");

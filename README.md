@@ -193,6 +193,8 @@ D:\converted\logs\sample01\
 
 ### PSB 纹理格式选择
 
+支持 `ASTC_8BPP`（4×4）及明确标注 `ASTC_WXH` 的标准 14 种 2D ASTC 块尺寸。线性、无文件头的块数据经 PVRTexLib 解码为 RGBA，按全局 Ratio Bicubic 缩放，再编码成所选 DXT5 Linear / Swizzled 或 PVRTC2 4bpp / 2bpp；图集 / icon 几何、资源表和大小估算同步更新。关闭格式转换时保留原 ASTC 类型，仅在缩放时重编码；这不代表 PSV 支持 ASTC，PSV 输出建议保持格式转换开启。`ASTC`、`ASTC_4BPP` 等含糊名称、3D 格式及未知排列不会猜测，仍警告并原样保留。像素资源长度不符会明确报错并标出资源上下文。[标准 ASTC 块尺寸](https://docs.imgtec.com/tools-manuals/pvrtextool-manual/html/topics/cli/command-line-options.html)。
+
 在高级设置开启“E-mote PSB 纹理格式转换”，下方选择格式；新设置和旧配置都默认 `DXT5 (BC3)`，选择后会保存。格式选择不启用独立 Ratio：贴图与相关几何仍统一跟随全局 Ratio。
 
 旁边的“计算大小”按钮异步读取全部 PFS 和散装 PSB 元数据，不解包整个归档、不修改资源。显示原/目标纹理数据总大小，并按完整宽 × 高和格式列出明细；一份 PSB 的全部图集都会计入，共享像素资源只计一次。按全局 Ratio、所选 DXT5 排列或 PVRTC2 格式计算块对齐与补齐空间，扫描后更改选项会即时重算；动画未勾选时不缩放（Ratio 1），关闭格式转换时保留原格式及排列。无法读取、非 E-mote、含不支持格式或尺寸越界的 PSB 明确列为未计入，错误文件同时写入日志。结果不含 PSB 表、容器头、GPU 分配对齐和缓存，不等于整份 PSB 文件大小或游戏总显存；源文件改变后请重新计算。此按钮不会启用页面底部已禁用的独立比例/扫描功能，也不会自动滚动主页面。
@@ -264,6 +266,10 @@ DDS Swizzled 为 PSV GXM 私有排列：FourCC 保持 `DXT1` / `DXT5`，`DDS_HEA
 
 RGB24 输出仍为 RGB24，不增加 Alpha；RGBA、灰度、透明灰度保持颜色类型。遮罩使用的 Gray8 PNG 强制保持 8-bit 灰度（PNG color type 0），不会转成 RGB、RGBA 或灰度透明格式。索引色保持原 1/2/4/8-bit 位深，原 `PLTE` 与 `tRNS` 块逐字节写回，不修改、重排或删减自带颜色表。Bicubic 结果仅映射回原颜色表并重写像素索引。PNG 坐标文本按 Ratio 缩放；除图像尺寸、像素数据和坐标文本外，其余 PNG 块逐字节保留。
 
+有效 IEND 后的附加字节不再当作 PNG 数据块解析。此类图片视为含未知附加数据，保留 PNG，不压制为其他纹理格式；按 Ratio 缩放后仍逐字节保留尾部，避免误报截断或丢失附加数据。IEND 之前的真实截断仍报错。
+
+扫描与缩放共用同一结构解析器，统一检查数据块长度、CRC、必要块顺序、颜色类型和位深；错误记录块名及字节偏移，外层日志提供 PFS 和资源路径。ImageSharp 继续负责像素解码与 Bicubic 缩放。支持 Adam7 交错输入；APNG 动画 PNG 暂不支持缩放，会明确报错并保留原始输入，不静默转换成静态图片。
+
 ## 构建、测试和 GitHub Actions
 
 需要 .NET SDK 10.0.303：
@@ -285,7 +291,7 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 - macOS 首版不签名、不公证。
 - 无法由容器和原编码支持的音视频流会报告 FFmpeg 原始诊断并停止，不会静默降级。
 - pf2/pf6 可读取，但重新打包统一输出 pf8；超 4 GiB 的单个 PFS 条目不支持。
-- 当前 PSB 重建支持明文正文以及可自动推导密钥的加密头；加密正文、外置纹理和 `RGBA8` / `DXT5` / `DXT5_SWIZZLED` / `PVRTC2_4BPP` / `PVRTC2_2BPP` 以外的 atlas 格式会明确报错，不会静默复制成“已转换”。块压缩重新编码有损；若新增字符串无法装入原节点索引位宽且没有可复用索引，则明确失败而不破坏输出。
+- 当前 PSB 重建支持明文正文以及可自动推导密钥的加密头；内嵌 RGBA8、DXT5（Linear / Swizzled）、PVRTC2 和上文说明的 ASTC 输入可处理。不支持的正文 / 格式或外置纹理可能明确提示原样保留，不会标记为已转换，请检查警告。块压缩重新编码有损；若新增字符串无法装入原节点索引位宽且没有可复用索引，则明确失败而不破坏输出。
 - 自动文本规则面向常见 Artemis 脚本，发布前仍应在真实游戏中检查字幕、点击区域与动画坐标。
 
 ## Credits
