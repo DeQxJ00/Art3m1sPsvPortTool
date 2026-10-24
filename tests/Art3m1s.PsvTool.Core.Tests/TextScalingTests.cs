@@ -49,6 +49,23 @@ public sealed class TextScalingTests : IDisposable
     }
 
     [Fact]
+    public async Task IetTitleAnimationScalesGeometryWithoutChangingTimingOrComments()
+    {
+        const string source = "// [tween x=\"1280,956\"]\r\n;[lyprop anchorx=640]\r\n"
+            + "[lyprop id=\"menu\" anchorx=640 visible=1]\r\n"
+            + "[tween id=\"menu.2\" x=\"1280,956\" y='-40,20' time=\"1000\" delay=\"200\" zoom=\"200,100\"]\r\n"
+            + "[tween id=\"menu.3\" x=\"1280,982\" time=\"1000\" delay=\"400\"]\r\n"
+            + "[wait time=1000]\r\nDialogue x=1280 [tween x=1280]\r\n"
+            + "[custom x=1280]\r\n[lua]\r\n[tween x=1280]\r\n[endlua]\r\n";
+        string expected = source.Replace("anchorx=640 visible", "anchorx=480 visible")
+            .Replace("x=\"1280,956\" y='-40,20'", "x=\"960,717\" y='-30,15'")
+            .Replace("x=\"1280,982\" time", "x=\"960,736\" time");
+        Assert.Equal(expected, await Convert(source, ".iet"));
+        Assert.Equal("[tween x=1280/2 y=top]\n[lyc width=1 height=1]",
+            await Convert("[tween x=1280/2 y=top]\n[lyc width=1 height=1]", ".iet"));
+    }
+
+    [Fact]
     public async Task ScalesCompleteCoordinateSequencesAndEveryField()
     {
         Assert.Equal("tween{x=\"960,690\", y='-30,15', time=200, alpha=255}; tag{width=12,height=3}; tag{width=6}\r\n",

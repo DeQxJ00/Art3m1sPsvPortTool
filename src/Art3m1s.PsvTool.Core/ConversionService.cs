@@ -16,7 +16,7 @@ public interface IConversionService
 public sealed class ConversionService : IConversionService
 {
     private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".ini", ".tbl", ".ipt", ".ast", ".lua" };
+        { ".ini", ".tbl", ".ipt", ".iet", ".ast", ".lua" };
     private static readonly HashSet<string> AnimationExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".ogv" };
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
