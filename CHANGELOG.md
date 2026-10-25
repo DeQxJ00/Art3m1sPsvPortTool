@@ -6,6 +6,10 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.27] - 2026-10-25
+
+- 补齐 IET 中已知引擎几何指令的坐标、锚点及宽高缩放，保留时间、延迟、缩放倍率、注释、对话和 Lua 区块；动态表达式与未知宏保持原样。归档与散装 IET 均随文本转换选项处理。
+- Added coordinate, anchor and dimension scaling for known IET engine geometry commands while preserving timing, delays, zoom factors, comments, dialogue and Lua blocks. Dynamic expressions and unknown macros remain unchanged; archived and loose IET files follow the text conversion option.
 - 补齐图片配套 CSV 的坐标、边距和字体布局缩放，归档与散装资源均随文本转换选项处理；保留行列数、字数上限、比例、颜色和时间等非像素数据。未知 CSV 保持原样。
 - Added image-sidecar CSV coordinate, margin and font-layout scaling for archived and loose resources under the text conversion option. Counts, character limits, percentages, colors and timing remain unchanged; unknown CSV schemas are preserved.
 
