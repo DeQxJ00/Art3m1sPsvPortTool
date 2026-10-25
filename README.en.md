@@ -9,6 +9,9 @@ A PSV porting assistant for Artemis-engine games. It extracts each physical PFS 
 
 > Only process game assets you are authorized to modify, and keep a backup. This tool does not bypass platform signing, licensing encryption, or DRM.
 
+
+Image-sidecar CSV files are processed with text conversion: image offsets, recognized UI positions, save-slot spacing and `fonttext/tag_*.csv` font layouts are scaled. Counts, character limits, percentages, colors and timing are preserved, as are unknown CSV schemas. Reconvert from original resources to avoid scaling an existing output twice.
+
 ## UI screenshots
 
 ![English dark UI](docs/screenshots/ui-en-US-dark.png)

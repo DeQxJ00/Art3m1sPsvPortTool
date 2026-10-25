@@ -38,6 +38,7 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         string output = extension switch
         {
             ".ini" => ScaleIni(encoded.Text, ratio, preservedExpressions),
+            ".csv" => ScaleCsv(encoded.Text, path, ratio, preservedExpressions),
             ".iet" => ScaleIet(encoded.Text, ratio, preservedExpressions),
             ".tbl" or ".ipt" or ".ast" or ".lua" => ScaleScript(encoded.Text, ratio, extension, preservedExpressions),
             _ => encoded.Text

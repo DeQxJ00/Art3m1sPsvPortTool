@@ -6,6 +6,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 补齐图片配套 CSV 的坐标、边距和字体布局缩放，归档与散装资源均随文本转换选项处理；保留行列数、字数上限、比例、颜色和时间等非像素数据。未知 CSV 保持原样。
+- Added image-sidecar CSV coordinate, margin and font-layout scaling for archived and loose resources under the text conversion option. Counts, character limits, percentages, colors and timing remain unchanged; unknown CSV schemas are preserved.
+
 ## [1.0.26] - 2026-10-24
 
 - 修复 PNG 扫描和缩放遇到可选 `iCCP` 色彩配置 CRC 错误时中断转换的问题：仅从解码输入和输出中移除损坏的配置块，保留有效配置，日志以 `PNG_ICCP_CRC_IGNORED` 警告记录资源路径及字节偏移；不修改原始资源。像素、调色板、透明度及其他数据块的 CRC 校验仍严格执行，Gray8、索引位深、`PLTE` / `tRNS` 和 IEND 后附加数据继续保留。
