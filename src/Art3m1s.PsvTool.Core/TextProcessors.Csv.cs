@@ -47,17 +47,13 @@ public sealed partial class ArtemisTextProcessor
         }
 
         string[] fields = text.Split(',');
-        bool assetTree = Regex.IsMatch(normalized, @"/_data/(?:bgimage|fgimage|evimage|face|mask)/", RegexOptions.IgnoreCase);
-        bool uiTree = normalized.Contains("/_data/image/", StringComparison.OrdinalIgnoreCase);
-        bool pairedImage = new[] { ".png", ".jpg", ".jpeg", ".webp", ".dds" }
-            .Any(ext => File.Exists(Path.ChangeExtension(path, ext)));
-        bool uiPair = uiTree && Regex.IsMatch(stem,
-            @"^(?:btn_.+|chkbox_.+|slider(?:_.+)?|adv_(?:backlogjump|message|name_message|nametag|slot_\d+|voice|vsave)|novel_backlogjump|base_\d+_move|adjust_xy_read\d+|pos_num_(?:\d+|drawing)|slot_message_pos\d+|slot_(?:pos|margin)|slotdel_pos|thumb_(?:pos|new_pos)|offset|face|info|guage|select_align|msg_operation_ios|ok|ok_only|cancel)$",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        int count = fields.Length == 2 && (assetTree || pairedImage || uiPair) ? 2 : 0;
-        if (uiTree && stem.Equals("pos", StringComparison.OrdinalIgnoreCase) && fields.Length == 4) count = 2;
-        if (uiTree && stem.Equals("slotnum_pos", StringComparison.OrdinalIgnoreCase) && fields.Length == 3) count = 3;
-        if (uiTree && stem.Equals("thumb_face", StringComparison.OrdinalIgnoreCase) && fields.Length == 3) count = 2;
+        // Pair by sibling basename, regardless of resource tree or file format.
+        // The CSV itself (including another CSV spelling) is not a companion.
+        if (!HasCsvCompanion(path)) return text;
+        int count = fields.Length == 2 ? 2 : 0;
+        if (stem.Equals("pos", StringComparison.OrdinalIgnoreCase) && fields.Length == 4) count = 2;
+        if (stem.Equals("slotnum_pos", StringComparison.OrdinalIgnoreCase) && fields.Length == 3) count = 3;
+        if (stem.Equals("thumb_face", StringComparison.OrdinalIgnoreCase) && fields.Length == 3) count = 2;
         if (count == 0) return text;
         // Reject the entire row if a coordinate is dynamic or contains extra rows.
         var replacements = new string[count];
@@ -65,6 +61,23 @@ public sealed partial class ArtemisTextProcessor
             if (!TryScaleCsvNumber(fields[i], ratio, out replacements[i])) { diagnostics.Add(1); return text; }
         for (int i = 0; i < count; i++) fields[i] = replacements[i];
         return string.Join(',', fields);
+    }
+
+    private static bool HasCsvCompanion(string path)
+    {
+        string directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        string stem = Path.GetFileNameWithoutExtension(path);
+        foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
+        {
+            if (Directory.Exists(entry))
+            {
+                if (Path.GetFileName(entry).Equals(stem, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            else if (!Path.GetExtension(entry).Equals(".csv", StringComparison.OrdinalIgnoreCase)
+                && Path.GetFileNameWithoutExtension(entry).Equals(stem, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 
     private static bool TryScaleCsvNumber(string value, double ratio, out string result)

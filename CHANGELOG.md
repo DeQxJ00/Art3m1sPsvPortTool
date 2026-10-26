@@ -6,6 +6,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- CSV 坐标转换先检查同目录、同名的非 CSV 文件或文件夹（包含 Lua），不再仅凭固定资源目录或命名匹配；字体布局表继续单独识别。无配套资源、未知字段及动态表达式原样保留，并补充归档 / 散装、大小写及文件夹配对测试。
+- CSV coordinate conversion now requires a sibling non-CSV file or folder with the same basename (including Lua), instead of relying on resource-tree or name patterns alone. Font-layout tables remain separately recognized. Unpaired resources, unknown fields and dynamic expressions stay unchanged, with archived/loose, case-insensitive and folder-pairing regressions.
+
 ## [1.0.27] - 2026-10-25
 
 - 补齐 IET 中已知引擎几何指令的坐标、锚点及宽高缩放，保留时间、延迟、缩放倍率、注释、对话和 Lua 区块；动态表达式与未知宏保持原样。归档与散装 IET 均随文本转换选项处理。
