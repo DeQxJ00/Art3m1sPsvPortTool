@@ -6,6 +6,8 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.28] - 2026-10-27
+
 - PSV 图片纹理区域新增分类方式下拉框，默认自动识别，可选手动 1–8 层并保存设置。自动跳过已知资源、分辨率、平台和语言包装层，识别 BG/FG/CG 等目录；UI/遮罩保护优先，不明确的父目录保守回退。切换清空旧分类并提示重新扫描；PFS 内外、实际转换及 CLI `--texture-category-depth auto|1..8` 使用相同规则，不改变路径或全局 Ratio。
 - Added a persisted image-classification selector: automatic by default, or manual depths 1–8. Automatic mode skips known resource/resolution/platform/language wrappers to detect BG/FG/CG roles; UI/mask protection takes precedence and unknown parents fall back conservatively. Changing modes clears stale categories and requires rescanning. Archived/loose scans, conversion and CLI `--texture-category-depth auto|1..8` share the same rules without changing paths or the global Ratio.
 

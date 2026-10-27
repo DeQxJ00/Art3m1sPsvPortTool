@@ -117,6 +117,21 @@ public sealed class CsvScalingTests : IDisposable
     }
 
     [Theory]
+    [InlineData("fonttext", true)]
+    [InlineData("FONTTEXT", true)]
+    [InlineData("arbitrary", false)]
+    public async Task FontLayoutsUseSpecificSchemaAndOtherCoordinatesStillRequireCompanions(string directory, bool font)
+    {
+        string parent = Path.Combine(root, directory);
+        Directory.CreateDirectory(parent);
+        await File.WriteAllTextAsync(Path.Combine(parent, "tag_font.lua"), "-- companion");
+        string relative = directory + "/tag_font.csv";
+        Assert.Equal(font ? "size=36\r\nwidth=337," : "size=48\r\nwidth=450,", await Convert(relative, "size=48\r\nwidth=450,"));
+        await File.WriteAllTextAsync(Path.Combine(parent, "sprite.lua"), "-- companion");
+        Assert.Equal("60,-30", await Convert(directory + "/sprite.csv", "80,-40"));
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task ConversionRoutesArchivedAndLooseCsvThroughTextOption(bool enabled)
@@ -128,6 +143,11 @@ public sealed class CsvScalingTests : IDisposable
         await File.WriteAllTextAsync(loose, "40,80");
         string companion = Path.ChangeExtension(loose, ".lua");
         await File.WriteAllTextAsync(companion, "-- companion");
+        const string fontName = "_data/image/gui/fonttext/tag_font.csv";
+        string font = Path.Combine(input, fontName);
+        Directory.CreateDirectory(Path.GetDirectoryName(font)!);
+        byte[] fontBytes = [.. Encoding.UTF8.Preamble, .. Encoding.UTF8.GetBytes("width=450,\r\nsize=48,\r\n")];
+        await File.WriteAllBytesAsync(font, fontBytes);
         string ini = Path.Combine(input, "system.ini");
         await File.WriteAllTextAsync(ini, "[WINDOWS]\nWIDTH=1280\nHEIGHT=720\n");
         var codec = new PfsCodec();
@@ -135,7 +155,8 @@ public sealed class CsvScalingTests : IDisposable
             new PfsEntry(Encoding.UTF8.GetBytes("system.ini"), "system.ini", 0, (uint)new FileInfo(ini).Length, ini),
             new PfsEntry(Encoding.UTF8.GetBytes(name), name, 0, 5, loose),
             new PfsEntry(Encoding.UTF8.GetBytes(name[..^4] + ".lua"), name[..^4] + ".lua", 0,
-                (uint)new FileInfo(companion).Length, companion)
+                (uint)new FileInfo(companion).Length, companion),
+            new PfsEntry(Encoding.UTF8.GetBytes(fontName), fontName, 0, (uint)fontBytes.Length, font)
         ]), Path.Combine(input, "root.pfs"));
         await new ConversionService().ConvertAsync(new ConversionOptions(input, output, Ratio: .75,
             Categories: enabled ? AssetCategories.Text : AssetCategories.None));
@@ -143,6 +164,10 @@ public sealed class CsvScalingTests : IDisposable
         Assert.Equal(expected, await File.ReadAllTextAsync(Path.Combine(output, name)));
         Assert.Equal(expected, Encoding.UTF8.GetString((await codec.ReadSmallEntryAsync(Path.Combine(output, "root.pfs"), name))!));
         Assert.Equal("40,80", await File.ReadAllTextAsync(loose));
+        byte[] expectedFont = enabled ? [.. Encoding.UTF8.Preamble, .. Encoding.UTF8.GetBytes("width=337,\r\nsize=36,\r\n")] : fontBytes;
+        Assert.Equal(expectedFont, await File.ReadAllBytesAsync(Path.Combine(output, fontName)));
+        Assert.Equal(expectedFont, await codec.ReadSmallEntryAsync(Path.Combine(output, "root.pfs"), fontName));
+        Assert.Equal(fontBytes, await File.ReadAllBytesAsync(font));
     }
 
     public void Dispose() { if (Directory.Exists(root)) Directory.Delete(root, true); }
