@@ -44,11 +44,72 @@ public sealed class CsvScalingTests : IDisposable
     [InlineData("data/stats.csv", "720,130")]
     [InlineData("_data/fgimage/parts/pose/emo/8.csv", "720,130")]
     [InlineData("_data/bgimage/overscan.csv", "-50,-50")]
-    [InlineData("_data/image/menu/save/slot_pos.csv", "40,80")]
     [InlineData("_data/image/custom.csv", "720,130")]
     [InlineData("_data/fgimage/offset.csv", "720,130\n40,50")]
     public async Task PreservesUnrelatedData(string path, string source) =>
         Assert.Equal(source, await Convert(path, source));
+
+    [Theory]
+    [InlineData("slot_pos.csv", "40,80", "30,60")]
+    [InlineData("cn_btn_next_0.csv", "400,80", "300,60")]
+    [InlineData("sysbtn_auto_ng .csv", "400,80", "300,60")]
+    [InlineData("select_align.csv", "480,76", "360,57")]
+    [InlineData("size.csv", "1600,900", "1200,675")]
+    [InlineData("slotnum_pos.csv", "540,16,center,4", "405,12,center,3")]
+    [InlineData("thumb_face.csv", "260,-12,58", "195,-9,58")]
+    [InlineData("adv_face_.csv", "-24,-8,70", "-18,-6,70")]
+    [InlineData("pos.csv", "10,12,150,1", "7,9,150,1")]
+    [InlineData("pos.csv", "1756,1040,left,4", "1317,780,left,3")]
+    [InlineData("pos_num_arrign.csv", "left,-4", "left,-3")]
+    [InlineData("base_2_move.csv", "32--,++0\r\n", "24--,++0\r\n")]
+    [InlineData("base_3_move.csv", "--32,16++", "--24,12++")]
+    [InlineData("btnmove.csv", "left,300,easein_quad,200,easeout_cubic", "left,225,easein_quad,150,easeout_cubic")]
+    public async Task IndependentLayoutSchemasScaleOnlyPixels(string name, string source, string expected) =>
+        Assert.Equal(expected, await Convert("arbitrary/" + name, source));
+
+    [Fact]
+    public async Task ColonSidecarRequiresCompanionAndPreservesSeparator()
+    {
+        Assert.Equal("700:494\r\n", await Convert("tap.csv", "700:494\r\n"));
+        await File.WriteAllBytesAsync(Path.Combine(root, "tap.png"), []);
+        Assert.Equal("525:370\r\n", await Convert("tap.csv", "700:494\r\n"));
+    }
+
+    [Theory]
+    [InlineData("slot_matrix", "2,3")]
+    [InlineData("info", "6,24")]
+    [InlineData("default", "8")]
+    [InlineData("slot_message_textsize", "60")]
+    public async Task NonPixelSchemasWinOverCompanion(string stem, string source)
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, stem + ".png"), "");
+        Assert.Equal(source, await Convert(stem + ".csv", source));
+    }
+
+    [Theory]
+    [InlineData("base_1_move.csv", "32--,++$dynamic")]
+    [InlineData("base_1_move.csv", "++32--,0")]
+    [InlineData("slotnum_pos.csv", "40,$dynamic,center,4")]
+    [InlineData("btnmove.csv", "left,300,easein_quad,$dynamic,easeout_cubic")]
+    [InlineData("rect.csv", "button,10,20,30,40\nother,50,60,$dynamic,80\n")]
+    [InlineData("rect.csv", "1,10,20,30,40\n2,50,60,70,80\n")]
+    public async Task UnknownOrDynamicSchemasAreNotPartiallyChanged(string name, string source) =>
+        Assert.Equal(source, await Convert(name, source));
+
+    [Fact]
+    public async Task RectangleTablesPreserveIdsWhitespaceAndLineEndings()
+    {
+        Assert.Equal("01,72,111,288,33\nbutton_02,369,111,288,33\n",
+            await Convert("atlas.csv", "01,96,148,384,45\nbutton_02,492,148,384,45\n", true));
+    }
+
+    [Fact]
+    public async Task FontLanguagePrefixMayContainDigits()
+    {
+        Assert.Equal("size=36\r\nwidth=337,\r\nentirexscale=66\r\ncolor=0xFFFFFF",
+            await Convert("fonttext/cn2_tag_font.csv", "size=48\r\nwidth=450,\r\nentirexscale=66\r\ncolor=0xFFFFFF", true));
+    }
 
     [Fact]
     public async Task FontLayoutPreservesCommentsBomPercentagesAndColors()
@@ -150,13 +211,19 @@ public sealed class CsvScalingTests : IDisposable
         await File.WriteAllBytesAsync(font, fontBytes);
         string ini = Path.Combine(input, "system.ini");
         await File.WriteAllTextAsync(ini, "[WINDOWS]\nWIDTH=1280\nHEIGHT=720\n");
+        const string moveName = "layout/base_2_move.csv";
+        const string moveSource = "32--,++0";
+        string move = Path.Combine(input, moveName);
+        Directory.CreateDirectory(Path.GetDirectoryName(move)!);
+        await File.WriteAllTextAsync(move, moveSource);
         var codec = new PfsCodec();
         await codec.PackPf8Async(new ExtractedArchive('8', [
             new PfsEntry(Encoding.UTF8.GetBytes("system.ini"), "system.ini", 0, (uint)new FileInfo(ini).Length, ini),
             new PfsEntry(Encoding.UTF8.GetBytes(name), name, 0, 5, loose),
             new PfsEntry(Encoding.UTF8.GetBytes(name[..^4] + ".lua"), name[..^4] + ".lua", 0,
                 (uint)new FileInfo(companion).Length, companion),
-            new PfsEntry(Encoding.UTF8.GetBytes(fontName), fontName, 0, (uint)fontBytes.Length, font)
+            new PfsEntry(Encoding.UTF8.GetBytes(fontName), fontName, 0, (uint)fontBytes.Length, font),
+            new PfsEntry(Encoding.UTF8.GetBytes(moveName), moveName, 0, (uint)Encoding.UTF8.GetByteCount(moveSource), move)
         ]), Path.Combine(input, "root.pfs"));
         await new ConversionService().ConvertAsync(new ConversionOptions(input, output, Ratio: .75,
             Categories: enabled ? AssetCategories.Text : AssetCategories.None));
@@ -168,6 +235,10 @@ public sealed class CsvScalingTests : IDisposable
         Assert.Equal(expectedFont, await File.ReadAllBytesAsync(Path.Combine(output, fontName)));
         Assert.Equal(expectedFont, await codec.ReadSmallEntryAsync(Path.Combine(output, "root.pfs"), fontName));
         Assert.Equal(fontBytes, await File.ReadAllBytesAsync(font));
+        string expectedMove = enabled ? "24--,++0" : moveSource;
+        Assert.Equal(expectedMove, await File.ReadAllTextAsync(Path.Combine(output, moveName)));
+        Assert.Equal(expectedMove, Encoding.UTF8.GetString((await codec.ReadSmallEntryAsync(Path.Combine(output, "root.pfs"), moveName))!));
+        Assert.Equal(moveSource, await File.ReadAllTextAsync(move));
     }
 
     public void Dispose() { if (Directory.Exists(root)) Directory.Delete(root, true); }

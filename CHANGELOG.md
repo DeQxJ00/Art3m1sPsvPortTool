@@ -6,6 +6,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 扩展 CSV 转换：支持独立布局表、命名矩形表、冒号坐标、带数字的语言字体前缀、相对动画位移及混合字段。仅缩放像素字段，优先排除数量、字符上限、时间、百分比、颜色和编号；未知或动态坐标保持原样。
+- Extended CSV conversion to standalone layouts, named rectangle tables, colon-separated coordinates, numeric language prefixes in font tables, relative tween offsets and mixed fields. Only pixel fields scale; counts, character limits, timing, percentages, colors and IDs are preserved, as are unknown or dynamic coordinates.
+
 ## [1.0.28] - 2026-10-27
 
 - PSV 图片纹理区域新增分类方式下拉框，默认自动识别，可选手动 1–8 层并保存设置。自动跳过已知资源、分辨率、平台和语言包装层，识别 BG/FG/CG 等目录；UI/遮罩保护优先，不明确的父目录保守回退。切换清空旧分类并提示重新扫描；PFS 内外、实际转换及 CLI `--texture-category-depth auto|1..8` 使用相同规则，不改变路径或全局 Ratio。
