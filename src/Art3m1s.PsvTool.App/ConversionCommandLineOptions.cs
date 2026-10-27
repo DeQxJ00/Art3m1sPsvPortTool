@@ -17,6 +17,7 @@ internal sealed class ConversionCommandLineOptions
     public AssetCategories Types { get; set; } = ConversionDefaults.Categories;
     public bool NativeTextures { get; set; } = ConversionDefaults.NativeTextures;
     public bool IgnoreBackgroundAlpha { get; set; } = ConversionDefaults.IgnoreBackgroundAlpha;
+    public int TextureCategoryDepth { get; set; } = ConversionDefaults.TextureCategoryDepth;
     public PsbTextureFormat? PsbFormat { get; set; } = ConversionDefaults.ConvertEmotePsbTextures ? ConversionDefaults.PsbOutputFormat : null;
     public PsbDxt5Layout Layout { get; set; } = ConversionDefaults.Dxt5Layout;
     public bool SubsetFonts { get; set; } = ConversionDefaults.SubsetFonts;
@@ -81,6 +82,12 @@ internal sealed class ConversionCommandLineOptions
                 case "--types": options.Types = Categories(value); break;
                 case "--native-textures": options.NativeTextures = Boolean(value, key); break;
                 case "--ignore-bg-alpha": options.IgnoreBackgroundAlpha = Boolean(value, key); break;
+                case "--texture-category-depth":
+                    if (value.Equals("auto", StringComparison.OrdinalIgnoreCase)) options.TextureCategoryDepth = 0;
+                    else if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int depth)
+                        && depth is > 0 and <= TextureCategoryClassifier.MaximumManualDepth) options.TextureCategoryDepth = depth;
+                    else throw new ArgumentException("--texture-category-depth must be auto or an integer from 1 to 8.");
+                    break;
                 case "--psb-format":
                     options.PsbFormat = value.ToLowerInvariant() switch
                     {

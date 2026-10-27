@@ -72,7 +72,7 @@ public sealed class ConversionService : IConversionService
             throw new IOException("Output directory already exists.");
 
         IReadOnlyList<TextureImageInfo> textureImages = options.NativeTextures?.Enabled == true && options.Categories.HasFlag(AssetCategories.Images)
-            ? await new TextureScanner().ScanAsync(options.InputDirectory, options.NameEncoding,
+            ? await new TextureScanner(options.NativeTextures.CategoryDepth).ScanAsync(options.InputDirectory, options.NameEncoding,
                 progress == null ? null : new MappedProgress(progress, 0, 0.1), cancellationToken) : [];
         if (options.NativeTextures?.Enabled == true && options.Categories.HasFlag(AssetCategories.Images) && progress != null)
             progress = new MappedProgress(progress, 10, 0.9);

@@ -11,6 +11,8 @@ public static class ConversionDefaults
     public const FontSubsetProfile FontProfile = FontSubsetProfile.SimplifiedChinese;
     public const bool NativeTextures = true;
     public const bool IgnoreBackgroundAlpha = false;
+    // Zero selects conservative automatic path-role classification; positive values are absolute directory depths.
+    public const int TextureCategoryDepth = 0;
     public const bool IgnorePfsVideos = true;
     public const bool ConvertEmotePsbTextures = true;
     public const PsbTextureFormat PsbOutputFormat = PsbTextureFormat.Dxt5;

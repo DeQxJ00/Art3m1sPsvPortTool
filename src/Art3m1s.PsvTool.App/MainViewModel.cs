@@ -53,6 +53,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         _selectedPsbFormat = Enum.IsDefined(saved.PsbOutputFormat) ? (int)saved.PsbOutputFormat : (int)ConversionDefaults.PsbOutputFormat;
         _selectedPsbDxt5Layout = Enum.IsDefined(saved.Dxt5Layout) ? (int)saved.Dxt5Layout : (int)ConversionDefaults.Dxt5Layout;
         _nativeTextures = saved.NativeTextures;
+        _textureCategoryDepth = TextureCategoryClassifier.IsValidDepth(saved.TextureCategoryDepth)
+            ? saved.TextureCategoryDepth : ConversionDefaults.TextureCategoryDepth;
         // Independent texture scaling is a per-run opt-in, never restored from settings.
         _independentPsbTextureScaling = ConversionDefaults.IndependentPsbScaling;
         _psbRenderCompensation = saved.PsbRenderCompensation;
@@ -221,6 +223,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             runLog = new ConversionRunLog(InputDirectory, OutputDirectory, standardOutput: TextWriter.Null, standardError: TextWriter.Null);
             ShowLogPaths(runLog);
             runLog.Info("OPTIONS", $"ratio={ratio.ToString(CultureInfo.InvariantCulture)}; categories={categories}; native-textures={NativeTextures}; subset-fonts={SubsetFonts}; font-profile={(FontSubsetProfile)FontProfile}; psb-format={(PsbTextureFormat)SelectedPsbFormat}; layout={(PsbDxt5Layout)SelectedPsbDxt5Layout}");
+            runLog.Info("TEXTURE_CLASSIFICATION", $"category-depth={(TextureCategoryDepth == 0 ? "auto" : TextureCategoryDepth.ToString(CultureInfo.InvariantCulture))}");
             Progress<ConversionProgress> reporter = new(value =>
             {
                 activeArchive = value.Archive;
@@ -229,7 +232,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
                 if (value.Diagnostic is { } diagnostic) Log += $"[{diagnostic.Level}] {diagnostic.Code}: {diagnostic.Message}" + Environment.NewLine;
             });
-            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray()), new PsbTextureOptions(Enabled: ConversionDefaults.IndependentPsbScaling, CompensateRendering: ConversionDefaults.PsbRenderCompensation), (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout,
+            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray(), TextureCategoryDepth), new PsbTextureOptions(Enabled: ConversionDefaults.IndependentPsbScaling, CompensateRendering: ConversionDefaults.PsbRenderCompensation), (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout,
                 TargetWidth: _width is > 0 ? Math.Max(1, (int)(_width.Value * ratio)) : null,
                 TargetHeight: _height is > 0 ? Math.Max(1, (int)(_height.Value * ratio)) : null);
             var token = _conversionCancellation.Token;
@@ -318,7 +321,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     }
     private void SaveSettings()
     {
-        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5, NativeTextures, PsbRules, PsbRenderCompensation, (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout)); }
+        try { _settings.Save(new AppSettings(Language, IsDark, ConvertEmotePsbTexturesToDxt5, NativeTextures, PsbRules, PsbRenderCompensation, (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout, TextureCategoryDepth)); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
@@ -328,6 +331,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     {
         RefreshTextures();
         RefreshPsb();
+        OnPropertyChanged(nameof(TextureCategoryDepthLabel));
+        OnPropertyChanged(nameof(TextureCategoryDepthHelp));
+        OnPropertyChanged(nameof(TextureCategoryDepthChoices));
         foreach (string name in new[] { nameof(NativeTexturesLabel), nameof(NativeTexturesHelp), nameof(ScanTexturesLabel), nameof(IgnoreBackgroundAlphaLabel), nameof(TextureHelp), nameof(TextureFormatsLabel) }) OnPropertyChanged(name);
         foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(AssetRightsBackupWarning), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(AutoScanResolutionLabel), nameof(ResolutionListLabel), nameof(ResolutionChoices), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(ConvertEmotePsbTexturesToDxt5Label), nameof(ConvertEmotePsbTexturesToDxt5Help), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ProjectRepositoryLabel), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
     }

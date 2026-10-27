@@ -8,7 +8,7 @@ public sealed record TextureImageInfo(string? Archive, string Path, string Categ
     long SourceBytes, bool IsGray, bool HasAlpha, bool HasSmoothAlpha, bool HasMetadata,
     bool IsNative = false, string? Error = null)
 {
-    public bool IsBackground => Category.Split('/').Any(x => x is "bg" or "background" or "backgrounds");
+    public bool IsBackground => TextureCategoryClassifier.IsBackground(Category);
     public string GroupKey => Category + (IsGray ? "#gray" : "");
     public IReadOnlySet<string> ExistingPaths { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public bool HasStemConflict { get; init; }
@@ -24,19 +24,15 @@ public interface ITextureScanner
         IProgress<ConversionProgress>? progress = null, CancellationToken token = default);
 }
 
-public sealed class TextureScanner : ITextureScanner
+public sealed class TextureScanner(int categoryDepth = ConversionDefaults.TextureCategoryDepth) : ITextureScanner
 {
     public static bool IsImage(string path) => Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".dds" or ".pvr";
-    public static string CategoryFor(string path)
-    {
-        string[] p = path.Replace('\\', '/').TrimStart('/').ToLowerInvariant().Split('/');
-        if (p.Length == 1) return "(root)";
-        int depth = p[0] is "image" or "images" or "graphics" ? Math.Min(2, p.Length - 1) : 1;
-        return string.Join('/', p.Take(depth));
-    }
+    public static string CategoryFor(string path, int categoryDepth = ConversionDefaults.TextureCategoryDepth) =>
+        TextureCategoryClassifier.CategoryFor(path, categoryDepth);
     public async Task<IReadOnlyList<TextureImageInfo>> ScanAsync(string input, PfsNameEncoding encoding = PfsNameEncoding.Auto,
         IProgress<ConversionProgress>? progress = null, CancellationToken token = default)
     {
+        if (!TextureCategoryClassifier.IsValidDepth(categoryDepth)) throw new ArgumentOutOfRangeException(nameof(categoryDepth));
         ScanResult project = await new ProjectScanner().ScanAsync(input, token);
         var codec = new PfsCodec();
         List<(PfsFileInfo Archive, PfsIndex Index)> indices = [];
@@ -63,12 +59,12 @@ public sealed class TextureScanner : ITextureScanner
             ConversionDiagnostic? diagnostic = null;
             try
             {
-                image = InspectBytes(await read(), path, archive);
+                image = InspectBytes(await read(), path, archive, categoryDepth);
                 diagnostic = PngDocument.IccRecoveryDiagnostic(image.IgnoredIccProfileOffsets);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                image = new(archive, path, CategoryFor(path), 0, 0, size, false, false, false, false, Error: e.Message);
+                image = new(archive, path, CategoryFor(path, categoryDepth), 0, 0, size, false, false, false, false, Error: e.Message);
                 diagnostic = new(ConversionLogLevel.Error, "IMAGE_SCAN_FAILED", e.ToString());
             }
             result.Add(image with { ExistingPaths = names, HasStemConflict = stems.Contains(Path.ChangeExtension(path, null)) });
@@ -113,9 +109,10 @@ public sealed class TextureScanner : ITextureScanner
         if (suffix.Length < 2 || suffix[0] != '.' || !suffix[1..].All(char.IsAsciiDigit)) return null;
         return (archive[..(at + 4)], System.Numerics.BigInteger.Parse(suffix[1..], System.Globalization.CultureInfo.InvariantCulture));
     }
-    public static TextureImageInfo InspectBytes(byte[] bytes, string path, string? archive = null)
+    public static TextureImageInfo InspectBytes(byte[] bytes, string path, string? archive = null,
+        int categoryDepth = ConversionDefaults.TextureCategoryDepth)
     {
-        string category = CategoryFor(path);
+        string category = CategoryFor(path, categoryDepth);
         if (bytes.AsSpan().StartsWith("DDS "u8) || bytes.AsSpan().StartsWith("PVR\x03"u8))
         {
             bool dds = bytes.AsSpan().StartsWith("DDS "u8);

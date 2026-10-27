@@ -97,6 +97,7 @@ Linux: `./Art3m1s.PsvTool.App --convert --input /data/sample01 --output /data/ou
 | `--parallel auto\|N` | `auto` = `max(1, logical CPU cores - 1)`, or a positive integer; workers within this game |
 | `--encoding auto\|utf-8\|shift-jis` | `auto`, PFS filename encoding |
 | `--native-textures true\|false` | `true`; scan and select recommended ordinary-image categories using safe AUTO rules |
+| `--texture-category-depth auto\|1..8` | Defaults to `auto`: skip known wrappers to detect BG/FG/CG roles while preserving UI, masks and unknown categories. Numbers select manual directory levels from the resource root, excluding filenames. Rescan after changing the UI classification mode. |
 | `--ignore-bg-alpha true\|false` | `false`; discard background-image alpha only when explicitly requested |
 | `--psb-format dxt5\|pvrtc2-4\|pvrtc2-2\|preserve` | `dxt5`; `preserve` disables PSB texture-format compression, not global-Ratio resizing when animation is enabled |
 | `--dxt5-layout swizzled\|linear` | `swizzled`; ordinary-image automatic recommendations and PSB DXT5 layout |

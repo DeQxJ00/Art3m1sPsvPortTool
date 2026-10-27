@@ -11,7 +11,8 @@ public enum NativeTextureFormat
 
 public sealed record NativeTextureRule(string Category, bool Enabled, NativeTextureFormat Format = ConversionDefaults.ImageFormat);
 public sealed record NativeTextureOptions(bool Enabled = ConversionDefaults.NativeTextures, bool IgnoreBackgroundAlpha = ConversionDefaults.IgnoreBackgroundAlpha,
-    IReadOnlyList<NativeTextureRule>? Rules = null);
+    IReadOnlyList<NativeTextureRule>? Rules = null,
+    int CategoryDepth = ConversionDefaults.TextureCategoryDepth);
 public sealed record NativeFormatInfo(NativeTextureFormat Format, string Name, int BitsPerPixel,
     int PvrCode, string Channels, string Description, string Extension = ".pvr")
 {
@@ -81,8 +82,7 @@ public static class NativeTextureFormats
         _ => format
     };
     private static NativeTextureFormat LinearRecommendation(NativeTextureFormat format) => LinearFormat(format);
-    private static bool IsConservative(string category) => !category.Split('/').Any(x =>
-        x is "bg" or "fg" or "cg" or "event" or "ev" or "background" or "backgrounds" or "character" or "characters");
+    private static bool IsConservative(string category) => TextureCategoryClassifier.IsConservative(category);
     public static bool DefaultEnabled(TextureImageInfo image) => image.IsBackground && !image.IsGray;
     // Hard blockers are kept unchanged even if explicitly selected. Lossy channel
     // choices remain selectable, but are never applied silently to incompatible data.

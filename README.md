@@ -97,6 +97,7 @@ Linux 直接执行 `./Art3m1s.PsvTool.App --convert --input /data/sample01 --out
 | `--parallel auto\|N` | `auto` = `max(1, CPU 逻辑核心数 - 1)`，或正整数；该游戏内部的并行度 |
 | `--encoding auto\|utf-8\|shift-jis` | `auto`，PFS 文件名编码 |
 | `--native-textures true\|false` | `true`，自动扫描并选择建议转换的普通图片分类，使用安全的 AUTO 规则 |
+| `--texture-category-depth auto\|1..8` | 默认 `auto`，跳过已知包装层自动识别 BG/FG/CG 等用途；UI、遮罩和不明确目录保守处理。数字为从资源根目录开始的手动层数（不含文件名）；UI 切换分类方式后需重新扫描 |
 | `--ignore-bg-alpha true\|false` | `false`，是否忽略背景图片 Alpha；谨慎开启 |
 | `--psb-format dxt5\|pvrtc2-4\|pvrtc2-2\|preserve` | `dxt5`；`preserve` 不做 PSB 纹理格式压缩，但勾选动画时仍按全局 Ratio 缩放 PSB |
 | `--dxt5-layout swizzled\|linear` | `swizzled`；同时控制普通图片的自动推荐排列和 PSB DXT5 排列 |

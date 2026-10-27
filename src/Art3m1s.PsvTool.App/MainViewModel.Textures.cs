@@ -7,8 +7,24 @@ public sealed partial class MainViewModel
 {
     private bool _nativeTextures = ConversionDefaults.NativeTextures;
     private bool _ignoreBackgroundAlpha = ConversionDefaults.IgnoreBackgroundAlpha;
+    private int _textureCategoryDepth = ConversionDefaults.TextureCategoryDepth;
     public bool NativeTextures { get => _nativeTextures; set { if (Set(ref _nativeTextures, value)) SaveSettings(); } }
     public bool IgnoreBackgroundAlpha { get => _ignoreBackgroundAlpha; set { if (Set(ref _ignoreBackgroundAlpha, value)) RefreshTextures(); } }
+    public int TextureCategoryDepth
+    {
+        get => _textureCategoryDepth;
+        set
+        {
+            if (!TextureCategoryClassifier.IsValidDepth(value) || !Set(ref _textureCategoryDepth, value)) return;
+            TextureCategories.Clear();
+            SaveSettings();
+        }
+    }
+    public string TextureCategoryDepthLabel => L("TextureCategoryDepth");
+    public string TextureCategoryDepthHelp => L("TextureCategoryDepthHelp");
+    public IReadOnlyList<string> TextureCategoryDepthChoices => new[] { L("TextureCategoryAutomatic") }
+        .Concat(Enumerable.Range(1, TextureCategoryClassifier.MaximumManualDepth)
+            .Select(depth => string.Format(System.Globalization.CultureInfo.InvariantCulture, L("TextureCategoryManualDepth"), depth))).ToArray();
     public ObservableCollection<TextureCategoryViewModel> TextureCategories { get; } = [];
     public IReadOnlyList<NativeFormatInfo> TextureFormats => NativeTextureFormats.All.Where(f => f.PvrCode >= 0).ToArray();
     private bool English => Language.StartsWith("en", StringComparison.Ordinal);
@@ -32,6 +48,7 @@ public sealed partial class MainViewModel
         _conversionCancellation = new(); IsBusy = true; Progress = 0; Status = L("Scanning");
         // Capture all options before dispatch, and prevent stale results after input changes.
         string input = InputDirectory; var encoding = (PfsNameEncoding)SelectedEncoding;
+        int categoryDepth = TextureCategoryDepth;
         var token = _conversionCancellation.Token;
         ConversionRunLog? scanLog = null;
         try
@@ -45,8 +62,8 @@ public sealed partial class MainViewModel
                 if (p.Diagnostic is { } diagnostic) Log += $"[{diagnostic.Level}] {p.Entry}: {diagnostic.Message}" + Environment.NewLine;
             });
             var reporter = new ConversionProgressRelay(scanLog, uiReporter);
-            var images = await Task.Run(() => new TextureScanner().ScanAsync(input, encoding, reporter, token), token);
-            if (input != InputDirectory) { Status = L("Scanning") + " — input changed"; return; }
+            var images = await Task.Run(() => new TextureScanner(categoryDepth).ScanAsync(input, encoding, reporter, token), token);
+            if (input != InputDirectory || categoryDepth != TextureCategoryDepth) { Status = L("TextureScanSettingsChanged"); return; }
             var previous = TextureCategories.ToDictionary(x => x.Key, x => x.Rule);
             TextureCategories.Clear();
             double ratio = TryRatio(out var r) ? r : 1;

@@ -12,7 +12,8 @@ public sealed record AppSettings(
     PsbResolutionRule[]? PsbRatios = null,
     bool PsbRenderCompensation = true,
     PsbTextureFormat PsbOutputFormat = ConversionDefaults.PsbOutputFormat,
-    PsbDxt5Layout Dxt5Layout = ConversionDefaults.Dxt5Layout);
+    PsbDxt5Layout Dxt5Layout = ConversionDefaults.Dxt5Layout,
+    int TextureCategoryDepth = ConversionDefaults.TextureCategoryDepth);
 
 public interface ISettingsStore
 {

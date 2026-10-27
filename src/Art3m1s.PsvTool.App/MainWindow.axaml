@@ -154,6 +154,9 @@
             <CheckBox Content="{Binding NativeTexturesLabel}" IsChecked="{Binding NativeTextures}" />
             <TextBlock Text="{Binding NativeTexturesHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
             <StackPanel IsEnabled="{Binding NativeTextures}" Spacing="10">
+              <TextBlock Text="{Binding TextureCategoryDepthLabel}" />
+              <ComboBox ItemsSource="{Binding TextureCategoryDepthChoices}" SelectedIndex="{Binding TextureCategoryDepth}" HorizontalAlignment="Left" MinWidth="260" />
+              <TextBlock Text="{Binding TextureCategoryDepthHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
               <Button Content="{Binding ScanTexturesLabel}" Click="ScanTexturesClick" HorizontalAlignment="Left" />
               <CheckBox Content="{Binding IgnoreBackgroundAlphaLabel}" IsChecked="{Binding IgnoreBackgroundAlpha}" />
               <ItemsControl ItemsSource="{Binding TextureCategories}">

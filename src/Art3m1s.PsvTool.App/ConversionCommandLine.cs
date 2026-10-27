@@ -33,6 +33,7 @@ internal static class ConversionCommandLine
           --encoding auto|utf-8|shift-jis  PFS filename encoding; default auto
           --native-textures true|false  Recommended image categories; default true
           --ignore-bg-alpha true|false  Default false
+          --texture-category-depth auto|1..8  Automatic image classification (default) or manual directory depth
           --psb-format FORMAT          dxt5 (default), pvrtc2-4, pvrtc2-2, preserve
           --dxt5-layout LAYOUT         swizzled (default) or linear; images and PSB
           --subset-fonts true|false     Default {{ConversionDefaults.SubsetFonts.ToString().ToLowerInvariant()}} (independent of --types)
@@ -101,6 +102,7 @@ internal static class ConversionCommandLine
             Log($"START input={source}; output={destination}; dry-run={settings.DryRun}");
             Log($"OPTIONS preset=ui-defaults; ratio-mode={(settings.Ratio is null ? "auto" : "manual")}; types={settings.Types}; native-textures={settings.NativeTextures}; psb-format={settings.PsbFormat?.ToString() ?? "preserve"}; layout={settings.Layout}; subset-fonts={settings.SubsetFonts}; font-profile={settings.FontProfile}; ignore-pfs-videos={settings.IgnorePfsVideos}; existing={settings.Existing}; parallel={settings.Parallelism}; encoding={settings.Encoding}; ignore-bg-alpha={settings.IgnoreBackgroundAlpha}");
             scanner ??= new ProjectScanner();
+            Log($"TEXTURE_CLASSIFICATION category-depth={(settings.TextureCategoryDepth == 0 ? "auto" : settings.TextureCategoryDepth.ToString(System.Globalization.CultureInfo.InvariantCulture))}");
             converter ??= new ConversionService();
             try
             {
@@ -128,7 +130,7 @@ internal static class ConversionCommandLine
                 if (settings.NativeTextures && settings.Types.HasFlag(AssetCategories.Images))
                 {
                     Log("TEXTURE_SCAN_START; waiting for image categories and recommendations");
-                    var images = await (textureScanner ?? new TextureScanner()).ScanAsync(source, settings.Encoding,
+                    var images = await (textureScanner ?? new TextureScanner(settings.TextureCategoryDepth)).ScanAsync(source, settings.Encoding,
                         runLog, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                     if (images.FirstOrDefault(image => image.Error != null) is { } failed)
@@ -148,7 +150,7 @@ internal static class ConversionCommandLine
                     SubsetFonts: settings.SubsetFonts, FontProfile: settings.FontProfile,
                     IgnorePfsVideos: settings.IgnorePfsVideos,
                     ConvertEmotePsbTexturesToDxt5: settings.PsbFormat.HasValue,
-                    NativeTextures: new NativeTextureOptions(settings.NativeTextures, settings.IgnoreBackgroundAlpha, rules),
+                    NativeTextures: new NativeTextureOptions(settings.NativeTextures, settings.IgnoreBackgroundAlpha, rules, settings.TextureCategoryDepth),
                     PsbTextures: new PsbTextureOptions(Enabled: ConversionDefaults.IndependentPsbScaling, CompensateRendering: ConversionDefaults.PsbRenderCompensation),
                     PsbOutputFormat: settings.PsbFormat ?? PsbTextureFormat.Dxt5, Dxt5Layout: settings.Layout,
                     TargetWidth: targetWidth, TargetHeight: targetHeight);
