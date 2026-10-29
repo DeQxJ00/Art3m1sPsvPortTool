@@ -6,6 +6,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 保留原有资源目录名；识别显式 `game.size = init.game_size[...]` 的脚本，将资源目录与标题布局选择从屏幕宽度分离，并同步引擎变量。修复 ASB 说明页路径及本地化后缀，保持几何计算、原生 Vita 路径和未知脚本不变。
+- Preserve resource directory names. For scripts with an explicit `game.size = init.game_size[...]` selector, separate resource/title selection from viewport width and synchronize the engine variable. Repair ASB manual paths and localized suffixes while preserving geometry, native Vita paths and unknown scripts.
+
 - 扩展 CSV 转换：支持独立布局表、命名矩形表、冒号坐标、带数字的语言字体前缀、相对动画位移及混合字段。仅缩放像素字段，优先排除数量、字符上限、时间、百分比、颜色和编号；未知或动态坐标保持原样。
 - Extended CSV conversion to standalone layouts, named rectangle tables, colon-separated coordinates, numeric language prefixes in font tables, relative tween offsets and mixed fields. Only pixel fields scale; counts, character limits, timing, percentages, colors and IDs are preserved, as are unknown or dynamic coordinates.
 

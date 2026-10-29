@@ -190,6 +190,8 @@ public sealed class ConversionService : IConversionService
         double progressStart,
         double progressSpan)
     {
+        if (options.Categories.HasFlag(AssetCategories.Text) && _text is ArtemisTextProcessor)
+            await ArtemisTextProcessor.RepairResourceDirectoriesAsync(root, cancellationToken);
         string[] files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Where(path => !skipPfs || !IsPfsFileName(Path.GetFileName(path)))
             .ToArray();
