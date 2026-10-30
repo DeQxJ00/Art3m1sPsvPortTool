@@ -11,7 +11,7 @@ public sealed partial class ArtemisTextProcessor
 
     // Tokenize first: identifiers inside dialogue/comments are never geometry keys.
     // This deliberately isn't an evaluator. Unknown expressions retain their meaning.
-    private static string ScaleScript(string text, double ratio, string extension, List<int> preservedExpressions)
+    private static string ScaleScript(string text, double ratio, string extension, List<int> preservedExpressions, bool runtimeScaledCoordinates = false)
     {
         List<ScriptToken> tokens = LexScript(text);
         List<ScriptEdit> edits = [];
@@ -24,16 +24,19 @@ public sealed partial class ArtemisTextProcessor
         };
         bool[] vita = VitaBranches(tokens);
         Stack<string> tables = new();
+        Stack<bool> logicalTables = new();
         for (int i = 0; i < tokens.Count; i++)
         {
             ScriptToken token = tokens[i];
             string t = token.Text;
-            if (t == "}") { if (tables.Count > 0) tables.Pop(); continue; }
+            if (t == "}") { if (tables.Count > 0) tables.Pop(); if (logicalTables.Count > 0) logicalTables.Pop(); continue; }
             if (t == "{")
             {
                 string owner = i >= 2 && tokens[i - 1].Text == "=" ? KeyName(tokens[i - 2]) : "";
                 bool emote = tables.Contains("emote");
                 tables.Push(owner);
+                logicalTables.Push(runtimeScaledCoordinates && extension == ".ast" && i+1<tokens.Count &&
+                    tokens[i+1].Kind=='s' && RuntimeScaledImageCommands.Contains(KeyName(tokens[i+1])));
                 if (!vita[i] && extension == ".tbl")
                 {
                     if (TblListKeys.Contains(owner)) ScaleTuple(i, false);
@@ -41,7 +44,7 @@ public sealed partial class ArtemisTextProcessor
                 }
                 continue;
             }
-            if (vita[i]) continue;
+            if (vita[i] || logicalTables.TryPeek(out bool logical) && logical) continue;
 
             // mulpos is an explicit pixel conversion API; do not touch calls in strings.
             if (extension == ".lua" && t == "mulpos" && At(i + 1) == "(" &&

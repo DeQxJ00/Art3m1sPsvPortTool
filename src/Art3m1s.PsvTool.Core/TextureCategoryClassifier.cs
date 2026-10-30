@@ -7,7 +7,7 @@ public static class TextureCategoryClassifier
     private static readonly HashSet<string> Backgrounds = new(StringComparer.Ordinal)
         { "bg", "bgimage", "background", "backgrounds" };
     private static readonly HashSet<string> ColorRoles = new(StringComparer.Ordinal)
-        { "bg", "bgimage", "background", "backgrounds", "fg", "fgimage", "character", "characters", "cg", "event", "ev", "evimage" };
+        { "bg", "bgimage", "background", "backgrounds", "fg", "fgimage", "face", "character", "characters", "cg", "event", "ev", "evimage" };
     private static readonly HashSet<string> ProtectedRoles = new(StringComparer.Ordinal)
         { "ui", "gui", "system", "menu", "font", "fonts", "fonttext", "mask", "masks", "rule", "rules",
           "button", "buttons", "icon", "icons", "cursor", "glyph", "thumb", "thumbnail", "thumbnails" };
@@ -39,7 +39,13 @@ public static class TextureCategoryClassifier
             // Unknown parents keep the legacy grouping and conservative recommendation.
             if (!Wrappers.Contains(parts[i])) break;
         }
-        int fallback = parts[0] is "image" or "images" or "graphics" ? Math.Min(2, directories) : 1;
+        bool imageRoot = parts[0] is "image" or "images" or "graphics";
+        // Some image roots contain an arbitrary resolution/package directory.
+        // Probe one level beyond the legacy two-level grouping, but only accept
+        // an explicit image role. Protected descendants were handled above.
+        if (imageRoot && directories >= 3 && ColorRoles.Contains(parts[2]))
+            return string.Join('/', parts.Take(3));
+        int fallback = imageRoot ? Math.Min(2, directories) : 1;
         return string.Join('/', parts.Take(fallback));
     }
 

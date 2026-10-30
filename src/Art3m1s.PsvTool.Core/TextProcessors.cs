@@ -17,7 +17,7 @@ public interface IVitaIniProcessor
 public sealed partial class ArtemisTextProcessor : ITextProcessor
 {
     private static readonly string[] TblListKeys = ["game_scale", "game_wasmbar", "fontsize", "line_size", "line_window", "line_back", "line_scroll", "line_name01", "line_name02"];
-    private static readonly string[] TblScalarKeys = ["x", "y", "w", "h", "r", "cx", "cy", "cw", "ch", "fx", "fy", "fw", "fh", "left", "top", "size", "width", "height", "spacetop", "spacemiddle", "spacebottom", "kerning", "rubysize"];
+    private static readonly string[] TblScalarKeys = ["wx", "wy", "ax", "ay", "mwx", "mwy", "x", "y", "w", "h", "r", "cx", "cy", "cw", "ch", "fx", "fy", "fw", "fh", "left", "top", "size", "width", "height", "spacetop", "spacemiddle", "spacebottom", "kerning", "rubysize"];
     private static readonly string[] TblClipKeys = ["clip", "clip_a", "clip_c", "clip_d"];
     private static readonly string[] IptKeys = ["x", "y", "w", "h", "ax", "ay"];
     private static readonly string[] AstKeys = ["mx", "my", "ax", "ay", "bx", "by", "basex", "basey", "x", "y", "x2", "y2"];
@@ -28,7 +28,7 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         await ProcessWithDiagnosticsAsync(path, ratio, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<int>> ProcessWithDiagnosticsAsync(string path, double ratio, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<int>> ProcessWithDiagnosticsAsync(string path, double ratio, CancellationToken cancellationToken = default, bool runtimeScaledCoordinates = false)
     {
         if (!double.IsFinite(ratio) || ratio <= 0) throw new ArgumentOutOfRangeException(nameof(ratio));
         byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken);
@@ -40,7 +40,7 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
             ".ini" => ScaleIni(encoded.Text, ratio, preservedExpressions),
             ".csv" => ScaleCsv(encoded.Text, path, ratio, preservedExpressions),
             ".iet" => ScaleIet(encoded.Text, ratio, preservedExpressions),
-            ".tbl" or ".ipt" or ".ast" or ".lua" => ScaleScript(encoded.Text, ratio, extension, preservedExpressions),
+            ".tbl" or ".ipt" or ".ast" or ".lua" => ScaleScript(encoded.Text, ratio, extension, preservedExpressions, runtimeScaledCoordinates),
             _ => encoded.Text
         };
         if (!ReferenceEquals(output, encoded.Text) && output != encoded.Text)

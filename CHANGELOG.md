@@ -6,6 +6,12 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 自动图片分类在二层未识别用途时检查第三层，支持 `image/<目录>/bg`、`fg`、`face`、`cg`、`ev`；不透明图推荐 DXT1，透明图推荐 DXT5，保留 UI／灰度／遮罩保护与原目录名。
+- Automatic image classification probes the third level when the two-level grouping has no recognized role, including BG, FG, face, CG and EV folders. Opaque images use DXT1 and transparent images use DXT5 recommendations; UI, grayscale and mask protections and original directory names are preserved.
+
+- 修复运行时已按 `game.scale` 换算的已知 AST 图片指令被重复缩放；同时补齐 TBL 图片偏移、锚点和头像偏移字段的像素缩放，避免背景移动露黑边或图层错位。
+- Preserve logical coordinates in known AST image commands when runtime scaling is detected. Scale TBL image offsets, anchors and portrait offsets with the image pixels to prevent exposed background edges and displaced layers.
+
 - 保留原有资源目录名；识别显式 `game.size = init.game_size[...]` 的脚本，将资源目录与标题布局选择从屏幕宽度分离，并同步引擎变量。修复 ASB 说明页路径及本地化后缀，保持几何计算、原生 Vita 路径和未知脚本不变。
 - Preserve resource directory names. For scripts with an explicit `game.size = init.game_size[...]` selector, separate resource/title selection from viewport width and synchronize the engine variable. Repair ASB manual paths and localized suffixes while preserving geometry, native Vita paths and unknown scripts.
 

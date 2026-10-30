@@ -192,6 +192,8 @@ public sealed class ConversionService : IConversionService
     {
         if (options.Categories.HasFlag(AssetCategories.Text) && _text is ArtemisTextProcessor)
             await ArtemisTextProcessor.RepairResourceDirectoriesAsync(root, cancellationToken);
+        bool runtimeScaledCoordinates = options.Categories.HasFlag(AssetCategories.Text) && _text is ArtemisTextProcessor &&
+            await ArtemisTextProcessor.DetectRuntimeScaledCoordinatesAsync(root, cancellationToken);
         string[] files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Where(path => !skipPfs || !IsPfsFileName(Path.GetFileName(path)))
             .ToArray();
@@ -220,7 +222,7 @@ public sealed class ConversionService : IConversionService
                     itemStage = "text";
                     if (_text is ArtemisTextProcessor artemis)
                     {
-                        IReadOnlyList<int> preserved = await artemis.ProcessWithDiagnosticsAsync(path, options.Ratio, token);
+                        IReadOnlyList<int> preserved = await artemis.ProcessWithDiagnosticsAsync(path, options.Ratio, token, runtimeScaledCoordinates);
                         if (preserved.Count > 0)
                             progressEntry = $"{relativePath} · text: preserved dynamic expressions at lines {string.Join(",", preserved.Take(8))}" +
                                 (preserved.Count > 8 ? $" (+{preserved.Count - 8})" : "");

@@ -13,6 +13,8 @@ public sealed class TextureCategoryDepthTests : IDisposable
 
     [Theory]
     [InlineData("image/hd/bg/sample.jpg", "image/hd/bg", "image/hd", "image/hd/bg")]
+    [InlineData("image/1280/bg/sample.png", "image/1280/bg", "image/1280", "image/1280/bg")]
+    [InlineData("image/bundle/fg/sample.png", "image/bundle/fg", "image/bundle", "image/bundle/fg")]
     [InlineData("IMAGES\\HD\\BG\\sample.JPEG", "images/hd/bg", "images/hd", "images/hd/bg")]
     [InlineData("graphics/hd/ui/sample.png", "graphics/hd/ui", "graphics/hd", "graphics/hd/ui")]
     [InlineData("image/bg/sample.jpg", "image/bg", "image/bg", "image/bg")]
@@ -34,6 +36,14 @@ public sealed class TextureCategoryDepthTests : IDisposable
     [InlineData("_data/bgimage/sample.jpg", "_data/bgimage")]
     [InlineData("images/sd/fg/sample.png", "images/sd/fg")]
     [InlineData("assets/4k/ev/sample.jpg", "assets/4k/ev")]
+    [InlineData("image/1280/bg/sample.png", "image/1280/bg")]
+    [InlineData("image/1280/face/sample.png", "image/1280/face")]
+    [InlineData("image/face/sample.png", "image/face")]
+    [InlineData("image/1280/face/ui/sample.png", "image/1280/face/ui")]
+    [InlineData("image/bundle/cg/sample.png", "image/bundle/cg")]
+    [InlineData("images/960/ev/sample.png", "images/960/ev")]
+    [InlineData("image/1280/bg/ui/sample.png", "image/1280/bg/ui")]
+    [InlineData("image/1280/mask/bg/sample.png", "image/1280/mask")]
     [InlineData("image/hd/mystery/bg/sample.jpg", "image/hd")]
     [InlineData("unknown/bg/sample.jpg", "unknown")]
     [InlineData("image/bg/ui/sample.jpg", "image/bg/ui")]
@@ -56,7 +66,7 @@ public sealed class TextureCategoryDepthTests : IDisposable
     public void InvalidManualDepthIsRejected(int depth) =>
         Assert.Throws<ArgumentOutOfRangeException>(() => TextureScanner.CategoryFor("image/bg/sample.jpg", depth));
 
-    private async Task<string> CreateInput()
+    private async Task<string> CreateInput(string packaging = "hd")
     {
         string input = Path.Combine(root, "input");
         Directory.CreateDirectory(input);
@@ -64,12 +74,12 @@ public sealed class TextureCategoryDepthTests : IDisposable
         using (var image = new Image<Rgb24>(32, 16, new Rgb24(40, 100, 180)))
             await image.SaveAsJpegAsync(jpeg);
         var codec = new PfsCodec();
-        const string name = "image/hd/bg/archived.jpg";
+        string name = $"image/{packaging}/bg/archived.jpg";
         await codec.PackPf8Async(new('8', [new(Encoding.UTF8.GetBytes(name), name, 0, 0, jpeg)]), Path.Combine(input, "root.pfs"));
-        string loose = Path.Combine(input, "image/hd/bg/loose.jpeg");
+        string loose = Path.Combine(input, $"image/{packaging}/bg/loose.jpeg");
         Directory.CreateDirectory(Path.GetDirectoryName(loose)!);
         File.Copy(jpeg, loose);
-        string ui = Path.Combine(input, "image/hd/ui/menu.png");
+        string ui = Path.Combine(input, $"image/{packaging}/ui/menu.png");
         Directory.CreateDirectory(Path.GetDirectoryName(ui)!);
         using (var image = new Image<Rgb24>(32, 16, new Rgb24(30, 120, 200)))
             await image.SaveAsPngAsync(ui);
@@ -128,6 +138,37 @@ public sealed class TextureCategoryDepthTests : IDisposable
         Assert.True(File.Exists(Path.Combine(output, "image/hd/ui/menu.png")));
         Assert.False(File.Exists(Path.Combine(output, "image/hd/ui/menu.dds")));
         Assert.Equal(originalArchive, await File.ReadAllBytesAsync(Path.Combine(input, "root.pfs")));
+    }
+
+    [Fact]
+    public void TransparentPortraitsUseBc3WhilePortraitMasksRemainProtected()
+    {
+        var portrait = new TextureImageInfo(null, "image/1280/face/sample.png",
+            TextureScanner.CategoryFor("image/1280/face/sample.png"), 32, 16, 100,
+            false, true, true, false);
+        Assert.Equal(NativeTextureFormat.Bc3Swizzled, NativeTextureFormats.Recommend(portrait, false));
+        Assert.False(portrait.IsBackground);
+        var mask = portrait with { Category = TextureScanner.CategoryFor("image/1280/face/mask/sample.png") };
+        Assert.Equal(NativeTextureFormat.Preserve, NativeTextureFormats.Recommend(mask, false));
+    }
+
+    [Fact]
+    public async Task ThirdLevelFallbackConvertsSelectedBackgroundsAndPreservesUiPaths()
+    {
+        string input = await CreateInput("1280");
+        var scan = await new TextureScanner().ScanAsync(input);
+        Assert.Equal(2, scan.Count(i => i.Category == "image/1280/bg"));
+        Assert.All(scan.Where(i => i.IsBackground), i => Assert.Equal(NativeTextureFormat.Bc1Swizzled, NativeTextureFormats.Recommend(i, false)));
+        string output = Path.Combine(root, "output");
+        await new ConversionService().ConvertAsync(new(input, output, Ratio: .5, Categories: AssetCategories.Images,
+            ConvertEmotePsbTexturesToDxt5: false,
+            NativeTextures: new(Rules: [new("image/1280/bg", true)])));
+        byte[] image = (await new PfsCodec().ReadSmallEntryAsync(Path.Combine(output, "root.pfs"), "image/1280/bg/archived.dds"))!;
+        Assert.Equal("DDS ", Encoding.ASCII.GetString(image, 0, 4));
+        Assert.Equal("DXT1", Encoding.ASCII.GetString(image, 84, 4));
+        Assert.True(File.Exists(Path.Combine(output, "image/1280/bg/loose.dds")));
+        Assert.True(File.Exists(Path.Combine(output, "image/1280/ui/menu.png")));
+        Assert.False(Directory.Exists(Path.Combine(output, "image/960")));
     }
 
     [Fact]
