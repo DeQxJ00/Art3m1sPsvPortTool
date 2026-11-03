@@ -145,7 +145,7 @@ public sealed class NativeTextureTests : IDisposable
     {
         string input = Path.Combine(root, "input"); Directory.CreateDirectory(input);
         string bg = await Png("bg.png"), fg = await Png("fg.png", alpha: true), gray = await Png("gray.png", gray: true), meta = await Png("meta.png", metadata: true);
-        string script = Path.Combine(root, "first.iet"); await File.WriteAllTextAsync(script, "[lyc id=1 file=\"image/bg/背景.png\"]");
+        string script = Path.Combine(root, "first.iet"); await File.WriteAllTextAsync(script, "[lyc id=1 file=\"IMAGE/BG/背景.PNG\"]");
         var entries = new[] { ("image/bg/背景.png", bg), ("image/fg/test.png", fg), ("image/bg/mask.png", gray), ("image/bg/offset.png", meta), ("first.iet", script) }
             .Select(x => new PfsEntry(Encoding.UTF8.GetBytes(x.Item1), x.Item1, 0, 0, x.Item2)).ToArray();
         var codec = new PfsCodec(); await codec.PackPf8Async(new('8', entries), Path.Combine(input, "root.pfs.abc"));
@@ -162,6 +162,8 @@ public sealed class NativeTextureTests : IDisposable
         Assert.Contains(extracted.Entries, x => x.Path == "image/bg/offset.png");
         Assert.Equal(await File.ReadAllTextAsync(script), await File.ReadAllTextAsync(extracted.Entries.Single(x => x.Path == "first.iet").ExtractedPath));
         Assert.True((await Info(extracted.Entries.Single(x => x.Path == "image/bg/offset.png").ExtractedPath)).HasMetadata);
+        string report = await File.ReadAllTextAsync(Path.Combine(output, "art3m1s_conversion_report.json"));
+        Assert.DoesNotContain("RESOURCE_MISSING", report);
     }
     [Fact]
     public async Task ExistingNativeOrConflictingNameIsNotOverwritten()
@@ -199,7 +201,7 @@ public sealed class NativeTextureTests : IDisposable
         foreach (var suffix in new[] { "", ".2", ".10" })
         {
             var extracted = await codec.ExtractAsync(Path.Combine(output, "root.pfs" + suffix), Path.Combine(root, "overlay-unpacked" + suffix));
-            var entry = Assert.Single(extracted.Entries);
+            var entry = Assert.Single(ConvertedArchiveAssertions.Assets(extracted));
             Assert.Equal(protectLatest ? relative : "image/staff/picture.dds", entry.Path);
             if (!protectLatest)
             {
@@ -264,7 +266,7 @@ public sealed class NativeTextureTests : IDisposable
         await new ConversionService().ConvertAsync(new(input, output, Ratio: .5, Categories: AssetCategories.Images,
             ConvertEmotePsbTexturesToDxt5: false, NativeTextures: new(Rules: [new("image/bg", false, NativeTextureFormat.Preserve)])));
         var unpack = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(root, "long-unpack"));
-        var dimensions = Image.Identify(Assert.Single(unpack.Entries).ExtractedPath);
+        var dimensions = Image.Identify(Assert.Single(ConvertedArchiveAssertions.Assets(unpack)).ExtractedPath);
         Assert.Equal(2048, dimensions.Width);
         Assert.Equal(4096, dimensions.Height);
     }

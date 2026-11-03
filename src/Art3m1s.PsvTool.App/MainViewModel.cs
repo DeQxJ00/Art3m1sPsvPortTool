@@ -276,6 +276,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private string L(string key) => _localizer[key];
     private string LocalizeStage(string stage) => stage switch
     {
+        "analysis" => L("StageAnalysis"),
+        "validation" => L("StageValidation"),
         "copy" => L("StageCopy"),
         "extract" => L("StageExtract"),
         "pack" => L("StagePack"),

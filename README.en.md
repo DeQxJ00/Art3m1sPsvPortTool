@@ -12,6 +12,19 @@ A PSV porting assistant for Artemis-engine games. It extracts each physical PFS 
 
 CSV files follow the text-conversion option. Sibling non-CSV files or folders (including Lua) identify ordinary image offsets, with comma or colon separators. Known standalone layouts, widget positions, named rectangle tables, font settings and tween displacements use separate field rules without fixed resource-tree requirements; font language prefixes may contain digits. Only pixel coordinates, dimensions, font sizes and spacing scale. Tween operators, easing names, counts, character limits, percentages, colors and timing stay unchanged. Unknown or dynamic fields, and unpaired CSV files without a recognized layout schema, are preserved. Reconvert from original resources to avoid double scaling.
 
+## Coordinates, resource paths and conversion checks
+
+Preflight builds a shared resource index across all PFS archives and loose files. Later archives override earlier entries, and loose files take precedence. Lua helpers, layout tables and image sidecars can therefore be matched across archives. Resolution detection also uses the winning `system.ini`.
+
+Within an archive family, numeric patch suffixes determine priority (`.pfs.10` wins over `.pfs.2`). Duplicate scripts from unrelated families or nonnumeric suffixes with unknown priority stop text conversion before output is written and identify the conflicting path. Resolve the precedence rather than relying on a guessed winner.
+
+- Viewport dimensions, resource directory IDs and script coordinates are handled separately. Original directories such as `ui/1280/` keep their names. Supported path concatenations are changed from viewport width to directory ID only when an explicit selector such as `game.size = init.game_size[osno]` is recognized.
+- Recognized `getScale` runtime coordinates retain their logical values and base; ordinary pixel coordinates still follow Ratio. A verified movement-helper pattern that mixes runtime and fixed endpoint scaling is normalized to the same runtime helper. Unknown expressions are preserved.
+- `art3m1s_conversion.json` records tool version, selected categories, ratio, source/target dimensions and detected profile. A copy is embedded in every PFS. These converted outputs are rejected as future inputs to prevent double scaling, including when only the PFS files were copied. Older outputs without a marker cannot be reliably detected; always use original resources.
+- `art3m1s_conversion_report.json` lists archive, relative path, line and reason for missing direct references, unresolved dynamic paths, platform directory IDs and preserved coordinate expressions. The audit accounts for PNG-to-DDS and other renames made during this run.
+
+The audit covers supported Lua/AST/TBL/IET resource fields, INI boot entries, ASB file parameters and recognized directory concatenations. It does not execute scripts or prove runtime correctness. Dynamic localized paths, logical IDs, analysis limits and unsupported formats are reported explicitly. Text-only or image-only resizing also prompts a dimension consistency check. Reports are published with successful output; failure or cancellation leaves the previous output untouched.
+
 ## UI screenshots
 
 ![English dark UI](docs/screenshots/ui-en-US-dark.png)

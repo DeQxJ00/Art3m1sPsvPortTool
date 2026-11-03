@@ -171,7 +171,7 @@ public sealed class NativeDdsSwizzleTests : IDisposable
         await new ConversionService().ConvertAsync(new(input, output, Ratio: .5, Categories: AssetCategories.Images,
             ConvertEmotePsbTexturesToDxt5: false, NativeTextures: new(Rules: [new("image/bg", true, format)])));
         var unpacked = await codec.ExtractAsync(Path.Combine(output, "root.pfs.010"), Path.Combine(_root, "unpacked"));
-        var entry = Assert.Single(unpacked.Entries);
+        var entry = Assert.Single(ConvertedArchiveAssertions.Assets(unpacked));
         Assert.Equal("image/bg/背景.dds", entry.Path);
         byte[] packedDds = await File.ReadAllBytesAsync(entry.ExtractedPath);
         byte[] looseDds = await File.ReadAllBytesAsync(Path.Combine(output, "image", "bg", "loose.dds"));

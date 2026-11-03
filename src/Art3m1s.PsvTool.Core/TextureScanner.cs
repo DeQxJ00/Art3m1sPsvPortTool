@@ -86,7 +86,7 @@ public sealed class TextureScanner(int categoryDepth = ConversionDefaults.Textur
         return result.Select(image =>
         {
             if (!overlays.TryGetValue(image.Path, out var peers)) return image;
-            var ranks = peers.Select(p => ArchiveRank(p.Archive)).ToArray();
+            var ranks = peers.Select(p => ArchiveOrdering.Rank(p.Archive)).ToArray();
             bool ordered = ranks.All(r => r != null)
                 && ranks.Select(r => r!.Value.Family).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1
                 && ranks.Select(r => r!.Value.Priority).Distinct().Count() == peers.Length;
@@ -98,16 +98,6 @@ public sealed class TextureScanner(int categoryDepth = ConversionDefaults.Textur
             int winner = Enumerable.Range(0, peers.Length).MaxBy(i => ranks[i]!.Value.Priority);
             return image with { OverlayPeers = peers, OverlayWinner = peers[winner].Archive };
         }).ToArray();
-    }
-    private static (string Family, System.Numerics.BigInteger Priority)? ArchiveRank(string? archive)
-    {
-        if (archive == null) return null;
-        int at = archive.LastIndexOf(".pfs", StringComparison.OrdinalIgnoreCase);
-        if (at < 0) return null;
-        string suffix = archive[(at + 4)..];
-        if (suffix.Length == 0) return (archive, -1);
-        if (suffix.Length < 2 || suffix[0] != '.' || !suffix[1..].All(char.IsAsciiDigit)) return null;
-        return (archive[..(at + 4)], System.Numerics.BigInteger.Parse(suffix[1..], System.Globalization.CultureInfo.InvariantCulture));
     }
     public static TextureImageInfo InspectBytes(byte[] bytes, string path, string? archive = null,
         int categoryDepth = ConversionDefaults.TextureCategoryDepth)

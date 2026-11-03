@@ -70,7 +70,7 @@ public sealed class PsbRenderTests : IDisposable
         await new ConversionService().ConvertAsync(new(input, output, Ratio: .5, Categories: AssetCategories.Animation,
             ConvertEmotePsbTexturesToDxt5: false, PsbTextures: new([new(65, 33, .3)], Enabled: true)));
         var unpacked = await codec.ExtractAsync(Path.Combine(output, "root.pfs.010"), Path.Combine(_root, "unpack"));
-        var entry = Assert.Single(unpacked.Entries);
+        var entry = Assert.Single(ConvertedArchiveAssertions.Assets(unpacked));
         var manifest = JsonSerializer.Deserialize(await File.ReadAllTextAsync(Path.Combine(output, PsbRenderManifest.FileName)),
             PsbRenderJsonContext.Default.PsbRenderManifest)!;
         var model = Assert.Single(manifest.Models);

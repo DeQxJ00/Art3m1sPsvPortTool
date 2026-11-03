@@ -29,6 +29,7 @@ public sealed partial class ProjectScanner : IProjectScanner
             archives.Add(new PfsFileInfo(file, Path.GetRelativePath(inputDirectory, file).Replace('\\', '/'), (char)header[2], stream.Length));
         }
 
+        archives = ArchiveOrdering.Sort(archives).ToList();
         string systemIni = Path.Combine(inputDirectory, "system.ini");
         bool hasSystemIni = File.Exists(systemIni);
         List<IniResolution> resolutions = [];
@@ -49,7 +50,8 @@ public sealed partial class ProjectScanner : IProjectScanner
             hasSystemIni = true;
             IReadOnlyList<IniResolution> found = ReadResolutions(contents, $"{archive.FileName}/system.ini");
             resolutions.AddRange(found);
-            preferred ??= PickPreferred(found);
+            // Later archive overlays win; a loose system.ini overrides all archives.
+            if (!File.Exists(systemIni)) preferred = PickPreferred(found);
         }
 
         return new ScanResult(archives, hasSystemIni, preferred?.Width, preferred?.Height, resolutions);

@@ -27,7 +27,7 @@ public sealed class PsbFormatTests : IDisposable
         await new ConversionService().ConvertAsync(new(input, output, Ratio: .5,
             Categories: AssetCategories.Animation, PsbOutputFormat: format, Dxt5Layout: layout));
         var archive = await codec.ExtractAsync(Path.Combine(output, "root.pfs.010"), Path.Combine(_root, "unpacked"));
-        foreach (string path in new[] { Path.Combine(output, "hero.psb"), Assert.Single(archive.Entries).ExtractedPath })
+        foreach (string path in new[] { Path.Combine(output, "hero.psb"), Assert.Single(ConvertedArchiveAssertions.Assets(archive)).ExtractedPath })
         {
             byte[] bytes = await File.ReadAllBytesAsync(path);
             var inspection = await PsbTextureScanner.InspectFileAsync(path);

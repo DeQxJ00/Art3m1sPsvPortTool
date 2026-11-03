@@ -39,7 +39,7 @@ public sealed partial class ArtemisTextProcessor
                     tokens[i+1].Kind=='s' && RuntimeScaledImageCommands.Contains(KeyName(tokens[i+1])));
                 if (!vita[i] && extension == ".tbl")
                 {
-                    if (TblListKeys.Contains(owner)) ScaleTuple(i, false);
+                    if (TblListKeys.Contains(owner) && !(runtimeScaledCoordinates && owner == "game_scale")) ScaleTuple(i, false);
                     else if (emote) ScaleTuple(i, true);
                 }
                 continue;

@@ -12,7 +12,8 @@ public sealed partial class ArtemisTextProcessor
         "spacetop", "spacemiddle", "spacebottom", "shadow", "rubyshadow", "outline", "rubyoutline"
     };
 
-    private static string ScaleCsv(string text, string path, double ratio, List<int> diagnostics)
+    private static string ScaleCsv(string text, string path, double ratio, List<int> diagnostics,
+        IReadOnlySet<string>? resourcePaths = null, string? relativePath = null)
     {
         string normalized = path.Replace('\\', '/');
         string stem = Path.GetFileNameWithoutExtension(path);
@@ -87,7 +88,7 @@ public sealed partial class ArtemisTextProcessor
         bool layout = Regex.IsMatch(key,
             @"\A(?:slot_pos|slot_margin|slotdel_pos|slot_message_pos\d+|thumb_pos|thumb_new_pos|streaming[01]_pos|select_align|adjust_xy_read[01]|size|offset|bg_move|pos_num_(?:\d+|drawing)|(?:adv|novel)_(?:message|nametag|name_message|backlogjump|sceneback|voice(?:_add)?|vsave(?:_add)?|slot_\d+))\z");
         layout |= Regex.IsMatch(key, @"\A(?:(?:[a-z0-9]+_)?(?:btn|sysbtn|chkbox)_.+|slider(?:_.+)?|mw_.+|face|mask|ok|ok_only|cancel)\z");
-        bool paired = HasCsvCompanion(path);
+        bool paired = HasCsvCompanion(path, resourcePaths, relativePath);
         if (fields.Length == 2 && (paired || layout))
             return ScaleCsvColumns(text, fields, [0, 1], ratio, diagnostics);
         if (paired && Regex.IsMatch(text, @"\A\s*[+-]?\d+\s*:\s*[+-]?\d+\s*\z"))
@@ -138,8 +139,15 @@ public sealed partial class ArtemisTextProcessor
         return true;
     }
 
-    private static bool HasCsvCompanion(string path)
+    private static bool HasCsvCompanion(string path,IReadOnlySet<string>? resourcePaths=null,string? relativePath=null)
     {
+        if(resourcePaths is not null && relativePath is not null)
+        {
+            string target=Path.ChangeExtension(relativePath.Replace('\\','/'),null);
+            return resourcePaths.Any(p=>p.StartsWith(target+"/",StringComparison.OrdinalIgnoreCase) ||
+                !Path.GetExtension(p).Equals(".csv",StringComparison.OrdinalIgnoreCase) &&
+                Path.ChangeExtension(p,null).Equals(target,StringComparison.OrdinalIgnoreCase));
+        }
         string directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
         string stem = Path.GetFileNameWithoutExtension(path);
         foreach (string entry in Directory.EnumerateFileSystemEntries(directory))

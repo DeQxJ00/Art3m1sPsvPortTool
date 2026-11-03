@@ -71,7 +71,7 @@ public sealed class PsbAstcTests : IDisposable
         Assert.Equal(2, events.Count(e => e.Diagnostic?.Code == "PSB_ASTC_PROCESSED"));
         var extracted = await codec.ExtractAsync(Path.Combine(output, "root.pfs.010"), Path.Combine(_root, "unpacked"));
         long totalBytes = 0;
-        foreach (string path in new[] { Path.Combine(output, "sample.psb"), Assert.Single(extracted.Entries).ExtractedPath })
+        foreach (string path in new[] { Path.Combine(output, "sample.psb"), Assert.Single(ConvertedArchiveAssertions.Assets(extracted)).ExtractedPath })
         {
             byte[] result = await File.ReadAllBytesAsync(path);
             var atlases = (await PsbTextureScanner.InspectFileAsync(path)).Atlases;

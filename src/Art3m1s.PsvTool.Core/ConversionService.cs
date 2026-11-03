@@ -71,6 +71,9 @@ public sealed class ConversionService : IConversionService
         if (Directory.Exists(options.OutputDirectory) && !options.OverwriteExisting)
             throw new IOException("Output directory already exists.");
 
+        progress?.Report(new ConversionProgress(0, "analysis"));
+        ConversionAnalysis analysis = await ConversionAnalysis.CreateAsync(options, scan, cancellationToken);
+
         IReadOnlyList<TextureImageInfo> textureImages = options.NativeTextures?.Enabled == true && options.Categories.HasFlag(AssetCategories.Images)
             ? await new TextureScanner(options.NativeTextures.CategoryDepth).ScanAsync(options.InputDirectory, options.NameEncoding,
                 progress == null ? null : new MappedProgress(progress, 0, 0.1), cancellationToken) : [];
@@ -97,15 +100,16 @@ public sealed class ConversionService : IConversionService
                 cancellationToken.ThrowIfCancellationRequested();
                 PfsFileInfo archive = scan.Archives[index];
                 progress?.Report(new ConversionProgress(100d * index / total, "extract", archive.FileName));
-                await ConvertArchiveAsync(archive, staging, options, progress, index, total, textureLookup, psbRenderModels, cancellationToken);
+                await ConvertArchiveAsync(archive, staging, options, progress, index, total, textureLookup, psbRenderModels, analysis, cancellationToken);
             }
 
             progress?.Report(new ConversionProgress(100d * scan.Archives.Count / total, "loose"));
-            await ProcessTreeAsync(staging, options, progress, cancellationToken, textureLookup, psbRenderModels, archiveName: null, skipPfs: true, preserveDat: false,
+            await ProcessTreeAsync(staging, options, progress, cancellationToken, textureLookup, psbRenderModels, analysis, archiveName: null, skipPfs: true, preserveDat: false,
                 progressStart: 100d * scan.Archives.Count / total, progressSpan: 100d / total);
             if (!psbRenderModels.IsEmpty)
                 await new PsbRenderManifest(PsbRenderManifest.CurrentVersion, options.Ratio, psbRenderModels.OrderBy(x => x.Archive, StringComparer.Ordinal)
                     .ThenBy(x => x.Path, StringComparer.Ordinal).ToArray()).WriteAsync(staging, cancellationToken);
+            await analysis.FinishAsync(staging, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             CommitDirectory(staging, outputFull, backup, options.OverwriteExisting);
             committed = true;
@@ -127,6 +131,7 @@ public sealed class ConversionService : IConversionService
         int totalUnits,
         IReadOnlyDictionary<string, TextureImageInfo> textureLookup,
         ConcurrentBag<PsbRenderModel> psbRenderModels,
+        ConversionAnalysis analysis,
         CancellationToken cancellationToken)
     {
         string workParent = Path.Combine(staging, ".art3m1s-work");
@@ -138,7 +143,7 @@ public sealed class ConversionService : IConversionService
         {
             ExtractedArchive extracted = await _pfs.ExtractAsync(archive.Path, work, options.NameEncoding, cancellationToken);
             stage = "resource";
-            var renamed = await ProcessTreeAsync(work, options, progress, cancellationToken, textureLookup, psbRenderModels, archive.FileName, skipPfs: false, preserveDat: true,
+            var renamed = await ProcessTreeAsync(work, options, progress, cancellationToken, textureLookup, psbRenderModels, analysis, archive.FileName, skipPfs: false, preserveDat: true,
                 progressStart: 100d * (archiveIndex + 0.05) / totalUnits,
                 progressSpan: 100d * 0.85 / totalUnits);
             string destination = Path.Combine(staging, archive.FileName);
@@ -155,7 +160,10 @@ public sealed class ConversionService : IConversionService
                 byte[] raw = [.. e.RawName.AsSpan(0, dot).ToArray(), .. extension];
                 return e with { RawName = raw, Path = newPath, ExtractedPath = Path.Combine(work, newPath.Replace('/', Path.DirectorySeparatorChar)) };
             }).ToArray();
-            await _pfs.PackPf8Async(extracted with { Entries = entries }, temporary, cancellationToken);
+            await analysis.WriteMarkerAsync(work, cancellationToken);
+            var marker = new PfsEntry(Encoding.ASCII.GetBytes(ConversionAnalysis.Marker), ConversionAnalysis.Marker,
+                0, 0, Path.Combine(work, ConversionAnalysis.Marker));
+            await _pfs.PackPf8Async(extracted with { Entries = [.. entries, marker] }, temporary, cancellationToken);
             File.Move(temporary, destination, true);
             completed = true;
         }
@@ -184,6 +192,7 @@ public sealed class ConversionService : IConversionService
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, TextureImageInfo> textureLookup,
         ConcurrentBag<PsbRenderModel> psbRenderModels,
+        ConversionAnalysis analysis,
         string? archiveName,
         bool skipPfs,
         bool preserveDat,
@@ -191,9 +200,9 @@ public sealed class ConversionService : IConversionService
         double progressSpan)
     {
         if (options.Categories.HasFlag(AssetCategories.Text) && _text is ArtemisTextProcessor)
-            await ArtemisTextProcessor.RepairResourceDirectoriesAsync(root, cancellationToken);
+            await ArtemisTextProcessor.RepairResourceDirectoriesAsync(root, cancellationToken, analysis.Profile, analysis.LocalizedManual);
         bool runtimeScaledCoordinates = options.Categories.HasFlag(AssetCategories.Text) && _text is ArtemisTextProcessor &&
-            await ArtemisTextProcessor.DetectRuntimeScaledCoordinatesAsync(root, cancellationToken);
+            analysis.Profile.RuntimeScaledCoordinates;
         string[] files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Where(path => !skipPfs || !IsPfsFileName(Path.GetFileName(path)))
             .ToArray();
@@ -222,7 +231,9 @@ public sealed class ConversionService : IConversionService
                     itemStage = "text";
                     if (_text is ArtemisTextProcessor artemis)
                     {
-                        IReadOnlyList<int> preserved = await artemis.ProcessWithDiagnosticsAsync(path, options.Ratio, token, runtimeScaledCoordinates);
+                        IReadOnlyList<int> preserved = await artemis.ProcessWithDiagnosticsAsync(path, options.Ratio, token, runtimeScaledCoordinates,
+                            analysis.ResourcePaths, relativePath);
+                        analysis.AddPreserved(archiveName, relativePath.Replace('\\', '/'), preserved);
                         if (preserved.Count > 0)
                             progressEntry = $"{relativePath} · text: preserved dynamic expressions at lines {string.Join(",", preserved.Take(8))}" +
                                 (preserved.Count > 8 ? $" (+{preserved.Count - 8})" : "");
@@ -379,6 +390,8 @@ public sealed class ConversionService : IConversionService
         if (options.NativeTextures?.Enabled == true)
             progress?.Report(new(progressStart + progressSpan, "resource", archiveName,
                 $"PSV textures: converted={converted}, kept={kept}, resized source={beforeBytes:N0} B, output={afterBytes:N0} B"));
+        analysis.RecordRenames(archiveName, renamed);
+        await analysis.InspectOutputAsync(root, archiveName, cancellationToken);
         return renamed;
     }
 

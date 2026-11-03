@@ -50,7 +50,7 @@ public sealed class PsbTextureTests : IDisposable
             PsbTextures: new([new(128, 64, .25)], Enabled: true)));
 
         var unpacked = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(_root, "unpack"));
-        var converted = await PsbTextureScanner.InspectFileAsync(Assert.Single(unpacked.Entries).ExtractedPath);
+        var converted = await PsbTextureScanner.InspectFileAsync(Assert.Single(ConvertedArchiveAssertions.Assets(unpacked)).ExtractedPath);
         Assert.Equal(new[] { (32, 16), (8, 8) }, converted.Atlases.Select(x => (x.Width, x.Height)));
         var other = await PsbTextureScanner.InspectFileAsync(Path.Combine(output, "other.psb"));
         Assert.Equal(32, other.Width); Assert.Equal(64, other.Height);

@@ -28,19 +28,22 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         await ProcessWithDiagnosticsAsync(path, ratio, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<int>> ProcessWithDiagnosticsAsync(string path, double ratio, CancellationToken cancellationToken = default, bool runtimeScaledCoordinates = false)
+    public async Task<IReadOnlyList<int>> ProcessWithDiagnosticsAsync(string path, double ratio, CancellationToken cancellationToken = default, bool runtimeScaledCoordinates = false,
+        IReadOnlySet<string>? resourcePaths = null, string? relativePath = null)
     {
         if (!double.IsFinite(ratio) || ratio <= 0) throw new ArgumentOutOfRangeException(nameof(ratio));
         byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken);
         EncodedText encoded = EncodedText.Decode(bytes);
         string extension = Path.GetExtension(path).ToLowerInvariant();
+        string source = extension == ".lua" && runtimeScaledCoordinates && ratio != 1
+            ? NormalizeInlineMovementScale(encoded.Text) : encoded.Text;
         List<int> preservedExpressions = [];
         string output = extension switch
         {
             ".ini" => ScaleIni(encoded.Text, ratio, preservedExpressions),
-            ".csv" => ScaleCsv(encoded.Text, path, ratio, preservedExpressions),
+            ".csv" => ScaleCsv(encoded.Text, path, ratio, preservedExpressions, resourcePaths, relativePath),
             ".iet" => ScaleIet(encoded.Text, ratio, preservedExpressions),
-            ".tbl" or ".ipt" or ".ast" or ".lua" => ScaleScript(encoded.Text, ratio, extension, preservedExpressions, runtimeScaledCoordinates),
+            ".tbl" or ".ipt" or ".ast" or ".lua" => ScaleScript(source, ratio, extension, preservedExpressions, runtimeScaledCoordinates),
             _ => encoded.Text
         };
         if (!ReferenceEquals(output, encoded.Text) && output != encoded.Text)

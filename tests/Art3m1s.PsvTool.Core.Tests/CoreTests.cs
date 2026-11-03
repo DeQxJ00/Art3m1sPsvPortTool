@@ -88,7 +88,7 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
-    public async Task ScannerReadsFirstPfsSystemIniAndPrefersWindowsResolution()
+    public async Task ScannerReadsOverlaySystemIniAndPrefersWindowsResolution()
     {
         string game = Path.Combine(_root, "scan-pfs-resolution");
         Directory.CreateDirectory(game);
@@ -101,8 +101,8 @@ public sealed class CoreTests : IDisposable
 
         Assert.True(result.HasSystemIni);
         Assert.Equal(2, result.Archives.Count);
-        Assert.Equal(1920, result.Width);
-        Assert.Equal(1080, result.Height);
+        Assert.Equal(2560, result.Width);
+        Assert.Equal(1440, result.Height);
         Assert.Equal(3, result.Resolutions.Count);
         Assert.Equal(new IniResolution("root.pfs/system.ini", "VITA", 960, 540), result.Resolutions[0]);
         Assert.Equal(new IniResolution("root.pfs/system.ini", "WINDOWS", 1920, 1080), result.Resolutions[1]);
@@ -320,7 +320,7 @@ public sealed class CoreTests : IDisposable
         string ini = Encoding.GetEncoding(932).GetString(await File.ReadAllBytesAsync(Path.Combine(output, "system.ini")));
         Assert.Contains("[VITA]", ini);
         ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs.010"), Path.Combine(_root, "verify"));
-        Assert.Equal([9, 8, 7], await File.ReadAllBytesAsync(rebuilt.Entries.Single().ExtractedPath));
+        Assert.Equal([9, 8, 7], await File.ReadAllBytesAsync(Assert.Single(ConvertedArchiveAssertions.Assets(rebuilt)).ExtractedPath));
     }
 
     [Fact]
@@ -355,7 +355,7 @@ public sealed class CoreTests : IDisposable
         Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(looseResult.AsSpan(20, 4)));
 
         ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(_root, "png-verify"));
-        byte[] archivedResult = await File.ReadAllBytesAsync(rebuilt.Entries.Single().ExtractedPath);
+        byte[] archivedResult = await File.ReadAllBytesAsync(Assert.Single(ConvertedArchiveAssertions.Assets(rebuilt)).ExtractedPath);
         Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(archivedResult.AsSpan(16, 4)));
         Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(archivedResult.AsSpan(20, 4)));
     }
@@ -431,7 +431,7 @@ public sealed class CoreTests : IDisposable
             Categories: AssetCategories.Video));
 
         ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(_root, "pfs-dat-verify"));
-        PfsEntry entry = Assert.Single(rebuilt.Entries);
+        PfsEntry entry = Assert.Single(ConvertedArchiveAssertions.Assets(rebuilt));
         Assert.Equal("movie/opening.dat", entry.Path);
         Assert.Equal([1, 2, 3], await File.ReadAllBytesAsync(entry.ExtractedPath));
         Assert.Empty(ffmpeg.Processed);
@@ -462,8 +462,8 @@ public sealed class CoreTests : IDisposable
         Assert.EndsWith("loose.mp4", ffmpeg.Processed[0].Path, StringComparison.OrdinalIgnoreCase);
         ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"),
             Path.Combine(_root, "pfs-video-verify"));
-        Assert.Equal(extensions.Length, rebuilt.Entries.Count);
-        foreach (PfsEntry entry in rebuilt.Entries)
+        Assert.Equal(extensions.Length, ConvertedArchiveAssertions.Assets(rebuilt).Count);
+        foreach (PfsEntry entry in ConvertedArchiveAssertions.Assets(rebuilt))
             Assert.Equal(original, await File.ReadAllBytesAsync(entry.ExtractedPath));
     }
 
@@ -775,7 +775,7 @@ public sealed class CoreTests : IDisposable
         Assert.Equal(PsbDxt5Layout.Swizzled, Assert.Single(psbProcessor.Layouts));
         ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"),
             Path.Combine(_root, "psb-verify"));
-        Assert.Equal(original, await File.ReadAllBytesAsync(Assert.Single(rebuilt.Entries).ExtractedPath));
+        Assert.Equal(original, await File.ReadAllBytesAsync(Assert.Single(ConvertedArchiveAssertions.Assets(rebuilt)).ExtractedPath));
     }
 
     [Fact]

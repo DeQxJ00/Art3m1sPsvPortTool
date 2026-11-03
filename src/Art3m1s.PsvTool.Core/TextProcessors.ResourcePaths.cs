@@ -6,20 +6,21 @@ public sealed partial class ArtemisTextProcessor
 {
     // Resource directory IDs are independent of the scaled viewport dimensions.
     // Activate only for scripts that explicitly define the original directory selector.
-    public static async Task RepairResourceDirectoriesAsync(string root, CancellationToken token = default)
+    public static async Task RepairResourceDirectoriesAsync(string root, CancellationToken token = default,
+        ConversionProfile? profile = null, bool? hasLocalizedManual = null)
     {
         string[] files = Directory.GetFiles(root, "*", SearchOption.AllDirectories);
         var scripts = new List<(string Path, EncodedText Source, List<ScriptToken> Tokens)>();
-        bool profile = false;
+        bool enabled = profile?.ResourceDirectorySelector ?? false;
         foreach (string path in files.Where(p => Path.GetExtension(p).Equals(".lua", StringComparison.OrdinalIgnoreCase)))
         {
             token.ThrowIfCancellationRequested();
             var source = EncodedText.Decode(await File.ReadAllBytesAsync(path, token));
             var tokens = LexScript(source.Text);
             scripts.Add((path, source, tokens));
-            profile |= FindSizeAssignments(tokens).Any();
+            if(profile is null)enabled |= FindSizeAssignments(tokens).Any();
         }
-        if (!profile) return;
+        if (!enabled) return;
         foreach (var (path, source, tokens) in scripts)
         {
             var edits = new List<ScriptEdit>();
@@ -43,7 +44,7 @@ public sealed partial class ArtemisTextProcessor
         foreach (string path in files.Where(p => Path.GetExtension(p).Equals(".asb", StringComparison.OrdinalIgnoreCase)))
         {
             byte[] original = await File.ReadAllBytesAsync(path, token);
-            byte[] changed = RepairAsbPaths(original, localizedManual && !plainManual);
+            byte[] changed = RepairAsbPaths(original, hasLocalizedManual ?? (localizedManual && !plainManual));
             if (!original.AsSpan().SequenceEqual(changed)) await File.WriteAllBytesAsync(path, changed, token);
         }
     }

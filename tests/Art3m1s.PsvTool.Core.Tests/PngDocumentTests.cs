@@ -329,7 +329,7 @@ public sealed class PngDocumentTests : IDisposable
         Assert.Contains(warnings, e => e.Archive is null && e.Entry == "loose.png");
         Assert.DoesNotContain(events, e => e.Diagnostic?.Level == ConversionLogLevel.Error);
         var rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(_root, "verify"));
-        foreach (string path in new[] { Assert.Single(rebuilt.Entries).ExtractedPath, Path.Combine(output, "loose.png") })
+        foreach (string path in new[] { Assert.Single(ConvertedArchiveAssertions.Assets(rebuilt)).ExtractedPath, Path.Combine(output, "loose.png") })
         {
             var document = PngDocument.Parse(await File.ReadAllBytesAsync(path));
             Assert.Equal(4u, document.Width); Assert.Equal(2u, document.Height);

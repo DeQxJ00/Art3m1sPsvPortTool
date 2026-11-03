@@ -33,5 +33,30 @@ public sealed class LogicalCoordinateTests : IDisposable {
         Assert.Contains("wx=-33,wy=-30,ax=513,ay=300",output);
         Assert.Contains("mwx=-90,mwy=-45",output);
     }
+    [Theory]
+    [InlineData(.75)]
+    [InlineData(.5)]
+    public async Task InlineMovementScaleUsesTheSameRuntimeHelperAsItsStart(double ratio) {
+        string source = "function cg_moveXY(p, name)\n"
+            + "local x1 = getScale((scr.img.bg[no] and scr.img.bg[no].x or 480) - 480)\n"
+            + "local x2 = ((v.x or 480) - 480) * (1280/960)\n"
+            + "local y2 = getScale((v.y or 270) - 270)\n"
+            + "local unrelated = 1280/960\nend\n"
+            + "-- local x2 = ((v.x or 480) - 480) * (1280/960)\n";
+        string path=Put("motion.lua",source);
+        await new ArtemisTextProcessor().ProcessWithDiagnosticsAsync(path,ratio,default,true);
+        Assert.Equal(source.Replace("local x2 = ((v.x or 480) - 480) * (1280/960)\nlocal y2",
+            "local x2 = getScale((v.x or 480) - 480)\nlocal y2",StringComparison.Ordinal),File.ReadAllText(path));
+    }
+    [Theory]
+    [InlineData(false, .75, "cg_moveXY")]
+    [InlineData(true, 1, "cg_moveXY")]
+    [InlineData(true, .75, "unrelated")]
+    public async Task InlineScaleRequiresMovementProfile(bool profile,double ratio,string function) {
+        string source=$"function {function}(p, name)\nlocal x1=getScale(0)\nlocal x2=((v.x or 480)-480)*(1280/960)\nend";
+        string path=Put("motion.lua",source);
+        await new ArtemisTextProcessor().ProcessWithDiagnosticsAsync(path,ratio,default,profile);
+        Assert.Equal(source,File.ReadAllText(path));
+    }
     public void Dispose() { if(Directory.Exists(root)) Directory.Delete(root,true); }
 }
