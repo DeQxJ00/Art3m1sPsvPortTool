@@ -112,5 +112,26 @@ public sealed class PsbRenderTests : IDisposable
         Assert.False(new PsbTextureOptions().Enabled); Assert.True(new PsbTextureOptions().CompensateRendering);
     }
 
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(3, true)]
+    [InlineData(4, true)]
+    public async Task FractionalGeometryDoesNotInvertIntegerAndFloatDepths(int version, bool compact)
+    {
+        string path = Path.Combine(_root, "depth.psb");
+        byte[] original = PsbFixture.CreateWithCoordinates((ushort)version, compact,
+            (_, w, h) => ("RGBA8", new byte[w * h * 4]), [-1, -.5f, 1], (32, 32));
+        await File.WriteAllBytesAsync(path, original);
+        await new PsbProcessor().ProcessWithRatiosAsync(path, .75, .75, false);
+        byte[] result = await File.ReadAllBytesAsync(path);
+        string[] coord = ["object", "hero", "motion", "idle", "layer", "0", "frameList", "0", "content", "coord"];
+        double? At(string index) => PsbProcessor.InspectNumericMetadata(result, [.. coord, index]);
+        Assert.Equal(-.75, At("0"));
+        Assert.Equal(-.375, At("1"));
+        Assert.Equal(.75, At("2"));
+        Assert.True(At("0") < At("1"));
+        Assert.Equal(24, (await PsbTextureScanner.InspectFileAsync(path)).Width);
+    }
+
     public void Dispose() => Directory.Delete(_root, true);
 }

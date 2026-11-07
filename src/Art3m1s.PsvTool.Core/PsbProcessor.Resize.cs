@@ -297,7 +297,7 @@ public sealed partial class PsbProcessor
     private static void ScaleNumberList(ListNode list, double ratio)
     {
         foreach (Node value in list.Values)
-            if (value is NumberNode number) number.Scale(ratio);
+            if (value is NumberNode number) number.ScaleExact(ratio);
     }
 
     private static void ScaleBlankMeshDomain(StringNode domain, double ratio)
@@ -318,10 +318,11 @@ public sealed partial class PsbProcessor
 
     private readonly record struct ResourceKey(int Index, bool Extra);
 
-    private abstract class Node;
+    private abstract class Node { public int Offset { get; set; } }
     private sealed class ObjectNode(Dictionary<string, Node> values) : Node
     {
         public Dictionary<string, Node> Values { get; } = values;
+        public uint[] NameIndexes { get; set; } = [];
         public Node? Get(string key) => Values.GetValueOrDefault(key);
         public ObjectNode? GetObject(string key) => Get(key) as ObjectNode;
         public NumberNode? GetNumber(string key) => Get(key) as NumberNode;
@@ -348,6 +349,21 @@ public sealed partial class PsbProcessor
         public double Value { get; private set; } = value;
         public double ScaledValue(double ratio) => kind is >= 0x04 and <= 0x0c
             ? Math.Truncate(Value * ratio) : kind == 0x1e ? (float)(Value * ratio) : Value * ratio;
+
+        public byte[]? ExactEncoding { get; private set; }
+        public void ScaleExact(double ratio)
+        {
+            double scaled = Value * ratio;
+            if (kind is >= 0x05 and <= 0x0c && scaled != Math.Truncate(scaled))
+            {
+                // A depth of -1 must not become 0 while a neighboring -0.5
+                // remains fractional. Promote the value and rebuild entry offsets.
+                ExactEncoding = new byte[9]; ExactEncoding[0] = 0x1f;
+                BinaryPrimitives.WriteDoubleLittleEndian(ExactEncoding.AsSpan(1), scaled);
+                Value = scaled;
+            }
+            else Scale(ratio);
+        }
 
         public void Scale(double ratio) => Write(Value * ratio, dimension: false);
         public void Clamp(double minimum, double maximum) => Write(Math.Clamp(Value, minimum, maximum), dimension: false);
@@ -475,6 +491,63 @@ public sealed partial class PsbProcessor
                 stringOffsets, strings, parser.StringNodes);
         }
 
+        private static bool HasExactGeometry(Node node) => node switch
+        {
+            NumberNode number => number.ExactEncoding is not null,
+            ObjectNode value => value.Values.Values.Any(HasExactGeometry),
+            ListNode list => list.Values.Any(HasExactGeometry),
+            _ => false
+        };
+
+        private byte[] EncodeEntries(Node node)
+        {
+            using MemoryStream output = new();
+            void Array(uint[] values)
+            {
+                output.WriteByte(0x10); // Four-byte count and entries avoid offset overflow.
+                Span<byte> word = stackalloc byte[4];
+                BinaryPrimitives.WriteUInt32LittleEndian(word, checked((uint)values.Length)); output.Write(word);
+                output.WriteByte(0x10);
+                foreach (uint value in values) { BinaryPrimitives.WriteUInt32LittleEndian(word, value); output.Write(word); }
+            }
+            if (node is ObjectNode or ListNode)
+            {
+                byte[][] children;
+                if (node is ObjectNode map)
+                {
+                    output.WriteByte(0x21); Array(map.NameIndexes);
+                    children = map.Values.Values.Select(EncodeEntries).ToArray();
+                }
+                else { output.WriteByte(0x20); children = ((ListNode)node).Values.Select(EncodeEntries).ToArray(); }
+                uint relative = 0; uint[] offsets = new uint[children.Length];
+                for (int i = 0; i < children.Length; ++i) { offsets[i] = relative; relative = checked(relative + (uint)children[i].Length); }
+                Array(offsets); foreach (byte[] child in children) output.Write(child);
+            }
+            else if (node is NumberNode { ExactEncoding: not null } number) output.Write(number.ExactEncoding);
+            else
+            {
+                byte kind = _data[node.Offset];
+                int length = kind switch
+                {
+                    >= 0x05 and <= 0x0c => 1 + kind - 0x04,
+                    >= 0x15 and <= 0x18 => 1 + kind - 0x14,
+                    >= 0x19 and <= 0x1c => 1 + kind - 0x18,
+                    0x1e => 5, 0x1f => 9,
+                    >= 0x22 and <= 0x25 => 1 + kind - 0x21,
+                    >= 0x0d and <= 0x14 => ArrayLength(node.Offset),
+                    _ => 1
+                };
+                output.Write(_data.AsSpan(node.Offset, length));
+            }
+            return output.ToArray();
+        }
+
+        private int ArrayLength(int offset)
+        {
+            CompactArray array = ParseArray(_data, offset);
+            return checked(array.ItemOffset + array.Values.Length * array.ItemWidth - offset);
+        }
+
         public byte[] GetResource(ResourceKey key)
         {
             CompactArray offsets = key.Extra ? _extraOffsets ?? throw new InvalidDataException("Missing PSB extra resources.") : _chunkOffsets;
@@ -534,6 +607,13 @@ public sealed partial class PsbProcessor
                 int stringStart = checked((int)ReadUInt32(_header, 20));
                 int stringEnd = _strings.Max(value => value.Offset + value.ByteLength + 1);
                 regions.Add(new(stringStart, stringEnd, strings.ToArray()));
+            }
+            if (HasExactGeometry(Root))
+            {
+                int start = checked((int)ReadUInt32(_header, 36));
+                int end = _sectionOffsets.Where(value => value > start).Select(value => checked((int)value))
+                    .DefaultIfEmpty(_data.Length).Min();
+                regions.Add(new ResourceRegion(start, end, EncodeEntries(Root)));
             }
             regions = regions.Where(region => region.NewBytes is not null).OrderBy(region => region.Start).ToList();
             using MemoryStream output = new(_data.Length);
@@ -632,7 +712,7 @@ public sealed partial class PsbProcessor
         {
             if (depth > 512) throw new InvalidDataException("PSB object nesting is too deep.");
             byte kind = data[offset];
-            return kind switch
+            Node node = kind switch
             {
                 0x00 or 0x01 or 0x02 or 0x03 => new ScalarNode(),
                 0x04 => new NumberNode(data, offset, kind, 0),
@@ -648,6 +728,8 @@ public sealed partial class PsbProcessor
                 >= 0x22 and <= 0x25 => new ResourceNode(checked((int)ReadCompact(data.AsSpan(offset + 1, kind - 0x21))), true),
                 _ => throw new InvalidDataException($"Unsupported PSB value type 0x{kind:X2}.")
             };
+            node.Offset = offset;
+            return node;
         }
 
         private StringNode CreateStringNode(int index, int indexOffset, int indexWidth)
@@ -675,7 +757,7 @@ public sealed partial class PsbProcessor
             Dictionary<string, Node> values = [];
             for (int index = 0; index < offsets.Values.Length; index++)
                 values.Add(names[checked((int)nameIndexes.Values[index])], Parse(checked(baseOffset + (int)offsets.Values[index]), depth));
-            return new ObjectNode(values);
+            return new ObjectNode(values) { NameIndexes = nameIndexes.Values };
         }
     }
 

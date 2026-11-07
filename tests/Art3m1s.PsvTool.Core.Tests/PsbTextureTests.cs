@@ -112,6 +112,11 @@ internal static class PsbFixture
 
     public static byte[] CreateWithEncodedResources(ushort version, bool compact,
         Func<int, int, int, (string Type, byte[] Pixels)> encode, params (int Width, int Height)[] sizes)
+        => CreateWithCoordinates(version, compact, encode, [100, 40, 0], sizes);
+
+    public static byte[] CreateWithCoordinates(ushort version, bool compact,
+        Func<int, int, int, (string Type, byte[] Pixels)> encode, object[] coordinates,
+        params (int Width, int Height)[] sizes)
     {
         byte[] Array(IEnumerable<uint> values) => EncodeArray(values, compact);
         Dictionary<string, object> sources = [];
@@ -165,7 +170,7 @@ internal static class PsbFixture
                             ["layer"] = new object[] {
               new Dictionary<string, object> { ["label"] = "part", ["type"] = 0, ["frameList"] = new object[] {
                 new Dictionary<string, object> { ["time"] = 0, ["type"] = 1, ["content"] = new Dictionary<string, object>
-                  { ["src"] = "atlas0", ["icon"] = "piece0", ["coord"] = new object[] { 100, 40, 0 }, ["opa"] = 255,
+                  { ["src"] = "atlas0", ["icon"] = "piece0", ["coord"] = coordinates, ["opa"] = 255,
                     ["bounds"] = new Dictionary<string, object> { ["left"] = -10, ["top"] = -20, ["right"] = 50, ["bottom"] = 80 } } } } } }
                         }
                     }
@@ -224,7 +229,11 @@ internal static class PsbFixture
                     uint itemOffset = 0; List<uint> itemOffsets = [];
                     foreach (byte[] item in items) { itemOffsets.Add(itemOffset); itemOffset += (uint)item.Length; }
                     stream.Write(Array(itemOffsets)); foreach (byte[] item in items) stream.Write(item); break;
-                case int n: stream.WriteByte(0x08); Write32(stream, (uint)n); break;
+                case int n:
+                    if (compact && n >= -128 && n <= 127) { stream.WriteByte(0x05); stream.WriteByte(unchecked((byte)n)); }
+                    else { stream.WriteByte(0x08); Write32(stream, unchecked((uint)n)); }
+                    break;
+                case float n: stream.WriteByte(0x1e); Write32(stream, BitConverter.SingleToUInt32Bits(n)); break;
                 default: throw new InvalidOperationException();
             }
             return stream.ToArray();
