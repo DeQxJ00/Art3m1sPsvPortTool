@@ -46,6 +46,7 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
             ".tbl" or ".ipt" or ".ast" or ".lua" => ScaleScript(source, ratio, extension, preservedExpressions, runtimeScaledCoordinates),
             _ => encoded.Text
         };
+        if (extension == ".lua") output = HideBackgroundPreloadCopy(output);
         if (!ReferenceEquals(output, encoded.Text) && output != encoded.Text)
             await File.WriteAllBytesAsync(path, encoded.Encode(output), cancellationToken);
         return preservedExpressions.Distinct().Order().ToArray();

@@ -6,6 +6,38 @@ namespace Art3m1s.PsvTool.Core.Tests;
 
 public sealed class TextScalingTests : IDisposable
 {
+    private const string PreloadCopy = "if not param[\"prvline\"] then if game.os ~= \"vita\" then e:tag{\"lyc\",id=(\"0.\"..id..\".0\"),file=(p.path..file)} end end lyc2{id=(id..\".0\"),file=(p.path..file),eq=(true)}";
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(.5)]
+    public async Task HidesOnlyGuardedBackgroundPreloadCopy(double ratio)
+    {
+        string result = await Convert(PreloadCopy, ".lua", ratio);
+        Assert.Contains("e:tag{\"lyprop\",id=(\"0.\"..id..\".0\"),visible=\"0\"}", result);
+        Assert.Contains("lyc2{id=(id..\".0\"),file=(p.path..file),eq=(true)}", result);
+        Assert.Equal(result, await Convert(result, ".lua", 1));
+    }
+
+    [Theory]
+    [InlineData("prvline", "other")]
+    [InlineData("eq=(true)", "eq=(false)")]
+    [InlineData("lyc2", "otherCreate")]
+    public async Task LeavesUnrecognizedBackgroundCopiesUnchanged(string from, string to)
+    {
+        string source = PreloadCopy.Replace(from, to);
+        Assert.Equal(source, await Convert(source, ".lua", 1));
+    }
+
+    [Fact]
+    public async Task BackgroundPreloadMatchingIgnoresCommentsAndQuotedExamples()
+    {
+        string source = "-- " + PreloadCopy + "\nlocal example=[=[" + PreloadCopy + "]=]";
+        Assert.Equal(source, await Convert(source, ".lua", 1));
+        string spaced = PreloadCopy.Replace("e:tag", "e -- comment\n : tag").Replace('"', '\'');
+        Assert.Contains("visible=\"0\"", await Convert(spaced, ".lua", 1));
+    }
+
     [Theory]
     [InlineData("config={panel_left=100}; function draw(panel_left) e:tag{left=panel_left} end")]
     [InlineData("local panel_left=100; function draw(panel_left) e:tag{left=panel_left} end")]
