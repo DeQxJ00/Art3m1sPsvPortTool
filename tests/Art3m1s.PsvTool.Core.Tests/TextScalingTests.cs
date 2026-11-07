@@ -6,6 +6,88 @@ namespace Art3m1s.PsvTool.Core.Tests;
 
 public sealed class TextScalingTests : IDisposable
 {
+    [Theory]
+    [InlineData("config={panel_left=100}; function draw(panel_left) e:tag{left=panel_left} end")]
+    [InlineData("local panel_left=100; function draw(panel_left) e:tag{left=panel_left} end")]
+    [InlineData("function setup() local panel_left=100 end; function draw() e:tag{left=panel_left} end")]
+    [InlineData("if ready then local panel_left=100 end; e:tag{left=panel_left}")]
+    [InlineData("local panel_left=100; panel_left,other=get_scaled_left(),0; e:tag{left=panel_left}")]
+    [InlineData("local panel_left=100; for panel_left=1,10 do e:tag{left=panel_left} end")]
+    public async Task LuaPixelAliasDoesNotInferOtherBindings(string source)
+    {
+        Assert.Equal(source, await Convert(source, ".lua", .5));
+    }
+
+    [Fact]
+    public async Task LuaPixelAliasesScaleAtUseWithoutChangingSharedLocals()
+    {
+        const string source = "local log_left=505; local log_width=1920; e:tag{\"font\",left=log_left,width=log_width,size=font_size}; e:tag{\"lyprop\",top=(top-3+80)}";
+        string result = await Convert(source, ".lua", .5);
+        Assert.Contains("local log_left=505", result);
+        Assert.Contains("left=(log_left*0.5)", result);
+        Assert.Contains("width=(log_width*0.5)", result);
+        Assert.Contains("size=font_size", result);
+        Assert.Contains("top=(top-1+40)", result);
+    }
+
+    [Fact]
+    public async Task ChatLayoutScalesPixelSlotsButPreservesIdsModesAndTiming()
+    {
+        const string source = "csv={line={base={fade=200,scroll={40,100}},line={pos={80,40},area={400,200,320,480,24},bg={0,\"back\",400,-40},front={5,\"frame\",360,-120},title={6,\"font\",\"font\"},line01pa={\"bubble\",\"icon\",0,0,8,8,\"arrow\",\"top\",-16,4,24},person={1,\"none\",40,-40,\"icon\",-60,-8}}},other={area={400,200,320,480,24}}}";
+        string result = await Convert(source, ".tbl");
+        Assert.Contains("scroll={30,100}", result);
+        Assert.Contains("pos={60,30}", result);
+        Assert.Contains("area={300,150,240,360,18}", result);
+        Assert.Contains("bg={0,\"back\",300,-30}", result);
+        Assert.Contains("front={5,\"frame\",270,-90}", result);
+        Assert.Contains("title={6,\"font\",\"font\"}", result);
+        Assert.Contains("line01pa={\"bubble\",\"icon\",0,0,6,6,\"arrow\",\"top\",-12,3,18}", result);
+        Assert.Contains("person={1,\"none\",30,-30,\"icon\",-45,-6}", result);
+        Assert.Contains("other={area={400,200,320,480,24}}", result);
+    }
+    [Fact]
+    public async Task LuaLayoutTablesScaleGeometryWithoutChangingControlValues()
+    {
+        const string source = "init={device_resolution_w=1920,device_resolution_h=1080,mw_pos=\"0,728\",save_date=\"340,227,331,100,42,ffffff,000000,000000,right,0\",mw_time=250,select_pos=\"338,171,1261,169,160,select\"};csv={fg={unit={pose={near={x=0,y=30,fx=286,fy=178}}}},fgpos={center={35,-412,20,0}},bg={room={lx=-960,ly=-540}},ui_title={button={x=10,y=20,w=317,h=51}},config_text={label={70,155,240,70,\"other\",\"text\"}}}";
+        string result = await Convert(source, ".lua", .5);
+        Assert.Contains("device_resolution_w=960,device_resolution_h=540", result);
+        Assert.Contains("mw_pos=\"0,364\"", result);
+        Assert.Contains("save_date=\"170,113,165,50,21,ffffff,000000,000000,right,0\"", result);
+        Assert.Contains("mw_time=250", result);
+        Assert.Contains("select_pos=\"169,85,630,84,80,select\"", result);
+        Assert.Contains("fx=143,fy=89", result);
+        Assert.Contains("center={35,-206,10,0}", result);
+        Assert.Contains("lx=-480,ly=-270", result);
+        Assert.Contains("w=158,h=25", result);
+        Assert.Contains("label={35,77,120,35,\"other\",\"text\"}", result);
+    }
+
+    [Fact]
+    public async Task LuaFontTableScalesSizesButPreservesNativeVariantAndColors()
+    {
+        string result=await Convert("fontsize_table={{small=16,medium=40,name=30,sample=24}};fontsize_table_psv={{medium=20}};local font={[1]=\"font\",size=40,rubysize=14,color=16777215,speed=30}", ".lua", .5);
+        Assert.Contains("small=8,medium=20,name=15,sample=12",result);
+        Assert.Contains("fontsize_table_psv={{medium=20}}",result);
+        Assert.Contains("size=20,rubysize=7,color=16777215,speed=30",result);
+    }
+
+    [Fact]
+    public async Task NativeLuaLayoutIsNotRescaled()
+    {
+        const string source="init={game_os=\"vita\",device_resolution_w=960};csv={ui={button={x=80,y=20,w=100,h=30}}}";
+        Assert.Equal(source,await Convert(source,".lua",.5));
+    }
+
+    [Fact]
+    public async Task LuaLongStringCoordinatesPreserveTextAndTiming()
+    {
+        const string source="tags={{[1]=\"camera\",x=[[-80]],y=[=[-30]=],zoom=[[130]]},{[1]=\"ev\",locate=[[-100,140,200,-80]],speed=[[30000]]}};text=[[x=80, y=30]]";
+        string result=await Convert(source,".lua",.5);
+        Assert.Contains("x=[[-40]],y=[=[-15]=],zoom=[[130]]",result);
+        Assert.Contains("locate=[[-50,70,100,-40]],speed=[[30000]]",result);
+        Assert.Contains("text=[[x=80, y=30]]",result);
+    }
+
     private readonly string root = Path.Combine(Path.GetTempPath(), "text-scaling-" + Guid.NewGuid().ToString("N"));
     private async Task<string> Convert(string text, string extension = ".lua", double ratio = .75)
     {

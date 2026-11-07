@@ -22,6 +22,23 @@ public sealed partial class ArtemisTextProcessor
             ".ast" => AstKeys,
             _ => LuaKeys
         };
+        bool luaLayout = extension == ".lua" && tokens.Any(t => KeyName(t) == "device_resolution_w")
+            && tokens.Any(t => t.Text == "csv");
+        if (luaLayout)
+        {
+            // A native platform table already describes its own image set.
+            // Do not apply the desktop conversion ratio to it a second time.
+            for (int n=0;n<tokens.Count && tokens[n].Text!="csv";n++)
+            {
+                if(KeyName(tokens[n])!="game_os")continue;
+                int eq=n+1;if(eq<tokens.Count && tokens[eq].Text=="]")eq++;
+                if(eq+1<tokens.Count && tokens[eq].Text=="=" && tokens[eq+1].Kind=='s'
+                    && KeyName(tokens[eq+1])=="vita")return text;
+            }
+        }
+        if (luaLayout) keys = [.. keys, "w", "h", "fx", "fy", "lx", "ly",
+            "device_resolution_w", "device_resolution_h", "target_resolution_w", "target_resolution_h",
+            "mw_scroll", "backlog_height"];
         bool[] vita = VitaBranches(tokens);
         Stack<string> tables = new();
         Stack<bool> logicalTables = new();
@@ -32,8 +49,13 @@ public sealed partial class ArtemisTextProcessor
             if (t == "}") { if (tables.Count > 0) tables.Pop(); if (logicalTables.Count > 0) logicalTables.Pop(); continue; }
             if (t == "{")
             {
-                string owner = i >= 2 && tokens[i - 1].Text == "=" ? KeyName(tokens[i - 2]) : "";
+                string owner = i >= 2 && tokens[i - 1].Text == "="
+                    ? KeyName(tokens[i - (tokens[i - 2].Text == "]" ? 3 : 2)]) : "";
+                string parent = tables.TryPeek(out string? parentName) ? parentName : "";
+                if (luaLayout && !vita[i] && parent is "fgpos" or "config_text")
+                    ScaleLayoutTuple(i, parent);
                 bool emote = tables.Contains("emote");
+                bool chatLayout = tables.Contains("line");
                 tables.Push(owner);
                 logicalTables.Push(runtimeScaledCoordinates && extension == ".ast" && i+1<tokens.Count &&
                     tokens[i+1].Kind=='s' && RuntimeScaledImageCommands.Contains(KeyName(tokens[i+1])));
@@ -41,6 +63,7 @@ public sealed partial class ArtemisTextProcessor
                 {
                     if (TblListKeys.Contains(owner) && !(runtimeScaledCoordinates && owner == "game_scale")) ScaleTuple(i, false);
                     else if (emote) ScaleTuple(i, true);
+                    else if (chatLayout) ScaleChatTuple(i, owner);
                 }
                 continue;
             }
@@ -66,7 +89,13 @@ public sealed partial class ArtemisTextProcessor
             int eq = i + 1;
             bool bracketKey = token.Kind == 's' && At(i - 1) == "[" && At(i + 1) == "]";
             if (bracketKey) eq++;
-            if (!keys.Contains(key) || At(eq) != "=") continue;
+            if (luaLayout && tables.Count == 1 && tables.Peek() == "init" && At(eq) == "="
+                && eq+1 < tokens.Count && tokens[eq+1].Kind == 's')
+                ScaleLayoutString(tokens[eq+1], key);
+            bool fontSizeTable = extension == ".lua" && tables.Contains("fontsize_table");
+            bool fontMetric = extension == ".lua" && tables.Contains("font") &&
+                key is "size" or "rubysize" or "rubykerning" or "kerning" or "spacetop" or "spacemiddle" or "spacebottom";
+            if (!(keys.Contains(key) || fontSizeTable || fontMetric || extension == ".lua" && key == "locate") || At(eq) != "=") continue;
             int start = eq + 1;
             // A bare x/y local could be a flag, direction or progress, not a coordinate.
             bool field = tables.Count > 0 && (At(i - 1) is "{" or "," or ";" ||
@@ -84,13 +113,28 @@ public sealed partial class ArtemisTextProcessor
                     if (At(end) != ")") return false;
                 return Boundary(end);
             }
-            if (start < tokens.Count && tokens[start].Kind == 's' && EndOfValue(start + 1))
+            if (start < tokens.Count && tokens[start].Kind is ('s' or 'l') && EndOfValue(start + 1))
             {
                 ScaleString(tokens[start], clip, size);
             }
             else if (TryNumber(start, out end, out number) && EndOfValue(end))
             {
                 AddNumber(start, end, number, size);
+            }
+            else if (extension == ".lua" && key is "left" or "top" or "width" or "height"
+                && start < tokens.Count && tokens[start].Kind == 'i'
+                && tokens[start].Text.EndsWith("_" + key, StringComparison.Ordinal)
+                && EndOfValue(start + 1) && IsLiteralPixelAlias(tokens[start].Text, start))
+            {
+                // Scale a literal pixel alias at its geometry use; its shared
+                // declaration may also be consumed by non-layout code.
+                ScriptToken alias = tokens[start];
+                edits.Add(new(alias.Start, alias.End, "(" + alias.Text + "*" + ratio.ToString("G", CultureInfo.InvariantCulture) + ")"));
+            }
+            else if (extension == ".lua" && key is "left" or "top"
+                && start < tokens.Count && tokens[start].Text == key
+                && TryScaleAxisOffsets(start + 1, EndOfValue))
+            {
             }
             else if (start < tokens.Count)
             {
@@ -104,6 +148,68 @@ public sealed partial class ArtemisTextProcessor
             result.Remove(edit.Start, edit.End - edit.Start).Insert(edit.Start, edit.Text);
         return result.ToString();
 
+        bool IsLiteralPixelAlias(string name, int use)
+        {
+            int declaration = -1;
+            for (int n = 0; n < tokens.Count; n++)
+            {
+                if (tokens[n].Text != name) continue;
+                // Ambiguous multiple assignments and loop bindings require full binding analysis.
+                if (At(n + 1) == "," && At(n - 1) != "=" || At(n - 1) == "for") return false;
+                if (At(n - 1) == "local")
+                {
+                    if (declaration >= 0) return false; // shadowed binding
+                    declaration = n;
+                }
+                if (At(n + 1) != "=") continue;
+                // A same-named table field is not evidence about this local.
+                if (At(n - 1) is "." or "{" or "," ||
+                    !TryNumber(n + 2, out int end, out _) || !Boundary(end)) return false;
+            }
+            if (declaration < 0 || declaration >= use) return false;
+            // Captures and parameters need a full binding resolver. Preserve
+            // them rather than infer units from another function's local.
+            if (tokens.Skip(declaration).Take(use - declaration).Any(t => t.Kind == 'i' && t.Text == "function")) return false;
+            int[] declaredScope = BlockScope(declaration);
+            int[] useScope = BlockScope(use);
+            return declaredScope.Length <= useScope.Length && declaredScope.SequenceEqual(useScope.Take(declaredScope.Length));
+        }
+        int[] BlockScope(int stop)
+        {
+            List<(int Id, string Kind, bool AwaitDo)> scope = [];
+            for (int n = 0; n < stop; n++)
+            {
+                if (tokens[n].Kind != 'i') continue;
+                string word = tokens[n].Text;
+                if (word is "function" or "if" or "repeat" or "for" or "while")
+                    scope.Add((n, word, word is "for" or "while"));
+                else if (word == "do")
+                {
+                    if (scope.Count > 0 && scope[^1].AwaitDo)
+                        scope[^1] = (scope[^1].Id, scope[^1].Kind, false);
+                    else scope.Add((n, word, false));
+                }
+                else if (word is "else" or "elseif" && scope.Count > 0 && scope[^1].Kind == "if")
+                    scope[^1] = (n, "if", false);
+                else if (word is "end" or "until" && scope.Count > 0)
+                    scope.RemoveAt(scope.Count - 1);
+            }
+            return scope.Select(s => s.Id).ToArray();
+        }
+        bool TryScaleAxisOffsets(int index, Func<int, bool> endOfValue)
+        {
+            List<(int Start, int End, double Value)> offsets = [];
+            while (At(index) is "+" or "-")
+            {
+                int start = index + 1;
+                if (!TryNumber(start, out int end, out double value)) return false;
+                offsets.Add((start, end, value));
+                index = end;
+            }
+            if (offsets.Count == 0 || !endOfValue(index)) return false;
+            foreach (var offset in offsets) AddNumber(offset.Start, offset.End, offset.Value, false);
+            return true;
+        }
         string At(int index) => index >= 0 && index < tokens.Count ? tokens[index].Text : "";
         bool Boundary(int index)
         {
@@ -143,7 +249,8 @@ public sealed partial class ArtemisTextProcessor
         }
         void ScaleString(ScriptToken token, bool rectangle, bool size)
         {
-            string value = token.Text[1..^1];
+            int delimiter = StringDelimiterLength(token);
+            string value = KeyName(token);
             if (!Regex.IsMatch(value, @"^\s*-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*,\s*-?(?:\d+(?:\.\d+)?|\.\d+))*\s*$", RegexOptions.CultureInvariant)) return;
             MatchCollection numbers = Regex.Matches(value, @"-?(?:\d+(?:\.\d+)?|\.\d+)", RegexOptions.CultureInvariant);
             if (rectangle && numbers.Count != 4) return;
@@ -162,8 +269,79 @@ public sealed partial class ArtemisTextProcessor
                         preservedExpressions.Add(1 + text.AsSpan(0, token.Start).Count('\n'));
                     continue;
                 }
-                edits.Add(new(token.Start + 1 + m.Index, token.Start + 1 + m.Index + length,
+                edits.Add(new(token.Start + delimiter + m.Index, token.Start + delimiter + m.Index + length,
                     Scaled(number, size || rectangle && n >= 2)));
+            }
+        }
+        void ScaleLayoutString(ScriptToken value, string key)
+        {
+            int count = key switch
+            {
+                "mw_pos" or "mw_name_pos" or "glyph_pos" or "glyph_size" or "face_pos" or "save_new" or "load_new" => 2,
+                "save_ss" or "save_ss_l" => 4,
+                "save_date" or "save_text" or "save_chap" or "save_slot" or "save_date2" or
+                "load_date" or "load_text" or "load_chap" or "load_slot" or "load_date2" or
+                "select_pos" or "select_pos2" or "bgm_title" or "event_title" => 5,
+                _ => 0
+            };
+            string[] parts = value.Text[1..^1].Split(',');
+            if (count == 0 || parts.Length < count) return;
+            double[] numbers = new double[count];
+            for (int n=0;n<count;n++)
+                if (!double.TryParse(parts[n], NumberStyles.Float, CultureInfo.InvariantCulture, out numbers[n]) || !double.IsFinite(numbers[n])) return;
+            for (int n=0;n<count;n++) parts[n]=Scaled(numbers[n], n>=2);
+            edits.Add(new(value.Start,value.End,value.Text[0]+string.Join(",",parts)+value.Text[^1]));
+        }
+        void ScaleLayoutTuple(int open, string parent)
+        {
+            int at=open+1;
+            const int count=4;
+            List<(int Start,int End,double Value)> fields=[];
+            for(int n=0;n<count;n++)
+            {
+                int start=at;
+                if(!TryNumber(at,out int end,out double value))return;
+                fields.Add((start,end,value));at=end;
+                if(n<count-1) { if(At(at)!=",")return; at++; }
+            }
+            for(int n=0;n<count;n++)
+                if(parent!="fgpos" || n is 1 or 2) AddNumber(fields[n].Start,fields[n].End,fields[n].Value,false);
+        }
+        void ScaleChatTuple(int open, string owner)
+        {
+            // The chat layout schema mixes pixel values with layer IDs, assets
+            // and durations. Scale only known pixel slots, never entire tuples.
+            List<(int Start, int End, double? Value)> values = [];
+            int at = open + 1;
+            while (at < tokens.Count && At(at) != "}")
+            {
+                int start = at;
+                double? value = null;
+                if (TryNumber(at, out int end, out double number)) { at = end; value = number; }
+                else if (tokens[at].Kind == 's') at++;
+                else return;
+                values.Add((start, at, value));
+                if (At(at) == ",") at++;
+                else if (At(at) != "}") return;
+            }
+            int[] slots = owner switch
+            {
+                "pos" when values.Count == 2 => [0,1],
+                "area" when values.Count == 5 => [0,1,2,3,4],
+                "scroll" when values.Count == 2 => [0],
+                "stamp" when values.Count == 3 => [1,2],
+                "bg" or "front" when values.Count == 4 => [2,3],
+                "title" when values.Count == 5 && KeyName(tokens[values[4].Start]) == "image" => [2,3],
+                _ when values.Count == 11 && tokens[values[0].Start].Kind == 's'
+                    && tokens[values[1].Start].Kind == 's' => [2,3,4,5,8,9,10],
+                _ when values.Count == 7 && values[0].Value.HasValue
+                    && tokens[values[1].Start].Kind == 's' && tokens[values[4].Start].Kind == 's' => [2,3,5,6],
+                _ => []
+            };
+            foreach (int slot in slots)
+            {
+                var v = values[slot];
+                if (v.Value is double number) AddNumber(v.Start, v.End, number, false);
             }
         }
         void ScaleTuple(int open, bool pose)
@@ -185,7 +363,9 @@ public sealed partial class ArtemisTextProcessor
         }
     }
 
-    private static string KeyName(ScriptToken token) => token.Kind == 's' ? token.Text[1..^1] : token.Text;
+    private static int StringDelimiterLength(ScriptToken token) => token.Kind == 'l' ? token.Text.IndexOf('[',1)+1 : 1;
+    private static string KeyName(ScriptToken token) => token.Kind is 's' or 'l'
+        ? token.Text[StringDelimiterLength(token)..^StringDelimiterLength(token)] : token.Text;
 
     private static int AsciiNumericPrefixLength(string value)
     {
