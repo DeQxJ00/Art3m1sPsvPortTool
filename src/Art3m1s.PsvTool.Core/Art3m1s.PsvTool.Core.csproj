@@ -5,6 +5,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="BCnEncoder.Net" />
     <PackageReference Include="PVRTexLib.NET" />
     <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>

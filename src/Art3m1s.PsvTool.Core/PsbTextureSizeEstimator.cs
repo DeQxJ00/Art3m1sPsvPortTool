@@ -58,12 +58,13 @@ public static class PsbTextureSizeEstimator
     }
 
     private static bool Supported(string type) => type.Equals("RGBA8", StringComparison.OrdinalIgnoreCase) ||
-        PsbTextureFormats.ParseType(type).HasValue || PsbAstcFormat.ParseType(type).HasValue;
+        type.Equals("BC7", StringComparison.OrdinalIgnoreCase) || PsbTextureFormats.ParseType(type).HasValue || PsbAstcFormat.ParseType(type).HasValue;
 
     public static long PayloadBytes(string type, int width, int height)
     {
         if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
         if (type.Equals("RGBA8", StringComparison.OrdinalIgnoreCase)) return checked((long)width * height * 4);
+        if (type.Equals("BC7", StringComparison.OrdinalIgnoreCase)) return checked(((long)width + 3) / 4 * (((long)height + 3) / 4) * 16);
         if (PsbAstcFormat.ParseType(type) is { } astc) return astc.PayloadBytes(width, height);
         return PsbTextureFormats.ParseType(type) switch
         {

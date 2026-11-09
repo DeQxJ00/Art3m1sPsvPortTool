@@ -121,9 +121,10 @@ public sealed partial class PsbProcessor
             if (sourceNode is not ObjectNode source || source.GetObject("texture") is not { } texture) continue;
             string format = (texture.Get("type") as StringNode)?.OriginalValue ?? "unknown";
             PsbTextureFormat? sourceFormat = PsbTextureFormats.ParseType(format);
+            bool sourceBc7 = format.Equals("BC7", StringComparison.OrdinalIgnoreCase);
             PsbAstcFormat? sourceAstc = PsbAstcFormat.ParseType(format);
             PsbDxt5Layout sourceLayout = PsbTextureFormats.ParseDxt5Layout(format);
-            if (sourceFormat is null && sourceAstc is null && !format.Equals("RGBA8", StringComparison.OrdinalIgnoreCase))
+            if (sourceFormat is null && sourceAstc is null && !sourceBc7 && !format.Equals("RGBA8", StringComparison.OrdinalIgnoreCase))
             {
                 unsupportedFormats.Add(format);
                 continue;
@@ -166,6 +167,7 @@ public sealed partial class PsbProcessor
                         PsbTextureFormat.Dxt5 => DecodeDxt5(compressed, width, height),
                         PsbTextureFormat.Pvrtc2_4 or PsbTextureFormat.Pvrtc2_2 =>
                             PvrTextureCodec.Decode(compressed, width, height, PsbTextureFormats.NativeFormat(sourceFormat.Value)),
+                        _ when sourceBc7 => Bc7TextureCodec.Decode(compressed, width, height),
                         _ when sourceAstc is { } astc => PvrTextureCodec.DecodeAstc(compressed, width, height, astc),
                         _ => DecodeBgra8(compressed, width, height)
                     };
@@ -188,6 +190,7 @@ public sealed partial class PsbProcessor
                         PsbTextureFormat.Pvrtc2_4 or PsbTextureFormat.Pvrtc2_2 =>
                             PvrTextureCodec.Encode(rgba, targetWidth, targetHeight,
                                 NativeTextureFormats.Info(PsbTextureFormats.NativeFormat(targetFormat.Value))),
+                        _ when sourceBc7 => Bc7TextureCodec.Encode(rgba, targetWidth, targetHeight),
                         _ when sourceAstc is { } astc => PvrTextureCodec.EncodeAstc(rgba, targetWidth, targetHeight, astc),
                         _ => EncodeBgra8(rgba, targetWidth, targetHeight)
                     };

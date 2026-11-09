@@ -44,6 +44,10 @@ Save-PinnedLicense 'https://raw.githubusercontent.com/YingFengTingYu/PVRTexLib.N
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../packaging/licenses/PowerVR-Tools-EULA.txt') -Destination (Join-Path $licensePath 'PowerVR-Tools-EULA.txt') -Force
 'This product includes components of the PowerVR Tools Software from Imagination Technologies Limited. PVRTexLib is distributed under its own PowerVR Tools EULA, not under the application GPL license.' | Set-Content (Join-Path $licensePath 'PowerVR-NOTICE.txt')
 
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../packaging/licenses/BCnEncoder.NET-MIT.txt') -Destination (Join-Path $licensePath 'BCnEncoder.NET-MIT.txt') -Force
+Copy-PackageLicense 'communitytoolkit.highperformance' '8.4.0' 'License.md' 'CommunityToolkit.HighPerformance-LICENSE.txt'
+Copy-PackageLicense 'communitytoolkit.highperformance' '8.4.0' 'ThirdPartyNotices.txt' 'CommunityToolkit.HighPerformance-NOTICES.txt'
+
 Copy-PackageLicense 'sixlabors.imagesharp' '3.1.12' 'LICENSE' 'ImageSharp-LICENSE.txt'
 Copy-PackageLicense 'skiasharp' '3.119.4' 'LICENSE.txt' 'SkiaSharp-MIT.txt'
 Copy-PackageLicense 'harfbuzzsharp' '8.3.1.3' 'LICENSE.txt' 'HarfBuzzSharp-MIT.txt'
