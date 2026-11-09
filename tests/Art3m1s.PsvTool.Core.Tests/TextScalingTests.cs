@@ -6,6 +6,27 @@ namespace Art3m1s.PsvTool.Core.Tests;
 
 public sealed class TextScalingTests : IDisposable
 {
+    [Fact]
+    public async Task LegacyCsvLayoutScalesAtlasAndMessageGeometryTogether()
+    {
+        const string source = "init={mw_path=\"image/main/\",mw_pos=\"0,500,1280,720\",backlog_pos=\"340,80,848,560\",mw_time=250,glyph_size=\"28,28,2,10\"}; csv={ui={button={file=\"atlas\",x=456,y=314,w=368,h=52,cx=\"0\",cy=\"468\",cw=\"368\",ch=\"52\",id=2.4,p1=100}}}";
+        string result = await Convert(source, ".lua", .75);
+        Assert.Contains("mw_pos=\"0,375,960,540\"", result);
+        Assert.Contains("backlog_pos=\"255,60,636,420\"", result);
+        Assert.Contains("w=276,h=39,cx=\"0\",cy=\"351\",cw=\"276\",ch=\"39\"", result);
+        Assert.Contains("mw_time=250", result);
+        Assert.Contains("glyph_size=\"21,21,2,10\"", result);
+        Assert.Contains("id=2.4,p1=100", result);
+    }
+
+    [Theory]
+    [InlineData("init={mw_pos=\"0,500,1280,720\"}; csv={data={w=368,h=52,cw=\"368\"}}")]
+    [InlineData("init={game_os=\"vita\",mw_path=\"image/main/\",mw_pos=\"0,500,1280,720\"}; csv={data={w=368,h=52,cw=\"368\"}}")]
+    public async Task LegacyLayoutRequiresSchemaAndPreservesNativePlatform(string source)
+    {
+        Assert.Equal(source, await Convert(source, ".lua", .75));
+    }
+
     private const string PreloadCopy = "if not param[\"prvline\"] then if game.os ~= \"vita\" then e:tag{\"lyc\",id=(\"0.\"..id..\".0\"),file=(p.path..file)} end end lyc2{id=(id..\".0\"),file=(p.path..file),eq=(true)}";
 
     [Theory]

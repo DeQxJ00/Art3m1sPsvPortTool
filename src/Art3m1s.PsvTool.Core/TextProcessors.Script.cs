@@ -22,8 +22,11 @@ public sealed partial class ArtemisTextProcessor
             ".ast" => AstKeys,
             _ => LuaKeys
         };
-        bool luaLayout = extension == ".lua" && tokens.Any(t => KeyName(t) == "device_resolution_w")
-            && tokens.Any(t => t.Text == "csv");
+        // Older generated layout tables have init/mw_path/mw_pos but no device resolution field.
+        bool legacyLayout = tokens.Any(t => KeyName(t) == "mw_path")
+            && tokens.Any(t => KeyName(t) == "mw_pos") && tokens.Any(t => t.Text == "init");
+        bool luaLayout = extension == ".lua" && tokens.Any(t => t.Text == "csv")
+            && (tokens.Any(t => KeyName(t) == "device_resolution_w") || legacyLayout);
         if (luaLayout)
         {
             // A native platform table already describes its own image set.
@@ -36,7 +39,7 @@ public sealed partial class ArtemisTextProcessor
                     && KeyName(tokens[eq+1])=="vita")return text;
             }
         }
-        if (luaLayout) keys = [.. keys, "w", "h", "fx", "fy", "lx", "ly",
+        if (luaLayout) keys = [.. keys, "w", "h", "cx", "cy", "cw", "ch", "fx", "fy", "lx", "ly",
             "device_resolution_w", "device_resolution_h", "target_resolution_w", "target_resolution_h",
             "mw_scroll", "backlog_height"];
         bool[] vita = VitaBranches(tokens);
@@ -277,14 +280,15 @@ public sealed partial class ArtemisTextProcessor
         {
             int count = key switch
             {
-                "mw_pos" or "mw_name_pos" or "glyph_pos" or "glyph_size" or "face_pos" or "save_new" or "load_new" => 2,
-                "save_ss" or "save_ss_l" => 4,
+                "mw_name_pos" or "glyph_pos" or "glyph_size" or "face_pos" or "save_new" or "load_new" => 2,
+                "mw_pos" or "backlog_pos" or "paddle_area" or "select_back2" or "save_ss" or "save_ss_l" => 4,
                 "save_date" or "save_text" or "save_chap" or "save_slot" or "save_date2" or
                 "load_date" or "load_text" or "load_chap" or "load_slot" or "load_date2" or
                 "select_pos" or "select_pos2" or "bgm_title" or "event_title" => 5,
                 _ => 0
             };
             string[] parts = value.Text[1..^1].Split(',');
+            if (key == "mw_pos" && parts.Length == 2) count = 2;
             if (count == 0 || parts.Length < count) return;
             double[] numbers = new double[count];
             for (int n=0;n<count;n++)
