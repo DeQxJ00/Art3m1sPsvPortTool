@@ -27,6 +27,21 @@ public sealed class TextScalingTests : IDisposable
         Assert.Equal(source, await Convert(source, ".lua", .75));
     }
 
+    [Theory]
+    [InlineData("endlua")]
+    [InlineData("/lua")]
+    public async Task EmbeddedLuaScalesFontTablesAndModeOverrides(string closing)
+    {
+        const string source = "[lua]\nlocal font={[1]=\"font\",left=316,top=560,width=720,height=160,size=45,rubysize=12}; font.left=336; font.top=628; font.spacemiddle=-4; local name={[1]=\"font\",top=527,size=26}; local other={size=100}; other.top=90; local example=\"[endlua]\"\n[endlua]\n[wait time=1000]";
+        string result = await Convert(source.Replace("\n[endlua]", "\n[" + closing + "]"), ".iet");
+        Assert.Contains("left=237,top=420,width=540,height=120,size=33,rubysize=9",result);
+        Assert.Contains("font.left=252; font.top=471; font.spacemiddle=-3",result);
+        Assert.Contains("top=395,size=19",result);
+        Assert.Contains("other.top=90",result);
+        Assert.Contains("other={size=100}",result);
+        Assert.Contains("[wait time=1000]",result);
+    }
+
     private const string PreloadCopy = "if not param[\"prvline\"] then if game.os ~= \"vita\" then e:tag{\"lyc\",id=(\"0.\"..id..\".0\"),file=(p.path..file)} end end lyc2{id=(id..\".0\"),file=(p.path..file),eq=(true)}";
 
     [Theory]

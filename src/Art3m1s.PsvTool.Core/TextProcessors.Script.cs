@@ -42,6 +42,12 @@ public sealed partial class ArtemisTextProcessor
         if (luaLayout) keys = [.. keys, "w", "h", "cx", "cy", "cw", "ch", "fx", "fy", "lx", "ly",
             "device_resolution_w", "device_resolution_h", "target_resolution_w", "target_resolution_h",
             "mw_scroll", "backlog_height"];
+        HashSet<string> fontTables = [];
+        for (int n = 0; n + 8 < tokens.Count; n++)
+            if (tokens[n].Kind == 'i' && tokens[n+1].Text == "=" && tokens[n+2].Text == "{"
+                && tokens[n+3].Text == "[" && tokens[n+4].Text == "1" && tokens[n+5].Text == "]"
+                && tokens[n+6].Text == "=" && KeyName(tokens[n+7]) == "font")
+                fontTables.Add(tokens[n].Text);
         bool[] vita = VitaBranches(tokens);
         Stack<string> tables = new();
         Stack<bool> logicalTables = new();
@@ -96,7 +102,8 @@ public sealed partial class ArtemisTextProcessor
                 && eq+1 < tokens.Count && tokens[eq+1].Kind == 's')
                 ScaleLayoutString(tokens[eq+1], key);
             bool fontSizeTable = extension == ".lua" && tables.Contains("fontsize_table");
-            bool fontMetric = extension == ".lua" && tables.Contains("font") &&
+            bool fontMember = extension == ".lua" && i >= 2 && At(i-1) == "." && fontTables.Contains(At(i-2));
+            bool fontMetric = extension == ".lua" && (tables.Contains("font") || tables.Any(fontTables.Contains) || fontMember) &&
                 key is "size" or "rubysize" or "rubykerning" or "kerning" or "spacetop" or "spacemiddle" or "spacebottom";
             if (!(keys.Contains(key) || fontSizeTable || fontMetric || extension == ".lua" && key == "locate") || At(eq) != "=") continue;
             int start = eq + 1;
@@ -105,7 +112,7 @@ public sealed partial class ArtemisTextProcessor
                 bracketKey && At(i - 2) is "{" or "," or ";");
             bool dimensionMember = key is "width" or "height" && At(i - 1) == ".";
             bool tableConfig = extension == ".tbl" && key is "game_width" or "game_height";
-            if (!field && !dimensionMember && !tableConfig) continue;
+            if (!field && !dimensionMember && !tableConfig && !fontMember) continue;
             bool size = key is "w" or "h" or "width" or "height" or "cw" or "ch" or "fw" or "fh" or "size" or "rubysize" or "game_width" or "game_height";
             bool clip = TblClipKeys.Contains(key);
             int parentheses = 0;

@@ -10,14 +10,28 @@ public sealed partial class ArtemisTextProcessor
     {
         StringBuilder result = new();
         bool lua = false;
+        StringBuilder luaBody = new();
+        int luaStartLine = 0;
         int lineNumber = 0;
         foreach (string line in SplitLines(text))
         {
             lineNumber++;
             string trimmed = line.TrimStart();
-            if (Regex.IsMatch(trimmed, @"^\[lua\s*\]", RegexOptions.IgnoreCase)) lua = true;
-            if (Regex.IsMatch(trimmed, @"^\[endlua\s*\]", RegexOptions.IgnoreCase)) lua = false;
-            if (lua || !trimmed.StartsWith('[')) { result.Append(line); continue; }
+            if (!lua && Regex.IsMatch(trimmed, @"^\[lua\s*\]\s*$", RegexOptions.IgnoreCase))
+            { lua = true; luaStartLine = lineNumber; result.Append(line); continue; }
+            if (lua)
+            {
+                if (Regex.IsMatch(trimmed, @"^\[(?:endlua|/lua)\s*\]\s*$", RegexOptions.IgnoreCase))
+                {
+                    List<int> diagnostics = [];
+                    result.Append(ScaleScript(luaBody.ToString(), ratio, ".lua", diagnostics));
+                    preserved.AddRange(diagnostics.Select(n => n + luaStartLine));
+                    luaBody.Clear(); lua = false; result.Append(line);
+                }
+                else luaBody.Append(line);
+                continue;
+            }
+            if (!trimmed.StartsWith('[')) { result.Append(line); continue; }
 
             // Match complete tags, respecting quoted closing brackets. Only
             // engine geometry commands have known pixel units; macros do not.
@@ -76,6 +90,7 @@ public sealed partial class ArtemisTextProcessor
                 });
             result.Append(converted).Append(line.AsSpan(comment));
         }
+        result.Append(luaBody); // Preserve an unterminated block verbatim.
         return result.ToString();
     }
 }
