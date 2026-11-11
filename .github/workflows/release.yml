@@ -37,7 +37,7 @@ jobs:
           - os: macos-15-intel
             rid: osx-x64
             extension: ''
-          - os: macos-14
+          - os: macos-15
             rid: osx-arm64
             extension: ''
     runs-on: ${{ matrix.os }}
@@ -67,11 +67,10 @@ jobs:
         with:
           path: ffmpeg-install
           key: ffmpeg-${{ env.FFMPEG_VERSION }}-gpl-full-${{ matrix.rid }}-v6
-      - shell: pwsh
+      - name: Download verified codec sources for build
+        shell: pwsh
         run: |
-          Invoke-WebRequest "https://ffmpeg.org/releases/ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -OutFile ffmpeg.tar.xz
-          $actual = (Get-FileHash ffmpeg.tar.xz -Algorithm SHA256).Hash
-          if ($actual -ne $env:FFMPEG_SOURCE_SHA256) { throw "FFmpeg source SHA-256 mismatch: $actual" }
+          ./scripts/download-ffmpeg-source.ps1 -Version $env:FFMPEG_VERSION -Sha256 $env:FFMPEG_SOURCE_SHA256 -OutputPath ffmpeg.tar.xz
           if ([OperatingSystem]::IsMacOS()) {
             Invoke-WebRequest "https://github.com/xiph/ogg/releases/download/v${env:OGG_VERSION}/libogg-${env:OGG_VERSION}.tar.xz" -OutFile libogg.tar.xz
             Invoke-WebRequest "https://github.com/xiph/theora/archive/${env:THEORA_COMMIT}.tar.gz" -OutFile libtheora.tar.gz
@@ -277,11 +276,11 @@ jobs:
   codec-sources:
     runs-on: ubuntu-latest
     steps:
-      - shell: pwsh
+      - uses: actions/checkout@v5
+      - name: Download verified codec sources for release
+        shell: pwsh
         run: |
-          Invoke-WebRequest "https://ffmpeg.org/releases/ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -OutFile "ffmpeg-${env:FFMPEG_VERSION}.tar.xz"
-          $actual = (Get-FileHash "ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -Algorithm SHA256).Hash
-          if ($actual -ne $env:FFMPEG_SOURCE_SHA256) { throw "FFmpeg source SHA-256 mismatch: $actual" }
+          ./scripts/download-ffmpeg-source.ps1 -Version $env:FFMPEG_VERSION -Sha256 $env:FFMPEG_SOURCE_SHA256 -OutputPath "ffmpeg-${env:FFMPEG_VERSION}.tar.xz"
           Invoke-WebRequest "https://github.com/xiph/ogg/releases/download/v${env:OGG_VERSION}/libogg-${env:OGG_VERSION}.tar.xz" -OutFile "libogg-${env:OGG_VERSION}.tar.xz"
           Invoke-WebRequest "https://github.com/xiph/theora/archive/${env:THEORA_COMMIT}.tar.gz" -OutFile "libtheora-1.2.0.tar.gz"
           Invoke-WebRequest "https://github.com/videolan/dav1d/archive/refs/tags/${env:DAV1D_VERSION}.tar.gz" -OutFile "dav1d-${env:DAV1D_VERSION}.tar.gz"
