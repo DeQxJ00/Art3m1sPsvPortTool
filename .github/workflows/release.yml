@@ -81,7 +81,7 @@ jobs:
             $x264Commit = (git -C x264-source rev-parse FETCH_HEAD).Trim()
             if ($x264Commit -ne $env:X264_COMMIT) { throw "x264 commit mismatch: $x264Commit" }
             git -C x264-source archive --format=tar.gz --prefix="x264-${env:X264_COMMIT}/" $x264Commit -o ../x264.tar.gz
-            Invoke-WebRequest "https://zlib.net/zlib-${env:ZLIB_VERSION}.tar.xz" -OutFile zlib.tar.xz
+            Invoke-WebRequest "https://github.com/madler/zlib/releases/download/v${env:ZLIB_VERSION}/zlib-${env:ZLIB_VERSION}.tar.xz" -OutFile zlib.tar.xz -TimeoutSec 60
             $sources = @{
               'libogg.tar.xz' = $env:OGG_SOURCE_SHA256
               'libtheora.tar.gz' = $env:THEORA_SOURCE_SHA256
@@ -290,7 +290,7 @@ jobs:
           $x264Commit = (git -C x264-source rev-parse FETCH_HEAD).Trim()
           if ($x264Commit -ne $env:X264_COMMIT) { throw "x264 commit mismatch: $x264Commit" }
           git -C x264-source archive --format=tar.gz --prefix="x264-${env:X264_COMMIT}/" $x264Commit -o "../x264-${env:X264_COMMIT}.tar.gz"
-          Invoke-WebRequest "https://zlib.net/zlib-${env:ZLIB_VERSION}.tar.xz" -OutFile "zlib-${env:ZLIB_VERSION}.tar.xz"
+          Invoke-WebRequest "https://github.com/madler/zlib/releases/download/v${env:ZLIB_VERSION}/zlib-${env:ZLIB_VERSION}.tar.xz" -OutFile "zlib-${env:ZLIB_VERSION}.tar.xz" -TimeoutSec 60
           $sources = @{
             "ffmpeg-${env:FFMPEG_VERSION}.tar.xz" = $env:FFMPEG_SOURCE_SHA256
             "libogg-${env:OGG_VERSION}.tar.xz" = $env:OGG_SOURCE_SHA256
