@@ -49,6 +49,35 @@ public sealed partial class ArtemisTextProcessor
                 && tokens[n+6].Text == "=" && KeyName(tokens[n+7]) == "font")
                 fontTables.Add(tokens[n].Text);
         bool[] vita = VitaBranches(tokens);
+        HashSet<int> clipLookupValues = [];
+        if (extension == ".lua")
+        {
+            for (int use = 0; use < tokens.Count; use++)
+            {
+                if (KeyName(tokens[use]) != "clip" || At(use+1) != "=") continue;
+                int value = use+2;
+                while (At(value) == "(") value++;
+                if (value >= tokens.Count || tokens[value].Kind != 'i' || At(value+1) != "[") continue;
+                string name = At(value);
+                int[] scope = BlockScope(use);
+                for (int declaration = use-1; declaration > 0; declaration--)
+                {
+                    if (At(declaration) != name || At(declaration+1) != "=" ||
+                        !BlockScope(declaration).SequenceEqual(scope)) continue;
+                    // Only a local literal lookup is proven to contain source pixels.
+                    if (At(declaration-1) != "local" || At(declaration+2) != "{") break;
+                    int depth = 1;
+                    for (int n = declaration+3; n < use && depth > 0; n++)
+                    {
+                        if (At(n) == "{") depth++;
+                        else if (At(n) == "}") depth--;
+                        else if (tokens[n].Kind == 's' && At(n-1) == "=" && !vita[n])
+                            clipLookupValues.Add(n);
+                    }
+                    break;
+                }
+            }
+        }
         Stack<string> tables = new();
         Stack<bool> logicalTables = new();
         for (int i = 0; i < tokens.Count; i++)
@@ -77,6 +106,24 @@ public sealed partial class ArtemisTextProcessor
                 continue;
             }
             if (vita[i] || logicalTables.TryPeek(out bool logical) && logical) continue;
+            if (clipLookupValues.Contains(i))
+            {
+                ScaleString(token, true, false);
+                continue;
+            }
+
+            // Centering uses a runtime texture width, already resized. Scale only
+            // the pixel center; the divisor and runtime offset keep their units.
+            if (extension == ".lua" && token.Kind == 'i' && At(i+1) == "="
+                && TryNumber(i+2, out int centerEnd, out double center)
+                && At(centerEnd) == "-" && At(centerEnd+1) == "e" && At(centerEnd+2) == ":"
+                && At(centerEnd+3) == "var" && At(centerEnd+4) == "("
+                && centerEnd+5 < tokens.Count && tokens[centerEnd+5].Kind == 's'
+                && KeyName(tokens[centerEnd+5]).EndsWith(".width", StringComparison.Ordinal)
+                && At(centerEnd+6) == ")" && At(centerEnd+7) == "/" && At(centerEnd+8) == "2"
+                && At(centerEnd+9) == "+" && At(centerEnd+10) == t && Boundary(centerEnd+11)
+                && text.Contains("get_layer_info", StringComparison.Ordinal))
+                AddNumber(i+2, centerEnd, center, false);
 
             // mulpos is an explicit pixel conversion API; do not touch calls in strings.
             if (extension == ".lua" && t == "mulpos" && At(i + 1) == "(" &&
@@ -117,11 +164,26 @@ public sealed partial class ArtemisTextProcessor
             bool clip = TblClipKeys.Contains(key);
             int parentheses = 0;
             while (At(start) == "(") { start++; parentheses++; }
+            if (clipLookupValues.Contains(start)) continue;
             bool EndOfValue(int end)
             {
                 for (int n = 0; n < parentheses; n++, end++)
                     if (At(end) != ")") return false;
                 return Boundary(end);
+            }
+            if (extension == ".lua" && key is "x" or "y" && field
+                && TryNumber(start,out int pitchEnd,out double pitch) && At(pitchEnd)=="*"
+                && At(pitchEnd+1)=="param" && At(pitchEnd+2)=="["
+                && pitchEnd+3<tokens.Count && tokens[pitchEnd+3].Kind=='s'
+                && At(pitchEnd+4)=="]" && EndOfValue(pitchEnd+5))
+            {
+                int open=i-1;
+                while(open>=0 && At(open)!="{") open--;
+                if (open>0 && At(open-1)=="set_stand")
+                {
+                    AddNumber(start,pitchEnd,pitch,false);
+                    continue;
+                }
             }
             if (start < tokens.Count && tokens[start].Kind is ('s' or 'l') && EndOfValue(start + 1))
             {
@@ -140,6 +202,12 @@ public sealed partial class ArtemisTextProcessor
                 // declaration may also be consumed by non-layout code.
                 ScriptToken alias = tokens[start];
                 edits.Add(new(alias.Start, alias.End, "(" + alias.Text + "*" + ratio.ToString("G", CultureInfo.InvariantCulture) + ")"));
+            }
+            else if (extension == ".lua" && key is "left" or "top"
+                && start < tokens.Count && tokens[start].Kind == 'i'
+                && IsLiteralPixelAlias(tokens[start].Text, start)
+                && TryScaleLiteralAxis(start, EndOfValue))
+            {
             }
             else if (extension == ".lua" && key is "left" or "top"
                 && start < tokens.Count && tokens[start].Text == key
@@ -161,9 +229,13 @@ public sealed partial class ArtemisTextProcessor
         bool IsLiteralPixelAlias(string name, int use)
         {
             int declaration = -1;
+            int FunctionOwner(int at) => BlockScope(at).LastOrDefault(n => At(n) == "function", -1);
+            int useFunction = FunctionOwner(use);
             for (int n = 0; n < tokens.Count; n++)
             {
                 if (tokens[n].Text != name) continue;
+                if (FunctionOwner(n) != useFunction) continue;
+                if (At(n-1) is "." or "{" or "," && At(n+1) == "=") continue;
                 // Ambiguous multiple assignments and loop bindings require full binding analysis.
                 if (At(n + 1) == "," && At(n - 1) != "=" || At(n - 1) == "for") return false;
                 if (At(n - 1) == "local")
@@ -218,6 +290,20 @@ public sealed partial class ArtemisTextProcessor
             }
             if (offsets.Count == 0 || !endOfValue(index)) return false;
             foreach (var offset in offsets) AddNumber(offset.Start, offset.End, offset.Value, false);
+            return true;
+        }
+        bool TryScaleLiteralAxis(int start, Func<int, bool> endOfValue)
+        {
+            int index = start+1;
+            while (At(index) is "+" or "-" or "*")
+            {
+                if (!TryNumber(index+1, out int end, out _)) return false;
+                index=end;
+            }
+            if (!endOfValue(index)) return false;
+            string expression=text[tokens[start].Start..tokens[index-1].End];
+            edits.Add(new(tokens[start].Start,tokens[index-1].End,
+                "("+expression+")*"+ratio.ToString("G",CultureInfo.InvariantCulture)));
             return true;
         }
         string At(int index) => index >= 0 && index < tokens.Count ? tokens[index].Text : "";

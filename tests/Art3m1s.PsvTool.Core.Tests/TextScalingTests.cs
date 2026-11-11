@@ -7,6 +7,36 @@ namespace Art3m1s.PsvTool.Core.Tests;
 public sealed class TextScalingTests : IDisposable
 {
     [Fact]
+    public async Task ClipLookupTablesScaleRectanglesWithoutChangingKeysOrOtherFunctions()
+    {
+        const string source = "function dialog() local regions={[1280]={save='0,0,480,176',load='480,176,480,176'}}; e:tag{clip=(regions[game.size][name])} end function other() local regions={value='480,176,480,176'} end";
+        string result = await Convert(source, ".lua", .75);
+        Assert.Contains("[1280]={save='0,0,360,132',load='360,132,360,132'}", result);
+        Assert.Contains("clip=(regions[game.size][name])", result);
+        Assert.Contains("local regions={value='480,176,480,176'}", result);
+    }
+
+    [Fact]
+    public async Task StandSlotSpacingScalesButSlotAndOtherCallsDoNot()
+    {
+        const string source = "set_stand{file=file,id=param[\"1\"],x=(80*param[\"2\"])}; other{x=(80*param[\"2\"])}";
+        string result=await Convert(source,".lua",.75);
+        Assert.Contains("id=param[\"1\"],x=(60*param[\"2\"])",result);
+        Assert.Contains("other{x=(80*param[\"2\"])}",result);
+    }
+
+    [Fact]
+    public async Task PixelCenterAndLiteralAxisExpressionsScaleWithoutScalingRuntimeWidth()
+    {
+        const string source = "function draw() local y=375; e:tag{top=(y+60*2)}; e:tag{system=\"get_layer_info\"}; x=640-e:var(\"t.li.width\")/2+x; e:tag{left=(x)} end";
+        string result = await Convert(source, ".lua", .75);
+        Assert.Contains("top=((y+60*2)*0.75)", result);
+        Assert.Contains("x=480-e:var(\"t.li.width\")/2+x", result);
+        Assert.Contains("left=(x)", result);
+        Assert.Contains("local y=375", result);
+    }
+
+    [Fact]
     public async Task LegacyCsvLayoutScalesAtlasAndMessageGeometryTogether()
     {
         const string source = "init={mw_path=\"image/main/\",mw_pos=\"0,500,1280,720\",backlog_pos=\"340,80,848,560\",mw_time=250,glyph_size=\"28,28,2,10\"}; csv={ui={button={file=\"atlas\",x=456,y=314,w=368,h=52,cx=\"0\",cy=\"468\",cw=\"368\",ch=\"52\",id=2.4,p1=100}}}";

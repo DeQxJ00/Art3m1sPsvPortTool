@@ -6,6 +6,8 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.29] - 2026-11-11
+
 - 自动图片分类在二层未识别用途时检查第三层，支持 `image/<目录>/bg`、`fg`、`face`、`cg`、`ev`；不透明图推荐 DXT1，透明图推荐 DXT5，保留 UI／灰度／遮罩保护与原目录名。
 - Automatic image classification probes the third level when the two-level grouping has no recognized role, including BG, FG, face, CG and EV folders. Opaque images use DXT1 and transparent images use DXT5 recommendations; UI, grayscale and mask protections and original directory names are preserved.
 
@@ -17,6 +19,15 @@ This file records user-facing changes by application version. Dates use China St
 
 - 扩展 CSV 转换：支持独立布局表、命名矩形表、冒号坐标、带数字的语言字体前缀、相对动画位移及混合字段。仅缩放像素字段，优先排除数量、字符上限、时间、百分比、颜色和编号；未知或动态坐标保持原样。
 - Extended CSV conversion to standalone layouts, named rectangle tables, colon-separated coordinates, numeric language prefixes in font tables, relative tween offsets and mixed fields. Only pixel fields scale; counts, character limits, timing, percentages, colors and IDs are preserved, as are unknown or dynamic coordinates.
+
+- 统一分析归档和散装资源的覆盖顺序、分辨率及坐标语义。转换时检查资源引用，并用转换标记防止重复处理已生成的资源。
+- Analyze archive and loose resource precedence, resolutions, and coordinate units together. Check resource references during conversion and mark converted output to prevent a second pass.
+
+- 补齐 Lua 和 IET 的布局缩放，包括字体、图集裁剪矩形、模式覆盖、立绘间距和居中位置。修复有条件预载背景时复制出来的图层仍显示的问题。
+- Extend Lua and IET layout scaling to fonts, atlas clip rectangles, mode overrides, character spacing, and center positions. Hide duplicated background layers created by conditional preload scripts.
+
+- 支持 BC7 PSB 贴图转换，并在缩放 PSB 几何时保留小数精度。
+- Support BC7 PSB texture conversion and preserve fractional PSB geometry during scaling.
 
 ## [1.0.28] - 2026-10-27
 
