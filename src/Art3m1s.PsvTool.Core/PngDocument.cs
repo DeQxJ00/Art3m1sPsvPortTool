@@ -14,9 +14,27 @@ internal sealed record PngDocument(uint Width, uint Height, int BitDepth, int Co
     internal static ReadOnlySpan<byte> Signature => [137, 80, 78, 71, 13, 10, 26, 10];
     public ReadOnlyMemory<byte> Ihdr => Chunks[0].Data;
     public bool IsAnimated => Chunks.Any(static chunk => chunk.Type is "acTL" or "fcTL" or "fdAT");
-    public bool HasProtectedMetadata => !Trailer.IsEmpty || Chunks.Any(static chunk =>
-        chunk.Type is not ("IHDR" or "IDAT" or "IEND" or "PLTE" or "tRNS" or "gAMA" or "sRGB" or
-            "cHRM" or "iCCP" or "pHYs" or "tIME" or "bKGD" or "sBIT"));
+    public bool HasProtectedMetadata => !Trailer.IsEmpty || Chunks.Any(RequiresTextureMetadataPreservation);
+
+    internal static bool RequiresTextureMetadataPreservation(PngChunk chunk)
+    {
+        if (chunk.Type is "IHDR" or "IDAT" or "IEND" or "PLTE" or "tRNS" or "gAMA" or "sRGB" or
+            "cHRM" or "iCCP" or "pHYs" or "tIME" or "bKGD" or "sBIT")
+            return false;
+        if (chunk.Type is not ("tEXt" or "zTXt" or "iTXt"))
+            return true;
+
+        // All three text formats start with an uncompressed, case-sensitive keyword.
+        ReadOnlySpan<byte> data = chunk.Data.Span;
+        int separator = data.IndexOf((byte)0);
+        if (separator <= 0)
+            return true;
+        ReadOnlySpan<byte> keyword = data[..separator];
+        return !(keyword.SequenceEqual("date:create"u8) || keyword.SequenceEqual("date:modify"u8)
+            || keyword.SequenceEqual("date:timestamp"u8) || keyword.SequenceEqual("Creation Time"u8)
+            || keyword.SequenceEqual("Software"u8) || keyword.SequenceEqual("Author"u8)
+            || keyword.SequenceEqual("Raw profile type xmp"u8) || keyword.SequenceEqual("XML:com.adobe.xmp"u8));
+    }
 
     public static bool HasSignature(ReadOnlySpan<byte> bytes) => bytes.StartsWith(Signature);
 

@@ -34,6 +34,56 @@ public sealed class PngDocumentTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData("tEXt", "date:create")]
+    [InlineData("tEXt", "date:modify")]
+    [InlineData("tEXt", "date:timestamp")]
+    [InlineData("tEXt", "Creation Time")]
+    [InlineData("tEXt", "Software")]
+    [InlineData("tEXt", "Author")]
+    [InlineData("zTXt", "Raw profile type xmp")]
+    [InlineData("iTXt", "XML:com.adobe.xmp")]
+    public void DescriptiveMetadataDoesNotPreventTextureConversion(string type, string keyword)
+    {
+        var parts = Parts();
+        parts.Insert(1, (type, TextChunk(type, keyword, "Example metadata")));
+        var document = PngDocument.Parse(Encode(parts));
+
+        Assert.False(document.HasProtectedMetadata);
+        Assert.Null(PngCoordinates.Read(document, "image/fg/sample.png"));
+    }
+
+    [Fact]
+    public void CoordinateExportSkipsDescriptiveFieldsAndKeepsCoordinates()
+    {
+        var parts = Parts();
+        parts.Insert(1, ("tEXt", TextChunk("tEXt", "Software", "Example editor")));
+        parts.Insert(2, ("zTXt", TextChunk("zTXt", "Raw profile type xmp", "Example XMP")));
+        parts.Insert(3, ("tEXt", TextChunk("tEXt", "Comment", "pos,12,24")));
+        var document = PngDocument.Parse(Encode(parts));
+
+        Assert.True(document.HasProtectedMetadata);
+        var coordinates = Assert.IsType<PngCoordinates>(PngCoordinates.Read(document, "image/fg/sample.png"));
+        Assert.Equal("art3m1s_png_coordinates_v1\nComment,pos,6,12\n", coordinates.ToCsv(.5));
+
+        parts.Insert(4, ("iTXt", TextChunk("iTXt", "Unknown", "Example private data")));
+        document = PngDocument.Parse(Encode(parts));
+        Assert.True(document.HasProtectedMetadata);
+        Assert.Null(PngCoordinates.Read(document, "image/fg/sample.png"));
+    }
+
+    private static byte[] TextChunk(string type, string keyword, string value)
+    {
+        byte[] prefix = Encoding.ASCII.GetBytes(keyword + "\0");
+        byte[] text = Encoding.ASCII.GetBytes(value);
+        if (type == "iTXt") return [.. prefix, 0, 0, 0, 0, .. text];
+        if (type == "tEXt") return [.. prefix, .. text];
+        using MemoryStream compressed = new();
+        using (var zlib = new ZLibStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+            zlib.Write(text);
+        return [.. prefix, 0, .. compressed.ToArray()];
+    }
+
     public static TheoryData<string> MalformedCases => new()
     {
         "crc", "truncated-crc", "length-uint-max", "length-int-max", "missing-iend", "nonempty-iend",

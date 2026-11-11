@@ -18,21 +18,20 @@ internal sealed class PngCoordinates
         HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase);
         foreach (var chunk in png.Chunks)
         {
-            if (chunk.Type == "tEXt")
-            {
-                var data = chunk.Data.Span;
-                int separator = data.IndexOf((byte)0);
-                if (separator <= 0 || data.IndexOfAnyExceptInRange((byte)0, (byte)127) >= 0)
-                    return null;
-                string key = Encoding.ASCII.GetString(data[..separator]);
-                string value = Encoding.ASCII.GetString(data[(separator + 1)..]);
-                if (!keys.Add(key) || ParseRow(key, value) is not { } row)
-                    return null;
-                coordinates._rows.Add(row);
-            }
-            else if (chunk.Type is not ("IHDR" or "IDAT" or "IEND" or "PLTE" or "tRNS"
-                or "gAMA" or "sRGB" or "cHRM" or "iCCP" or "pHYs" or "tIME" or "bKGD" or "sBIT"))
+            if (!PngDocument.RequiresTextureMetadataPreservation(chunk))
+                continue;
+            if (chunk.Type != "tEXt")
                 return null;
+
+            var data = chunk.Data.Span;
+            int separator = data.IndexOf((byte)0);
+            if (separator <= 0 || data.IndexOfAnyExceptInRange((byte)0, (byte)127) >= 0)
+                return null;
+            string key = Encoding.ASCII.GetString(data[..separator]);
+            string value = Encoding.ASCII.GetString(data[(separator + 1)..]);
+            if (!keys.Add(key) || ParseRow(key, value) is not { } row)
+                return null;
+            coordinates._rows.Add(row);
         }
         return coordinates._rows.Count > 0 && coordinates.Fits(png.Width, png.Height, 1) ? coordinates : null;
     }
