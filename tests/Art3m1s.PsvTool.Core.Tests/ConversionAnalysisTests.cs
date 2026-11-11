@@ -63,6 +63,31 @@ public sealed class ConversionAnalysisTests : IDisposable
         await Convert();
         Assert.Contains("x=720",await Read("root.pfs","chapter.ast"));
     }
+    [Fact]
+    public async Task RepackUsesLooseIetByFullPathInEveryMatchingArchive()
+    {
+        const string entry = "scenario/scene_007.iet";
+        const string sameNameElsewhere = "backup/scene_007.iet";
+        const string overrideText = "*entry\n[lyc x=\"400\" y=\"200\"]";
+        await Pack("root.pfs", (entry, "*original"), (sameNameElsewhere, "*unrelated"));
+        await Pack("root.pfs.001", (entry.Replace('/', '\\'), "*older overlay"));
+        string looseDirectory = Path.Combine(Input, "Scenario");
+        Directory.CreateDirectory(looseDirectory);
+        string loose = Path.Combine(looseDirectory, "scene_007.IET");
+        await File.WriteAllTextAsync(loose, overrideText);
+        await File.WriteAllTextAsync(Path.Combine(looseDirectory, "extra.iet"), "*loose only");
+
+        await Convert();
+
+        string converted = await File.ReadAllTextAsync(Path.Combine(Output, "Scenario", "scene_007.IET"));
+        Assert.Contains("x=\"300\"", converted);
+        Assert.Equal(converted, await Read("root.pfs", entry));
+        Assert.Equal(converted, await Read("root.pfs.001", entry));
+        Assert.Equal("*unrelated", await Read("root.pfs", sameNameElsewhere));
+        Assert.Equal("*loose only", await File.ReadAllTextAsync(Path.Combine(Output, "Scenario", "extra.iet")));
+        Assert.Null(await new PfsCodec().ReadSmallEntryAsync(Path.Combine(Output, "root.pfs"), "scenario/extra.iet"));
+        Assert.Equal(overrideText, await File.ReadAllTextAsync(loose));
+    }
     [Fact] public async Task RejectsConvertedArchivesEvenIfLooseManifestWasNotCopied()
     {
         await Pack("root.pfs",("system.ini",Ini),("data.txt","fixture"));await Convert();

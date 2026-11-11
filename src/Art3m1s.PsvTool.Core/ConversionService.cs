@@ -16,7 +16,7 @@ public interface IConversionService
 public sealed class ConversionService : IConversionService
 {
     private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".ini", ".tbl", ".ipt", ".iet", ".ast", ".lua", ".csv" };
+        { ".ini", ".tbl", ".ipt", ".iet", ".asb", ".ast", ".lua", ".csv" };
     private static readonly HashSet<string> AnimationExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".ogv" };
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -107,7 +107,7 @@ public sealed class ConversionService : IConversionService
         try
         {
             progress?.Report(new ConversionProgress(0, "copy"));
-            await CopyLooseFilesAsync(options.InputDirectory, staging, scan.Archives, cancellationToken);
+            var looseScripts = await CopyLooseFilesAsync(options.InputDirectory, staging, scan.Archives, cancellationToken);
 
             int total = scan.Archives.Count + 1;
             for (int index = 0; index < scan.Archives.Count; index++)
@@ -115,7 +115,7 @@ public sealed class ConversionService : IConversionService
                 cancellationToken.ThrowIfCancellationRequested();
                 PfsFileInfo archive = scan.Archives[index];
                 progress?.Report(new ConversionProgress(100d * index / total, "extract", archive.FileName));
-                await ConvertArchiveAsync(archive, staging, options, progress, index, total, textureLookup, psbRenderModels, analysis, adaptPngReader, cancellationToken);
+                await ConvertArchiveAsync(archive, staging, options, progress, index, total, textureLookup, looseScripts, psbRenderModels, analysis, adaptPngReader, cancellationToken);
             }
 
             progress?.Report(new ConversionProgress(100d * scan.Archives.Count / total, "loose"));
@@ -145,6 +145,7 @@ public sealed class ConversionService : IConversionService
         int archiveIndex,
         int totalUnits,
         IReadOnlyDictionary<string, TextureImageInfo> textureLookup,
+        IReadOnlyDictionary<string, string> looseScripts,
         ConcurrentBag<PsbRenderModel> psbRenderModels,
         ConversionAnalysis analysis,
         bool adaptPngReader,
@@ -159,6 +160,15 @@ public sealed class ConversionService : IConversionService
         {
             ExtractedArchive extracted = await _pfs.ExtractAsync(archive.Path, work, options.NameEncoding, cancellationToken);
             stage = "resource";
+            if (looseScripts.Count != 0)
+            {
+                foreach (var entry in extracted.Entries)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (looseScripts.TryGetValue(entry.Path, out string? source))
+                        File.Copy(source, entry.ExtractedPath, overwrite: true);
+                }
+            }
             var (renamed, coordinateFiles) = await ProcessTreeAsync(work, options, progress, cancellationToken, textureLookup, psbRenderModels, analysis, adaptPngReader, archive.FileName, skipPfs: false, preserveDat: true,
                 progressStart: 100d * (archiveIndex + 0.05) / totalUnits,
                 progressSpan: 100d * 0.85 / totalUnits);
@@ -443,25 +453,30 @@ public sealed class ConversionService : IConversionService
         return result;
     }
 
-    private static async Task CopyLooseFilesAsync(
+    private static async Task<Dictionary<string, string>> CopyLooseFilesAsync(
         string input,
         string output,
         IReadOnlyList<PfsFileInfo> archives,
         CancellationToken cancellationToken)
     {
         HashSet<string> archivePaths = archives.Select(item => Path.GetFullPath(item.Path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> looseScripts = new(StringComparer.OrdinalIgnoreCase);
         foreach (string directory in Directory.EnumerateDirectories(input, "*", SearchOption.AllDirectories))
             Directory.CreateDirectory(Path.Combine(output, Path.GetRelativePath(input, directory)));
         foreach (string file in Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (archivePaths.Contains(Path.GetFullPath(file))) continue;
-            string target = Path.Combine(output, Path.GetRelativePath(input, file));
+            string relativePath = Path.GetRelativePath(input, file);
+            string target = Path.Combine(output, relativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             await using FileStream source = new(file, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, true);
             await using FileStream destination = new(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, true);
             await source.CopyToAsync(destination, cancellationToken);
+            if (Path.GetExtension(relativePath).Equals(".iet", StringComparison.OrdinalIgnoreCase))
+                looseScripts.Add(relativePath.Replace('\\', '/'), target);
         }
+        return looseScripts;
     }
 
     private static void CommitDirectory(string staging, string output, string backup, bool overwrite)

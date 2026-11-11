@@ -81,57 +81,24 @@ public sealed partial class ArtemisTextProcessor
 
     private static byte[] RepairAsbPaths(byte[] bytes, bool localizedManual)
     {
-        if (bytes.Length<9 || !bytes.AsSpan(0,4).SequenceEqual("ASB\0"u8)) return bytes;
-        using var input=new MemoryStream(bytes);
-        using var reader=new BinaryReader(input);
-        using var output=new MemoryStream();
-        using var writer=new BinaryWriter(output);
-        try
+        var records = ReadAsbRecords(bytes);
+        if (records is null) return bytes;
+        List<(AsbField, string)> changes = [];
+        foreach (var record in records)
         {
-            writer.Write(reader.ReadBytes(5));
-            uint count=reader.ReadUInt32(); writer.Write(count);
-            for (uint i=0;i<count;i++)
+            foreach (var (key, field) in record.Fields)
             {
-                uint type=reader.ReadUInt32(); writer.Write(type);
-                string name=Field(false);
-                if(type==1) continue;
-                if(type!=0) return bytes;
-                writer.Write(reader.ReadUInt32());
-                uint parameters=reader.ReadUInt32(); writer.Write(parameters);
-                for(uint j=0;j<parameters;j++)
-                {
-                    string key=Field(false);
-                    Field(key=="file" || key=="storage" || key=="data", name=="lyc2" && key=="file");
-                }
+                if (key is not ("file" or "storage" or "data") || !field.Value.StartsWith('$')) continue;
+                var tokens = LexScript(field.Value);
+                List<ScriptEdit> edits = [];
+                AddDirectoryEdits(tokens, edits, "+");
+                if (edits.Count == 0) continue;
+                if (localizedManual && record.Tag == "lyc2" && key == "file")
+                    foreach (var t in tokens.Where(t => t.Text is "'/manual'" or "\"/manual\""))
+                        edits.Add(new(t.End - 1, t.End - 1, "**"));
+                changes.Add((field, ApplyPathEdits(field.Value, edits)));
             }
-            writer.Write(reader.ReadBytes(checked((int)(input.Length-input.Position))));
-            return output.ToArray();
         }
-        catch (Exception e) when (e is EndOfStreamException or InvalidDataException or OverflowException)
-        {
-            // Unknown/truncated binaries must remain intact; never partially patch them.
-            return bytes;
-        }
-        string Field(bool rewrite, bool language=false)
-        {
-            uint size=reader.ReadUInt32();
-            if(size>=input.Length-input.Position) throw new InvalidDataException();
-            byte[] raw=reader.ReadBytes(checked((int)size));
-            if(reader.ReadByte()!=0) throw new InvalidDataException();
-            // Only ASCII expressions are candidates. Other encodings stay byte-for-byte intact.
-            string value=Encoding.Latin1.GetString(raw);
-            if(rewrite && value.StartsWith('$'))
-            {
-                var tokens=LexScript(value); var edits=new List<ScriptEdit>();
-                AddDirectoryEdits(tokens,edits,"+");
-                if(language && localizedManual && edits.Count>0)
-                    foreach(var t in tokens.Where(t=>t.Text is "'/manual'" or "\"/manual\""))
-                        edits.Add(new(t.End-1,t.End-1,"**"));
-                value=ApplyPathEdits(value,edits);
-                raw=Encoding.Latin1.GetBytes(value);
-            }
-            writer.Write(raw.Length); writer.Write(raw); writer.Write((byte)0);
-            return value;
-        }
+        return RewriteAsb(bytes, changes);
     }
 }

@@ -24,7 +24,7 @@ public sealed partial class ArtemisTextProcessor
                 if (Regex.IsMatch(trimmed, @"^\[(?:endlua|/lua)\s*\]\s*$", RegexOptions.IgnoreCase))
                 {
                     List<int> diagnostics = [];
-                    result.Append(ScaleScript(luaBody.ToString(), ratio, ".lua", diagnostics));
+                    result.Append(ScaleScript(RepairLuaCompatibility(luaBody.ToString()), ratio, ".lua", diagnostics));
                     preserved.AddRange(diagnostics.Select(n => n + luaStartLine));
                     luaBody.Clear(); lua = false; result.Append(line);
                 }

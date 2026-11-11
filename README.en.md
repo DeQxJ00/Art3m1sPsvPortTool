@@ -16,6 +16,10 @@ CSV files follow the text-conversion option. Sibling non-CSV files or folders (i
 
 Preflight builds a shared resource index across all PFS archives and loose files. Later archives override earlier entries, and loose files take precedence. Lua helpers, layout tables and image sidecars can therefore be matched across archives. Resolution detection also uses the winning `system.ini`.
 
+Repacking uses loose `.iet` files from the input directory to replace entries with the same full relative path in every PFS. The output also includes the loose copies. To include an edited script, place it under the input directory at its archive-relative path and run the conversion with the same settings.
+
+Text conversion repairs recognized button zoom default checks and skips the associated ASB message-layer redraw when an optional font layout is missing. It identifies these cases from script arguments, resource checks and layer operations.
+
 Within an archive family, numeric patch suffixes determine priority (`.pfs.10` wins over `.pfs.2`). Duplicate scripts from unrelated families or nonnumeric suffixes with unknown priority stop text conversion before output is written and identify the conflicting path. Resolve the precedence rather than relying on a guessed winner.
 
 - Viewport dimensions, resource directory IDs and script coordinates are handled separately. Original directories such as `ui/1280/` keep their names. Supported path concatenations are changed from viewport width to directory ID only when an explicit selector such as `game.size = init.game_size[osno]` is recognized.

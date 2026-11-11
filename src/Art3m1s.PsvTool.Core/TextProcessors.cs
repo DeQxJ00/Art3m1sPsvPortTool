@@ -33,8 +33,15 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
     {
         if (!double.IsFinite(ratio) || ratio <= 0) throw new ArgumentOutOfRangeException(nameof(ratio));
         byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken);
-        EncodedText encoded = EncodedText.Decode(bytes);
         string extension = Path.GetExtension(path).ToLowerInvariant();
+        if (extension is ".iet" or ".asb" && bytes.AsSpan().StartsWith("ASB\0"u8))
+        {
+            byte[] repaired = RepairCompiledScripts(bytes);
+            if (!ReferenceEquals(bytes, repaired))
+                await File.WriteAllBytesAsync(path, repaired, cancellationToken);
+            return [];
+        }
+        EncodedText encoded = EncodedText.Decode(bytes);
         string source = extension == ".lua" && runtimeScaledCoordinates && ratio != 1
             ? NormalizeInlineMovementScale(encoded.Text) : encoded.Text;
         List<int> preservedExpressions = [];
@@ -46,7 +53,7 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
             ".tbl" or ".ipt" or ".ast" or ".lua" => ScaleScript(source, ratio, extension, preservedExpressions, runtimeScaledCoordinates),
             _ => encoded.Text
         };
-        if (extension == ".lua") output = HideBackgroundPreloadCopy(output);
+        if (extension == ".lua") output = HideBackgroundPreloadCopy(RepairLuaCompatibility(output));
         if (!ReferenceEquals(output, encoded.Text) && output != encoded.Text)
             await File.WriteAllBytesAsync(path, encoded.Encode(output), cancellationToken);
         return preservedExpressions.Distinct().Order().ToArray();

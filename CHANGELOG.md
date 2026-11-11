@@ -6,8 +6,19 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.30] - 2026-11-12
+
+- 文本转换自动修复可识别的按钮缩放默认值校验，并在可选字体布局缺失时跳过相关 ASB 文字层重绘。
+- Text conversion repairs recognized button zoom default checks and skips the associated ASB message-layer redraw when an optional font layout is missing.
+
+- 打包时将输入目录中的散装 IET 按完整相对路径并入已有的 PFS 条目，同时保留散装副本。
+- Repacking includes loose IET overrides in matching PFS entries by full relative path and retains the loose copies.
+
 - 新增默认关闭的 PNG 坐标导出。兼容的立绘、背景和 CG/EV 可随普通 AUTO 输出 DXT1/DXT5 DDS 与同名 CSV，输出 Lua 可读取其中的偏移、宽高和裁剪坐标。
 - Added opt-in PNG coordinate export for eligible sprites, backgrounds and CG/EV. Standard AUTO can write DXT1/DXT5 DDS with a matching CSV for supported offsets, dimensions and crop coordinates. The output Lua reads the exported fields.
+
+- PNG 含有创建时间、软件或作者等描述性元数据时，仍可参与纹理转换。需要保留的未知元数据继续受到保护。
+- PNGs with descriptive metadata such as creation time, software, or author remain eligible for texture conversion. Unknown metadata retains its protection.
 
 ## [1.0.29] - 2026-11-11
 
