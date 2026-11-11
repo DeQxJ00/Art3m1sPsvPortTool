@@ -159,6 +159,8 @@
               <TextBlock Text="{Binding TextureCategoryDepthHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
               <Button Content="{Binding ScanTexturesLabel}" Click="ScanTexturesClick" HorizontalAlignment="Left" />
               <CheckBox Content="{Binding IgnoreBackgroundAlphaLabel}" IsChecked="{Binding IgnoreBackgroundAlpha}" />
+              <CheckBox Content="{Binding ExportPngCoordinatesLabel}" IsChecked="{Binding ExportPngCoordinates}" IsEnabled="{Binding ProcessText}" />
+              <TextBlock Text="{Binding ExportPngCoordinatesHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
               <ItemsControl ItemsSource="{Binding TextureCategories}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:TextureCategoryViewModel">

@@ -12,7 +12,8 @@ public enum NativeTextureFormat
 public sealed record NativeTextureRule(string Category, bool Enabled, NativeTextureFormat Format = ConversionDefaults.ImageFormat);
 public sealed record NativeTextureOptions(bool Enabled = ConversionDefaults.NativeTextures, bool IgnoreBackgroundAlpha = ConversionDefaults.IgnoreBackgroundAlpha,
     IReadOnlyList<NativeTextureRule>? Rules = null,
-    int CategoryDepth = ConversionDefaults.TextureCategoryDepth);
+    int CategoryDepth = ConversionDefaults.TextureCategoryDepth,
+    bool ExportPngCoordinates = false);
 public sealed record NativeFormatInfo(NativeTextureFormat Format, string Name, int BitsPerPixel,
     int PvrCode, string Channels, string Description, string Extension = ".pvr")
 {
@@ -59,18 +60,19 @@ public static class NativeTextureFormats
             or NativeTextureFormat.AutoWithoutMetadata or NativeTextureFormat.AutoWithoutMetadataLinear;
     public static bool IsManualAutomatic(NativeTextureFormat format) =>
         format is NativeTextureFormat.AutoWithoutMetadata or NativeTextureFormat.AutoWithoutMetadataLinear;
-    public static NativeTextureFormat Resolve(TextureImageInfo image, NativeTextureFormat requested, bool ignoreAlpha) => requested switch
+    public static NativeTextureFormat Resolve(TextureImageInfo image, NativeTextureFormat requested, bool ignoreAlpha,
+        bool exportPngCoordinates = false) => requested switch
     {
-        NativeTextureFormat.Auto => Recommend(image, ignoreAlpha),
+        NativeTextureFormat.Auto => Recommend(image, ignoreAlpha, exportPngCoordinates),
         NativeTextureFormat.AutoWithoutMetadata => RecommendColor(image, ignoreAlpha),
-        NativeTextureFormat.AutoLinear => LinearRecommendation(Recommend(image, ignoreAlpha)),
+        NativeTextureFormat.AutoLinear => LinearRecommendation(Recommend(image, ignoreAlpha, exportPngCoordinates)),
         NativeTextureFormat.AutoWithoutMetadataLinear => LinearRecommendation(RecommendColor(image, ignoreAlpha)),
         _ => requested
     };
-    public static NativeTextureFormat Recommend(TextureImageInfo image, bool ignoreAlpha) =>
-        IsConservative(image.Category) ? NativeTextureFormat.Preserve : RecommendColor(image, ignoreAlpha);
-    private static NativeTextureFormat RecommendColor(TextureImageInfo image, bool ignoreAlpha) =>
-        image.IsGray || image.IsNative || image.HasMetadata || image.Error != null
+    public static NativeTextureFormat Recommend(TextureImageInfo image, bool ignoreAlpha, bool exportPngCoordinates = false) =>
+        IsConservative(image.Category) ? NativeTextureFormat.Preserve : RecommendColor(image, ignoreAlpha, exportPngCoordinates);
+    private static NativeTextureFormat RecommendColor(TextureImageInfo image, bool ignoreAlpha, bool exportPngCoordinates = false) =>
+        image.IsGray || image.IsNative || (image.HasMetadata && !(exportPngCoordinates && image.CanExportPngCoordinates)) || image.Error != null
             ? NativeTextureFormat.Preserve
             : image.HasAlpha && !(ignoreAlpha && image.IsBackground) ? NativeTextureFormat.Bc3Swizzled : NativeTextureFormat.Bc1Swizzled;
     public static bool IsSwizzled(NativeTextureFormat format) =>
@@ -86,30 +88,40 @@ public static class NativeTextureFormats
     public static bool DefaultEnabled(TextureImageInfo image) => image.IsBackground && !image.IsGray;
     // Hard blockers are kept unchanged even if explicitly selected. Lossy channel
     // choices remain selectable, but are never applied silently to incompatible data.
-    public static string? Unsuitable(TextureImageInfo image, NativeTextureFormat format, double ratio, bool ignoreAlpha)
+    public static string? Unsuitable(TextureImageInfo image, NativeTextureFormat format, double ratio, bool ignoreAlpha,
+        bool exportPngCoordinates = false)
     {
-        string? ownReason = UnsuitableSingle(image, format, ratio, ignoreAlpha);
+        string? ownReason = UnsuitableSingle(image, format, ratio, ignoreAlpha, exportPngCoordinates);
         if (ownReason != null) return ownReason;
-        var resolved = Resolve(image, format, ignoreAlpha);
+        var resolved = Resolve(image, format, ignoreAlpha, exportPngCoordinates);
         if (resolved == NativeTextureFormat.Preserve) return null;
         foreach (var peer in image.OverlayPeers)
         {
-            var peerFormat = Resolve(peer, format, ignoreAlpha);
+            var peerFormat = Resolve(peer, format, ignoreAlpha, exportPngCoordinates);
             if (peer.GroupKey != image.GroupKey || peerFormat == NativeTextureFormat.Preserve
-                || UnsuitableSingle(peer, format, ratio, ignoreAlpha) != null
+                || UnsuitableSingle(peer, format, ratio, ignoreAlpha, exportPngCoordinates) != null
                 || Info(peerFormat).Extension != Info(resolved).Extension)
                 return "覆盖链需统一后缀，部分图片需保留原格式 / Keep overlay chain: some versions require the original format";
         }
         return null;
     }
-    private static string? UnsuitableSingle(TextureImageInfo image, NativeTextureFormat format, double ratio, bool ignoreAlpha)
+    private static string? UnsuitableSingle(TextureImageInfo image, NativeTextureFormat format, double ratio, bool ignoreAlpha,
+        bool exportPngCoordinates)
     {
         if (format == NativeTextureFormat.Preserve) return null;
-        format = Resolve(image, format, ignoreAlpha);
+        format = Resolve(image, format, ignoreAlpha, exportPngCoordinates);
         if (format == NativeTextureFormat.Preserve) return null;
         if (image.Error != null) return "无法解析图片 / Cannot inspect image";
         if (image.IsNative) return "已是原生纹理，避免重复有损压缩 / Already compressed";
-        if (image.HasMetadata) return "含偏移/裁剪等附加信息 / Embedded image metadata";
+        if (image.HasMetadata)
+        {
+            if (!ExportsPngCoordinates(image, format, exportPngCoordinates))
+                return exportPngCoordinates
+                    ? "含无法迁移的偏移/裁剪等附加信息 / Embedded image metadata cannot be exported"
+                    : "含偏移/裁剪等附加信息 / Embedded image metadata";
+            if (image.PngCoordinates is { } coordinates && !coordinates.Fits(image.Width, image.Height, ratio))
+                return "缩放后无法保持裁剪区域或动画帧间距 / Resize would change crop bounds or animation frame spacing";
+        }
         int w = Math.Max(1, (int)(image.Width * ratio)), h = Math.Max(1, (int)(image.Height * ratio));
         if (w > 4096 || h > 4096) return "输出尺寸超过 4096 / Output exceeds 4096";
         NativeFormatInfo f = Info(format);
@@ -124,6 +136,9 @@ public static class NativeTextureFormats
         if (image.HasStemConflict) return image.ConflictReason ?? "同名不同后缀资源冲突 / Conflicting source names";
         return null;
     }
+    public static bool ExportsPngCoordinates(TextureImageInfo image, NativeTextureFormat format, bool enabled) =>
+        enabled && image.CanExportPngCoordinates
+        && format is NativeTextureFormat.Bc1 or NativeTextureFormat.Bc1Swizzled or NativeTextureFormat.Bc3 or NativeTextureFormat.Bc3Swizzled;
     public static long PayloadBytes(NativeTextureFormat format, int width, int height)
     {
         if (IsSwizzled(format)) return GxmBlockTextureStorage.SwizzledBytes(width, height, format == NativeTextureFormat.Bc1Swizzled ? 8 : 16);

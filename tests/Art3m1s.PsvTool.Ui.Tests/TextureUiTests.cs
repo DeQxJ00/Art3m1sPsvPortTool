@@ -2,6 +2,7 @@ using Art3m1s.PsvTool.App;
 using Art3m1s.PsvTool.Core;
 using System.Text;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png.Chunks;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
@@ -49,6 +50,49 @@ public sealed class TextureUiTests
     }
     private static TextureImageInfo Sample(string category, bool gray = false, bool alpha = false) =>
         new(null, category + "/test.png", category, 960, 540, 1024, gray, alpha, alpha, false);
+
+    [Fact]
+    public async Task EnablingCoordinateExportUpdatesAutoWithoutRecheckingManuallyDisabledFg()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "fg-coordinate-ui-" + Guid.NewGuid().ToString("N"));
+        string imagePath = Path.Combine(root, "image/fg/sample.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(imagePath)!);
+        try
+        {
+            using var image = new Image<Rgba32>(16, 16, new Rgba32(30, 60, 100, 180));
+            image.Metadata.GetPngMetadata().TextData.Add(new PngTextData("comment", "pos,-13,25", "", ""));
+            await image.SaveAsPngAsync(imagePath);
+            await File.WriteAllTextAsync(Path.Combine(root, "fg.lua"), """
+                function getfgfilepos(px)
+                    local r = { x = 0, y = 0 }
+                    if isFile(px) then
+                        local p = e:loadPngComments(px)
+                        local a = p and explode(",", p.comment)
+                        if p and a[1] == "pos" then
+                            r.x = tn(a[2])
+                            r.y = tn(a[3])
+                        end
+                    end
+                    return r
+                end
+                """);
+            var vm = new MainViewModel(settings: new MemoryStore()) { InputDirectory = root, ProcessText = true };
+            Assert.False(vm.ExportPngCoordinates);
+            await vm.ScanTexturesAsync();
+            var category = Assert.Single(vm.TextureCategories);
+            Assert.False(category.Enabled);
+            vm.ExportPngCoordinates = true;
+            Assert.True(category.Enabled);
+            Assert.Equal(NativeTextureFormat.Auto, category.Rule.Format);
+            Assert.Contains("可转换 1 张", category.Summary);
+            Assert.Contains("DXT5", category.Choices[NativeTextureFormats.IndexOf(NativeTextureFormat.AutoLinear)]);
+            category.Enabled = false;
+            vm.ExportPngCoordinates = false;
+            vm.ExportPngCoordinates = true;
+            Assert.False(category.Enabled);
+        }
+        finally { Directory.Delete(root, true); }
+    }
     [Theory]
     [InlineData("image/bg")]
     [InlineData("image/fg")]

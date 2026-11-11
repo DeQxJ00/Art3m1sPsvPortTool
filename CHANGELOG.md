@@ -6,6 +6,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+- 新增默认关闭的 PNG 坐标导出。兼容的立绘、背景和 CG/EV 可随普通 AUTO 输出 DXT1/DXT5 DDS 与同名 CSV，输出 Lua 可读取其中的偏移、宽高和裁剪坐标。
+- Added opt-in PNG coordinate export for eligible sprites, backgrounds and CG/EV. Standard AUTO can write DXT1/DXT5 DDS with a matching CSV for supported offsets, dimensions and crop coordinates. The output Lua reads the exported fields.
+
 ## [1.0.29] - 2026-11-11
 
 - 自动图片分类在二层未识别用途时检查第三层，支持 `image/<目录>/bg`、`fg`、`face`、`cg`、`ev`；不透明图推荐 DXT1，透明图推荐 DXT5，保留 UI／灰度／遮罩保护与原目录名。

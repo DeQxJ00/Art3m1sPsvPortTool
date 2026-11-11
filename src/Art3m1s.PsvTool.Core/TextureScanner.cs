@@ -16,6 +16,9 @@ public sealed record TextureImageInfo(string? Archive, string Path, string Categ
     public string? OverlayWinner { get; init; }
     public string? ConflictReason { get; init; }
     public IReadOnlyList<int> IgnoredIccProfileOffsets { get; init; } = [];
+    internal PngCoordinates? PngCoordinates { get; init; }
+    public bool CanExportPngCoordinates { get; internal init; }
+    public int EstimateCoordinateCsvBytes(double ratio) => PngCoordinates?.ToCsv(ratio).Length ?? 0;
 }
 
 public interface ITextureScanner
@@ -24,7 +27,7 @@ public interface ITextureScanner
         IProgress<ConversionProgress>? progress = null, CancellationToken token = default);
 }
 
-public sealed class TextureScanner(int categoryDepth = ConversionDefaults.TextureCategoryDepth) : ITextureScanner
+public sealed class TextureScanner(int categoryDepth = ConversionDefaults.TextureCategoryDepth, bool inspectCoordinateReaders = true) : ITextureScanner
 {
     public static bool IsImage(string path) => Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".dds" or ".pvr";
     public static string CategoryFor(string path, int categoryDepth = ConversionDefaults.TextureCategoryDepth) =>
@@ -46,8 +49,9 @@ public sealed class TextureScanner(int categoryDepth = ConversionDefaults.Textur
             indices.Add((archive, index));
             foreach (var e in index.Entries) names.Add(e.Path);
         }
-        string[] loose = Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories).Where(IsImage).ToArray();
-        foreach (string p in loose) names.Add(Path.GetRelativePath(input, p).Replace('\\', '/'));
+        string[] looseFiles = Directory.GetFiles(input, "*", SearchOption.AllDirectories);
+        string[] loose = looseFiles.Where(IsImage).ToArray();
+        foreach (string p in looseFiles) names.Add(Path.GetRelativePath(input, p).Replace('\\', '/'));
         var stems = names.Where(IsImage).GroupBy(x => Path.ChangeExtension(x, null), StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         int total = indices.Sum(x => x.Index.Entries.Count(e => IsImage(e.Path))) + loose.Length, done = 0;
@@ -83,9 +87,11 @@ public sealed class TextureScanner(int categoryDepth = ConversionDefaults.Textur
             });
         var overlays = result.GroupBy(x => x.Path, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1)
             .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.OrdinalIgnoreCase);
+        bool hasReader = inspectCoordinateReaders && result.Any(CanPair) && await HasCompatiblePngReaderAsync(indices, looseFiles, token);
         return result.Select(image =>
         {
-            if (!overlays.TryGetValue(image.Path, out var peers)) return image;
+            if (!overlays.TryGetValue(image.Path, out var peers))
+                return hasReader && CanPair(image) ? image with { CanExportPngCoordinates = true } : image;
             var ranks = peers.Select(p => ArchiveOrdering.Rank(p.Archive)).ToArray();
             bool ordered = ranks.All(r => r != null)
                 && ranks.Select(r => r!.Value.Family).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1
@@ -98,6 +104,40 @@ public sealed class TextureScanner(int categoryDepth = ConversionDefaults.Textur
             int winner = Enumerable.Range(0, peers.Length).MaxBy(i => ranks[i]!.Value.Priority);
             return image with { OverlayPeers = peers, OverlayWinner = peers[winner].Archive };
         }).ToArray();
+
+        bool CanPair(TextureImageInfo image) => image.PngCoordinates != null && !image.IsGray
+            && !image.HasStemConflict && !overlays.ContainsKey(image.Path)
+            && !names.Contains(Path.ChangeExtension(image.Path, ".csv"));
+    }
+
+    private static async Task<bool> HasCompatiblePngReaderAsync(
+        List<(PfsFileInfo Archive, PfsIndex Index)> indices, string[] looseFiles, CancellationToken token)
+    {
+        const int scriptLimit = 16 * 1024 * 1024;
+        bool found = false;
+        foreach (var (archive, index) in indices)
+        {
+            await using var stream = File.OpenRead(archive.Path);
+            foreach (var entry in index.Entries.Where(e => IsLua(e.Path)))
+            {
+                if (entry.Size > scriptLimit || !Inspect(await PfsCodec.ReadIndexedEntryAsync(stream, entry, index.XorKey, token)))
+                    return false;
+            }
+        }
+        foreach (string file in looseFiles.Where(IsLua))
+        {
+            if (new FileInfo(file).Length > scriptLimit || !Inspect(await File.ReadAllBytesAsync(file, token)))
+                return false;
+        }
+        return found;
+
+        static bool IsLua(string path) => Path.GetExtension(path).Equals(".lua", StringComparison.OrdinalIgnoreCase);
+        bool Inspect(byte[] bytes)
+        {
+            bool compatible = ArtemisTextProcessor.HasCompatiblePngCoordinateReaders(EncodedText.Decode(bytes).Text, out bool reads);
+            found |= reads;
+            return compatible;
+        }
     }
     public static TextureImageInfo InspectBytes(byte[] bytes, string path, string? archive = null,
         int categoryDepth = ConversionDefaults.TextureCategoryDepth)
@@ -127,7 +167,8 @@ public sealed class TextureScanner(int categoryDepth = ConversionDefaults.Textur
         });
         return new(archive, path, category, image.Width, image.Height, bytes.Length, gray, alpha, smooth, metadata)
         {
-            IgnoredIccProfileOffsets = png?.IgnoredIccProfileOffsets ?? []
+            IgnoredIccProfileOffsets = png?.IgnoredIccProfileOffsets ?? [],
+            PngCoordinates = png is null ? null : PngCoordinates.Read(png, path)
         };
     }
 }

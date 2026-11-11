@@ -7,9 +7,18 @@ public sealed partial class MainViewModel
 {
     private bool _nativeTextures = ConversionDefaults.NativeTextures;
     private bool _ignoreBackgroundAlpha = ConversionDefaults.IgnoreBackgroundAlpha;
+    private bool _exportPngCoordinates;
     private int _textureCategoryDepth = ConversionDefaults.TextureCategoryDepth;
     public bool NativeTextures { get => _nativeTextures; set { if (Set(ref _nativeTextures, value)) SaveSettings(); } }
     public bool IgnoreBackgroundAlpha { get => _ignoreBackgroundAlpha; set { if (Set(ref _ignoreBackgroundAlpha, value)) RefreshTextures(); } }
+    public bool ExportPngCoordinates { get => _exportPngCoordinates; set { if (Set(ref _exportPngCoordinates, value)) RefreshTextures(); } }
+    private bool EffectivePngCoordinateExport => ExportPngCoordinates && ProcessText;
+    public string ExportPngCoordinatesLabel => English
+        ? "Convert positioned PNGs to DDS + coordinate CSV"
+        : "带坐标的 PNG 转为 DDS + 坐标 CSV";
+    public string ExportPngCoordinatesHelp => English
+        ? "Requires Text processing and a compatible PNG comment reader. AUTO includes eligible offsets, sizes and crops across image categories. PNG is kept when a CSV already exists or metadata cannot be migrated."
+        : "需勾选文本处理并识别到兼容的 PNG 注释读取脚本。AUTO 可纳入各图片分类中可迁移的偏移、宽高和裁剪坐标。已有同名 CSV 或坐标无法迁移时保留 PNG。";
     public int TextureCategoryDepth
     {
         get => _textureCategoryDepth;
@@ -39,7 +48,7 @@ public sealed partial class MainViewModel
     private void RefreshTextures()
     {
         double ratio = TryRatio(out var r) ? r : 1;
-        foreach (var category in TextureCategories) category.Refresh(ratio, IgnoreBackgroundAlpha, English);
+        foreach (var category in TextureCategories) category.Refresh(ratio, IgnoreBackgroundAlpha, English, EffectivePngCoordinateExport);
     }
     public async Task ScanTexturesAsync()
     {
@@ -64,11 +73,15 @@ public sealed partial class MainViewModel
             var reporter = new ConversionProgressRelay(scanLog, uiReporter);
             var images = await Task.Run(() => new TextureScanner(categoryDepth).ScanAsync(input, encoding, reporter, token), token);
             if (input != InputDirectory || categoryDepth != TextureCategoryDepth) { Status = L("TextureScanSettingsChanged"); return; }
-            var previous = TextureCategories.ToDictionary(x => x.Key, x => x.Rule);
+            var previous = TextureCategories.ToDictionary(x => x.Key);
             TextureCategories.Clear();
             double ratio = TryRatio(out var r) ? r : 1;
-            foreach (var item in TextureCategoryViewModel.FromScan(images, ratio, IgnoreBackgroundAlpha, English, previous))
+            foreach (var item in TextureCategoryViewModel.FromScan(images, ratio, IgnoreBackgroundAlpha, English,
+                exportPngCoordinates: EffectivePngCoordinateExport))
+            {
+                if (previous.TryGetValue(item.Key, out var old)) item.RestoreSelection(old);
                 TextureCategories.Add(item);
+            }
             Progress = 100;
             Status = English ? $"Scanned {images.Count} images / {TextureCategories.Count} categories" : $"已扫描 {images.Count} 张图片 / {TextureCategories.Count} 类";
             scanLog.Complete(images.Any(image => image.Error != null) ? "scan-with-errors" : "scan-success", images.Any(image => image.Error != null) ? 1 : 0);

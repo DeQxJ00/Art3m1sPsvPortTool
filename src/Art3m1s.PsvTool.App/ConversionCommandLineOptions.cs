@@ -17,6 +17,7 @@ internal sealed class ConversionCommandLineOptions
     public AssetCategories Types { get; set; } = ConversionDefaults.Categories;
     public bool NativeTextures { get; set; } = ConversionDefaults.NativeTextures;
     public bool IgnoreBackgroundAlpha { get; set; } = ConversionDefaults.IgnoreBackgroundAlpha;
+    public bool ExportPngCoordinates { get; set; }
     public int TextureCategoryDepth { get; set; } = ConversionDefaults.TextureCategoryDepth;
     public PsbTextureFormat? PsbFormat { get; set; } = ConversionDefaults.ConvertEmotePsbTextures ? ConversionDefaults.PsbOutputFormat : null;
     public PsbDxt5Layout Layout { get; set; } = ConversionDefaults.Dxt5Layout;
@@ -82,6 +83,8 @@ internal sealed class ConversionCommandLineOptions
                 case "--types": options.Types = Categories(value); break;
                 case "--native-textures": options.NativeTextures = Boolean(value, key); break;
                 case "--ignore-bg-alpha": options.IgnoreBackgroundAlpha = Boolean(value, key); break;
+                case "--export-png-coordinates":
+                case "--export-fg-coordinates": options.ExportPngCoordinates = Boolean(value, key); break;
                 case "--texture-category-depth":
                     if (value.Equals("auto", StringComparison.OrdinalIgnoreCase)) options.TextureCategoryDepth = 0;
                     else if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int depth)

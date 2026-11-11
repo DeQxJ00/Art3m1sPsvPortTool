@@ -87,7 +87,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     }
     public string OutputDirectory { get => _outputDirectory; set { Set(ref _outputDirectory, value); _overwriteArmed = false; } }
     public string Ratio { get => _ratio; set { if (Set(ref _ratio, value)) { OnPropertyChanged(nameof(TargetResolution)); RefreshTextures(); RefreshPsbRendering(); RefreshPsbSizeEstimate(); } } }
-    public bool ProcessText { get => _text; set => Set(ref _text, value); }
+    public bool ProcessText { get => _text; set { if (Set(ref _text, value)) RefreshTextures(); } }
     public bool ProcessImages { get => _images; set => Set(ref _images, value); }
     public bool ProcessAnimation { get => _animation; set { if (Set(ref _animation, value)) { RefreshPsbRendering(); RefreshPsbSizeEstimate(); } } }
     public bool ProcessVideo { get => _video; set => Set(ref _video, value); }
@@ -232,7 +232,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
                 if (value.Diagnostic is { } diagnostic) Log += $"[{diagnostic.Level}] {diagnostic.Code}: {diagnostic.Message}" + Environment.NewLine;
             });
-            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray(), TextureCategoryDepth), new PsbTextureOptions(Enabled: ConversionDefaults.IndependentPsbScaling, CompensateRendering: ConversionDefaults.PsbRenderCompensation), (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout,
+            var options = new ConversionOptions(InputDirectory, OutputDirectory, ratio, categories, SelectedParallel, (PfsNameEncoding)SelectedEncoding, _overwriteArmed, SubsetFonts, (FontSubsetProfile)FontProfile, IgnorePfsVideos, ConvertEmotePsbTexturesToDxt5, new NativeTextureOptions(NativeTextures, IgnoreBackgroundAlpha, TextureCategories.Select(x => x.Rule).ToArray(), TextureCategoryDepth, EffectivePngCoordinateExport), new PsbTextureOptions(Enabled: ConversionDefaults.IndependentPsbScaling, CompensateRendering: ConversionDefaults.PsbRenderCompensation), (PsbTextureFormat)SelectedPsbFormat, (PsbDxt5Layout)SelectedPsbDxt5Layout,
                 TargetWidth: _width is > 0 ? Math.Max(1, (int)(_width.Value * ratio)) : null,
                 TargetHeight: _height is > 0 ? Math.Max(1, (int)(_height.Value * ratio)) : null);
             var token = _conversionCancellation.Token;
@@ -336,7 +336,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(TextureCategoryDepthLabel));
         OnPropertyChanged(nameof(TextureCategoryDepthHelp));
         OnPropertyChanged(nameof(TextureCategoryDepthChoices));
-        foreach (string name in new[] { nameof(NativeTexturesLabel), nameof(NativeTexturesHelp), nameof(ScanTexturesLabel), nameof(IgnoreBackgroundAlphaLabel), nameof(TextureHelp), nameof(TextureFormatsLabel) }) OnPropertyChanged(name);
+        foreach (string name in new[] { nameof(NativeTexturesLabel), nameof(NativeTexturesHelp), nameof(ScanTexturesLabel), nameof(IgnoreBackgroundAlphaLabel), nameof(ExportPngCoordinatesLabel), nameof(ExportPngCoordinatesHelp), nameof(TextureHelp), nameof(TextureFormatsLabel) }) OnPropertyChanged(name);
         foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(AssetRightsBackupWarning), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(AutoScanResolutionLabel), nameof(ResolutionListLabel), nameof(ResolutionChoices), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(ConvertEmotePsbTexturesToDxt5Label), nameof(ConvertEmotePsbTexturesToDxt5Help), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ProjectRepositoryLabel), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
     }
 }

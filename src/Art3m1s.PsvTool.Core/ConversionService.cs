@@ -57,6 +57,9 @@ public sealed class ConversionService : IConversionService
         CancellationToken cancellationToken = default)
     {
         options.Validate();
+        if (options.NativeTextures is { ExportPngCoordinates: true } textures
+            && (!options.Categories.HasFlag(AssetCategories.Text) || _text is not ArtemisTextProcessor))
+            options = options with { NativeTextures = textures with { ExportPngCoordinates = false } };
         if (File.Exists(Path.Combine(options.InputDirectory, PsbRenderManifest.FileName)))
             throw new InvalidDataException("Input already contains art3m1s_psb_render.json. Please convert the original game resources, not an already converted output.");
         ScanResult scan = await _scanner.ScanAsync(options.InputDirectory, cancellationToken);
@@ -75,10 +78,22 @@ public sealed class ConversionService : IConversionService
         ConversionAnalysis analysis = await ConversionAnalysis.CreateAsync(options, scan, cancellationToken);
 
         IReadOnlyList<TextureImageInfo> textureImages = options.NativeTextures?.Enabled == true && options.Categories.HasFlag(AssetCategories.Images)
-            ? await new TextureScanner(options.NativeTextures.CategoryDepth).ScanAsync(options.InputDirectory, options.NameEncoding,
+            ? await new TextureScanner(options.NativeTextures.CategoryDepth, options.NativeTextures.ExportPngCoordinates)
+                .ScanAsync(options.InputDirectory, options.NameEncoding,
                 progress == null ? null : new MappedProgress(progress, 0, 0.1), cancellationToken) : [];
         if (options.NativeTextures?.Enabled == true && options.Categories.HasFlag(AssetCategories.Images) && progress != null)
             progress = new MappedProgress(progress, 10, 0.9);
+        bool adaptPngReader = options.NativeTextures is { ExportPngCoordinates: true } exportOptions
+            && textureImages.Any(image =>
+            {
+                if (!image.CanExportPngCoordinates) return false;
+                var rule = exportOptions.Rules?.FirstOrDefault(rule => rule.Category == image.GroupKey);
+                if (rule?.Enabled == false) return false;
+                var requested = rule?.Format ?? NativeTextureFormat.Auto;
+                var format = NativeTextureFormats.Resolve(image, requested, exportOptions.IgnoreBackgroundAlpha, true);
+                return NativeTextureFormats.ExportsPngCoordinates(image, format, true)
+                    && NativeTextureFormats.Unsuitable(image, requested, options.Ratio, exportOptions.IgnoreBackgroundAlpha, true) == null;
+            });
         var textureLookup = textureImages.ToDictionary(x => (x.Archive ?? "") + "|" + x.Path, StringComparer.OrdinalIgnoreCase);
         string outputFull = Path.GetFullPath(options.OutputDirectory).TrimEnd(Path.DirectorySeparatorChar);
         string parent = Path.GetDirectoryName(outputFull) ?? throw new InvalidOperationException("Output has no parent directory.");
@@ -100,11 +115,11 @@ public sealed class ConversionService : IConversionService
                 cancellationToken.ThrowIfCancellationRequested();
                 PfsFileInfo archive = scan.Archives[index];
                 progress?.Report(new ConversionProgress(100d * index / total, "extract", archive.FileName));
-                await ConvertArchiveAsync(archive, staging, options, progress, index, total, textureLookup, psbRenderModels, analysis, cancellationToken);
+                await ConvertArchiveAsync(archive, staging, options, progress, index, total, textureLookup, psbRenderModels, analysis, adaptPngReader, cancellationToken);
             }
 
             progress?.Report(new ConversionProgress(100d * scan.Archives.Count / total, "loose"));
-            await ProcessTreeAsync(staging, options, progress, cancellationToken, textureLookup, psbRenderModels, analysis, archiveName: null, skipPfs: true, preserveDat: false,
+            await ProcessTreeAsync(staging, options, progress, cancellationToken, textureLookup, psbRenderModels, analysis, adaptPngReader, archiveName: null, skipPfs: true, preserveDat: false,
                 progressStart: 100d * scan.Archives.Count / total, progressSpan: 100d / total);
             if (!psbRenderModels.IsEmpty)
                 await new PsbRenderManifest(PsbRenderManifest.CurrentVersion, options.Ratio, psbRenderModels.OrderBy(x => x.Archive, StringComparer.Ordinal)
@@ -132,6 +147,7 @@ public sealed class ConversionService : IConversionService
         IReadOnlyDictionary<string, TextureImageInfo> textureLookup,
         ConcurrentBag<PsbRenderModel> psbRenderModels,
         ConversionAnalysis analysis,
+        bool adaptPngReader,
         CancellationToken cancellationToken)
     {
         string workParent = Path.Combine(staging, ".art3m1s-work");
@@ -143,7 +159,7 @@ public sealed class ConversionService : IConversionService
         {
             ExtractedArchive extracted = await _pfs.ExtractAsync(archive.Path, work, options.NameEncoding, cancellationToken);
             stage = "resource";
-            var renamed = await ProcessTreeAsync(work, options, progress, cancellationToken, textureLookup, psbRenderModels, analysis, archive.FileName, skipPfs: false, preserveDat: true,
+            var (renamed, coordinateFiles) = await ProcessTreeAsync(work, options, progress, cancellationToken, textureLookup, psbRenderModels, analysis, adaptPngReader, archive.FileName, skipPfs: false, preserveDat: true,
                 progressStart: 100d * (archiveIndex + 0.05) / totalUnits,
                 progressSpan: 100d * 0.85 / totalUnits);
             string destination = Path.Combine(staging, archive.FileName);
@@ -152,14 +168,20 @@ public sealed class ConversionService : IConversionService
             stage = "pack";
             progress?.Report(new ConversionProgress(100d * (archiveIndex + 0.9) / totalUnits, "pack", archive.FileName));
             // Only the ASCII extension changes; keep original Shift-JIS/UTF-8 name bytes.
-            var entries = extracted.Entries.Select(e =>
+            PfsEntry WithPath(PfsEntry source, string path)
             {
-                if (!renamed.TryGetValue(e.Path, out string? newPath)) return e;
-                int dot = Array.LastIndexOf(e.RawName, (byte)'.');
-                byte[] extension = Encoding.ASCII.GetBytes(Path.GetExtension(newPath));
-                byte[] raw = [.. e.RawName.AsSpan(0, dot).ToArray(), .. extension];
-                return e with { RawName = raw, Path = newPath, ExtractedPath = Path.Combine(work, newPath.Replace('/', Path.DirectorySeparatorChar)) };
-            }).ToArray();
+                int dot = Array.LastIndexOf(source.RawName, (byte)'.');
+                byte[] extension = Encoding.ASCII.GetBytes(Path.GetExtension(path));
+                byte[] raw = [.. source.RawName.AsSpan(0, dot), .. extension];
+                return source with { RawName = raw, Path = path, ExtractedPath = Path.Combine(work, path.Replace('/', Path.DirectorySeparatorChar)) };
+            }
+            List<PfsEntry> entries = new(extracted.Entries.Count + coordinateFiles.Count + 1);
+            foreach (var entry in extracted.Entries)
+            {
+                entries.Add(renamed.TryGetValue(entry.Path, out string? newPath) ? WithPath(entry, newPath) : entry);
+                if (coordinateFiles.TryGetValue(entry.Path, out string? coordinatePath))
+                    entries.Add(WithPath(entry, coordinatePath));
+            }
             await analysis.WriteMarkerAsync(work, cancellationToken);
             var marker = new PfsEntry(Encoding.ASCII.GetBytes(ConversionAnalysis.Marker), ConversionAnalysis.Marker,
                 0, 0, Path.Combine(work, ConversionAnalysis.Marker));
@@ -185,7 +207,7 @@ public sealed class ConversionService : IConversionService
         }
     }
 
-    private async Task<IReadOnlyDictionary<string, string>> ProcessTreeAsync(
+    private async Task<(IReadOnlyDictionary<string, string> Renamed, IReadOnlyDictionary<string, string> CoordinateFiles)> ProcessTreeAsync(
         string root,
         ConversionOptions options,
         IProgress<ConversionProgress>? progress,
@@ -193,6 +215,7 @@ public sealed class ConversionService : IConversionService
         IReadOnlyDictionary<string, TextureImageInfo> textureLookup,
         ConcurrentBag<PsbRenderModel> psbRenderModels,
         ConversionAnalysis analysis,
+        bool adaptPngReader,
         string? archiveName,
         bool skipPfs,
         bool preserveDat,
@@ -212,6 +235,9 @@ public sealed class ConversionService : IConversionService
         using SemaphoreSlim psbSlots = new(1);
         int completed = 0;
         ConcurrentDictionary<string, string> renamed = new(StringComparer.OrdinalIgnoreCase);
+        ConcurrentDictionary<string, string> coordinateFiles = new(StringComparer.OrdinalIgnoreCase);
+        IPngProcessor pngProcessor = _png is PngProcessor && options.NativeTextures is { Enabled: true, ExportPngCoordinates: true }
+            ? new PngProcessor(preserveAnimationFields: true) : _png;
         int converted = 0, kept = 0; long beforeBytes = 0, afterBytes = 0;
         await Parallel.ForEachAsync(files, new ParallelOptions
         {
@@ -234,6 +260,8 @@ public sealed class ConversionService : IConversionService
                         IReadOnlyList<int> preserved = await artemis.ProcessWithDiagnosticsAsync(path, options.Ratio, token, runtimeScaledCoordinates,
                             analysis.ResourcePaths, relativePath);
                         analysis.AddPreserved(archiveName, relativePath.Replace('\\', '/'), preserved);
+                        if (adaptPngReader && extension.Equals(".lua", StringComparison.OrdinalIgnoreCase))
+                            await ArtemisTextProcessor.AddPngCoordinateReadersAsync(path, token);
                         if (preserved.Count > 0)
                             progressEntry = $"{relativePath} · text: preserved dynamic expressions at lines {string.Join(",", preserved.Take(8))}" +
                                 (preserved.Count > 8 ? $" (+{preserved.Count - 8})" : "");
@@ -273,7 +301,7 @@ public sealed class ConversionService : IConversionService
                     int targetHeight = info?.IsNative == true ? sourceHeight : Math.Max(1, (int)(sourceHeight * dimensionRatio));
                     foreach (var diagnostic in TextureDimensionDiagnostics.Create(sourceWidth, sourceHeight, targetWidth, targetHeight, relativePath))
                         Diagnostic(diagnostic);
-                    if (readable && extension.Equals(".png", StringComparison.OrdinalIgnoreCase)) await _png.ResizeAsync(path, options.Ratio, token);
+                    if (readable && extension.Equals(".png", StringComparison.OrdinalIgnoreCase)) await pngProcessor.ResizeAsync(path, options.Ratio, token);
                     else if (readable && options.NativeTextures?.Enabled == true && extension.ToLowerInvariant() is ".jpg" or ".jpeg")
                     {
                         using Image image = await Image.LoadAsync(path, token);
@@ -286,6 +314,8 @@ public sealed class ConversionService : IConversionService
                         if (result.Converted)
                         {
                             renamed[normalized] = Path.GetRelativePath(root, result.OutputPath).Replace('\\', '/');
+                            if (result.CoordinatePath is { } csv)
+                                coordinateFiles[normalized] = Path.GetRelativePath(root, csv).Replace('\\', '/');
                             Interlocked.Increment(ref converted);
                         }
                         else Interlocked.Increment(ref kept);
@@ -392,7 +422,7 @@ public sealed class ConversionService : IConversionService
                 $"PSV textures: converted={converted}, kept={kept}, resized source={beforeBytes:N0} B, output={afterBytes:N0} B"));
         analysis.RecordRenames(archiveName, renamed);
         await analysis.InspectOutputAsync(root, archiveName, cancellationToken);
-        return renamed;
+        return (renamed, coordinateFiles);
     }
 
     private static async Task<IReadOnlySet<int>> CollectUsedCodePointsAsync(IEnumerable<string> files, CancellationToken cancellationToken)

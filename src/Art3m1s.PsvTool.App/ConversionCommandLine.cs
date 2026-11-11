@@ -33,6 +33,7 @@ internal static class ConversionCommandLine
           --encoding auto|utf-8|shift-jis  PFS filename encoding; default auto
           --native-textures true|false  Recommended image categories; default true
           --ignore-bg-alpha true|false  Default false
+          --export-png-coordinates true|false  DDS + coordinate CSV for compatible PNGs; default false; requires text processing
           --texture-category-depth auto|1..8  Automatic image classification (default) or manual directory depth
           --psb-format FORMAT          dxt5 (default), pvrtc2-4, pvrtc2-2, preserve
           --dxt5-layout LAYOUT         swizzled (default) or linear; images and PSB
@@ -126,17 +127,19 @@ internal static class ConversionCommandLine
                 int? targetHeight = hasSize ? Math.Max(1, (int)(height!.Value * ratio)) : null;
                 Log(FormattableString.Invariant($"RESOLUTION {width}x{height}; ratio={ratio:R}; target={targetWidth}x{targetHeight}"));
                 if (settings.DryRun) { Log("PREVIEW " + source); return Finish(0, "preview"); }
+                bool exportPngCoordinates = settings.ExportPngCoordinates && settings.Types.HasFlag(AssetCategories.Text);
                 NativeTextureRule[] rules = [];
                 if (settings.NativeTextures && settings.Types.HasFlag(AssetCategories.Images))
                 {
                     Log("TEXTURE_SCAN_START; waiting for image categories and recommendations");
-                    var images = await (textureScanner ?? new TextureScanner(settings.TextureCategoryDepth)).ScanAsync(source, settings.Encoding,
+                    var images = await (textureScanner ?? new TextureScanner(settings.TextureCategoryDepth, exportPngCoordinates)).ScanAsync(source, settings.Encoding,
                         runLog, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                     if (images.FirstOrDefault(image => image.Error != null) is { } failed)
                         throw new ConversionItemException(failed.Archive, failed.Path,
                             new InvalidDataException(failed.Error), "texture-scan");
-                    rules = TextureCategoryViewModel.FromScan(images, ratio, settings.IgnoreBackgroundAlpha, true)
+                    rules = TextureCategoryViewModel.FromScan(images, ratio, settings.IgnoreBackgroundAlpha, true,
+                        exportPngCoordinates: exportPngCoordinates)
                         .Select(category => category.Rule)
                         .Select(rule => settings.Layout == PsbDxt5Layout.Linear && rule.Format == NativeTextureFormat.Auto
                             ? rule with { Format = NativeTextureFormat.AutoLinear } : rule).ToArray();
@@ -150,7 +153,8 @@ internal static class ConversionCommandLine
                     SubsetFonts: settings.SubsetFonts, FontProfile: settings.FontProfile,
                     IgnorePfsVideos: settings.IgnorePfsVideos,
                     ConvertEmotePsbTexturesToDxt5: settings.PsbFormat.HasValue,
-                    NativeTextures: new NativeTextureOptions(settings.NativeTextures, settings.IgnoreBackgroundAlpha, rules, settings.TextureCategoryDepth),
+                    NativeTextures: new NativeTextureOptions(settings.NativeTextures, settings.IgnoreBackgroundAlpha, rules, settings.TextureCategoryDepth,
+                        exportPngCoordinates),
                     PsbTextures: new PsbTextureOptions(Enabled: ConversionDefaults.IndependentPsbScaling, CompensateRendering: ConversionDefaults.PsbRenderCompensation),
                     PsbOutputFormat: settings.PsbFormat ?? PsbTextureFormat.Dxt5, Dxt5Layout: settings.Layout,
                     TargetWidth: targetWidth, TargetHeight: targetHeight);

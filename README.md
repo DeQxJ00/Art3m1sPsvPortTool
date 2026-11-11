@@ -112,6 +112,7 @@ Linux 直接执行 `./Art3m1s.PsvTool.App --convert --input /data/sample01 --out
 | `--native-textures true\|false` | `true`，自动扫描并选择建议转换的普通图片分类，使用安全的 AUTO 规则 |
 | `--texture-category-depth auto\|1..8` | 默认 `auto`，跳过已知包装层自动识别 BG/FG/face/CG/EV 等用途；二层未识别时再检查 `image/<目录>/<用途>` 的第三层；UI、遮罩和不明确目录保守处理。数字为从资源根目录开始的手动层数（不含文件名）；UI 切换分类方式后需重新扫描 |
 | `--ignore-bg-alpha true\|false` | `false`，是否忽略背景图片 Alpha；谨慎开启 |
+| `--export-png-coordinates true\|false` | 默认 `false`。启用文本和图片处理时，将可迁移坐标的 PNG 转为 DDS 和同名 CSV |
 | `--psb-format dxt5\|pvrtc2-4\|pvrtc2-2\|preserve` | `dxt5`；`preserve` 不做 PSB 纹理格式压缩，但勾选动画时仍按全局 Ratio 缩放 PSB |
 | `--dxt5-layout swizzled\|linear` | `swizzled`；同时控制普通图片的自动推荐排列和 PSB DXT5 排列 |
 | `--subset-fonts true\|false` | `false`，与 UI 一致；独立于 `--types`，不需要削减字体请明确传 `false` |
@@ -270,7 +271,11 @@ RGBA8 每像素 4 字节；DXT5（BC3）每个 `4×4` 像素块占 16 字节，�
 
 BC4 只适合显式选择的无透明灰度数据；普通图片的 BC5/有符号格式会标为不适合。PVRTC1 要求缩放后的尺寸为二次幂；不会自动拉伸。ETC1 实机支持，但当前 Vita3K 存在兼容问题。尺寸上限 4096，不生成 mipmap。估计包含块对齐和容器头，保留项暂按原文件大小计算；实际显存有额外对齐/分配开销，输出也不保证小于 PNG。
 
-转换后 BC 使用 DDS、PVRTC/ETC1 使用 PVR，更新 PFS 原始名称的后缀而保留编码，脚本的 PNG 引用由引擎同名查找兼容。重复虚拟路径、同名后缀冲突、已存在的目标和无法检查的图片会保留。带 PNG 文本、偏移、裁剪或未知附加块的图片保留为 PNG，并沿用原 PNG 缩放规则，不丢弃定位信息。PSB 的内嵌图集继续由独立 E-mote 选项处理。
+转换后 BC 使用 DDS、PVRTC/ETC1 使用 PVR，更新 PFS 原始名称的后缀而保留编码，脚本的 PNG 引用由引擎同名查找兼容。重复虚拟路径、同名后缀冲突、已存在的目标和无法检查的图片会保留。默认将带 PNG 文本、偏移、裁剪或未知附加块的图片保留为 PNG。PSB 的内嵌图集由独立 E-mote 选项处理。
+
+「带坐标的 PNG 转为 DDS + 坐标 CSV」默认关闭，适用于立绘、背景和 CG/EV 等符合普通 AUTO 规则的图片。支持 `comment=pos,x,y`、`pos,x,y,w,h`、`position` / `offset` / `anchor` / `origin` 坐标对、`crop` / `clip` / `rect` 矩形及单独的 `X` / `Y` / `Left` / `Top` / `Width` / `Height` 像素字段。坐标和尺寸随全局 Ratio 缩放一次。带帧数的 `pos` 仅在缩放后仍能匹配原脚本的裁剪区域和帧间距时导出，帧数和模式照原值保留。
+
+DDS 和同名 CSV 输出到同一目录、同一归档。工具为兼容的输出 Lua 补上 CSV 读取，原脚本继续解析原字段，已有游戏坐标表保持原有优先级。已有同名 CSV、覆盖链冲突、无法识别的元数据或脚本会使图片保留为 PNG。手动的「除带偏移信息外的 AUTO 转换」继续跳过这类 PNG。
 
 发布包须保留随附的 PVRTexLib 原生库（Windows `PVRTexLib.dll`、Linux `libPVRTexLib.so`、macOS `libPVRTexLib.dylib`）和许可文件。
 

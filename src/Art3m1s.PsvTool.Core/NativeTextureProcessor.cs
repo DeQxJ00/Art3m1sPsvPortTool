@@ -4,7 +4,8 @@ using SixLabors.ImageSharp.PixelFormats;
 
 namespace Art3m1s.PsvTool.Core;
 
-public sealed record TextureConversionResult(string OutputPath, bool Converted, string Message, long Before, long After);
+public sealed record TextureConversionResult(string OutputPath, bool Converted, string Message, long Before, long After,
+    string? CoordinatePath = null);
 
 public sealed class NativeTextureProcessor
 {
@@ -17,19 +18,25 @@ public sealed class NativeTextureProcessor
     {
         long before = new FileInfo(path).Length;
         NativeTextureRule? rule = options.Rules?.FirstOrDefault(r => r.Category == source.GroupKey);
-        bool enabled = options.Enabled && (rule?.Enabled ?? NativeTextureFormats.DefaultEnabled(source));
+        bool enabled = options.Enabled && (rule?.Enabled ??
+            (NativeTextureFormats.DefaultEnabled(source) || options.ExportPngCoordinates && source.CanExportPngCoordinates));
         NativeTextureFormat format = rule?.Format ?? NativeTextureFormat.Auto;
         if (source.Error != null) return new(path, false, "无法解析，原样保留 / Cannot inspect, kept: " + source.Error, before, before);
         if (!enabled) return new(path, false, "未勾选 / Not selected", before, before);
-        string? reason = NativeTextureFormats.Unsuitable(source, format, ratio, options.IgnoreBackgroundAlpha);
+        string? reason = NativeTextureFormats.Unsuitable(source, format, ratio, options.IgnoreBackgroundAlpha, options.ExportPngCoordinates);
         if (reason != null) return new(path, false, "保留 / Kept: " + reason, before, before);
-        format = NativeTextureFormats.Resolve(source, format, options.IgnoreBackgroundAlpha);
+        format = NativeTextureFormats.Resolve(source, format, options.IgnoreBackgroundAlpha, options.ExportPngCoordinates);
         if (format == NativeTextureFormat.Preserve) return new(path, false, "保留原格式 / Kept original", before, before);
         NativeFormatInfo spec = NativeTextureFormats.Info(format);
         string output = Path.ChangeExtension(path, spec.Extension);
         if (File.Exists(output)) return new(path, false, "保留：目标文件已存在 / Kept: target exists", before, before);
+        string? csv = NativeTextureFormats.ExportsPngCoordinates(source, format, options.ExportPngCoordinates)
+            ? Path.ChangeExtension(path, ".csv") : null;
+        if (csv != null && (File.Exists(csv) || Directory.Exists(csv)))
+            return new(path, false, "保留：坐标 CSV 已存在 / Kept: coordinate CSV exists", before, before);
         // Keep temporary output beside its destination for an atomic rename.
         string temporary = path + "." + Guid.NewGuid().ToString("N") + spec.Extension;
+        bool ownsCsv = false, ownsTexture = false, complete = false;
         await EncoderGate.WaitAsync(token);
         try
         {
@@ -46,14 +53,28 @@ public sealed class NativeTextureProcessor
             token.ThrowIfCancellationRequested();
             long expected = NativeTextureFormats.PayloadBytes(format, image.Width, image.Height);
             if (new FileInfo(temporary).Length < expected) throw new InvalidDataException("Truncated native texture output.");
+            if (csv != null)
+            {
+                await using var stream = new FileStream(csv, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                ownsCsv = true;
+                await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(source.PngCoordinates!.ToCsv(ratio)), token);
+            }
             File.Move(temporary, output);
+            ownsTexture = true;
             File.Delete(path);
-            return new(output, true, spec.Name, before, new FileInfo(output).Length);
+            complete = true;
+            long csvBytes = csv == null ? 0 : new FileInfo(csv).Length;
+            return new(output, true, csv == null ? spec.Name : spec.Name + " + CSV", before, new FileInfo(output).Length + csvBytes, csv);
         }
         finally
         {
-            if (File.Exists(temporary)) File.Delete(temporary);
-            EncoderGate.Release();
+            try
+            {
+                if (File.Exists(temporary)) File.Delete(temporary);
+                if (!complete && ownsTexture) File.Delete(output);
+                if (!complete && ownsCsv) File.Delete(csv!);
+            }
+            finally { EncoderGate.Release(); }
         }
     }
     private static byte[] ContainerHeader(NativeFormatInfo spec, int w, int h, int length)

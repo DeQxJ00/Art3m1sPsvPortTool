@@ -17,6 +17,12 @@ public interface IPngProcessor
 
 public sealed class PngProcessor : IPngProcessor
 {
+    private readonly bool _preserveAnimationFields;
+
+    public PngProcessor() { }
+
+    internal PngProcessor(bool preserveAnimationFields) => _preserveAnimationFields = preserveAnimationFields;
+
     public async Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -45,7 +51,7 @@ public sealed class PngProcessor : IPngProcessor
         }
     }
 
-    private static async Task ResizeIndexedAsync(
+    private async Task ResizeIndexedAsync(
         PngDocument document,
         int width,
         int height,
@@ -129,7 +135,7 @@ public sealed class PngProcessor : IPngProcessor
         await output.WriteAsync(document.Trailer, cancellationToken);
     }
 
-    private static void ResizeTrueColor(PngDocument document, int width, int height, double ratio, string outputPath)
+    private void ResizeTrueColor(PngDocument document, int width, int height, double ratio, string outputPath)
     {
         PngColorType colorType = document.ColorType switch
         {
@@ -254,7 +260,7 @@ public sealed class PngProcessor : IPngProcessor
         row[bitOffset / 8] |= checked((byte)((index & mask) << shift));
     }
 
-    private static ReadOnlyMemory<byte> ScaleTextualChunk(PngChunk chunk, double ratio)
+    private ReadOnlyMemory<byte> ScaleTextualChunk(PngChunk chunk, double ratio)
     {
         return chunk.Type switch
         {
@@ -265,13 +271,17 @@ public sealed class PngProcessor : IPngProcessor
         };
     }
 
-    private static byte[] ScaleTextChunk(byte[] data, double ratio)
+    private byte[] ScaleTextChunk(byte[] data, double ratio)
     {
         int separator = Array.IndexOf(data, (byte)0);
         if (separator < 1 || separator == data.Length - 1)
             return data;
         string value = Encoding.Latin1.GetString(data, separator + 1, data.Length - separator - 1);
-        string scaled = ScaleCoordinateList(value, ratio);
+        string scaled = _preserveAnimationFields
+            && Encoding.Latin1.GetString(data, 0, separator).Equals("comment", StringComparison.OrdinalIgnoreCase)
+            && value.StartsWith("pos,", StringComparison.Ordinal)
+            ? PngCoordinates.ScalePositionComment(value, ratio) ?? value
+            : ScaleCoordinateList(value, ratio);
         if (scaled == value)
             return data;
         byte[] encoded = Encoding.Latin1.GetBytes(scaled);
