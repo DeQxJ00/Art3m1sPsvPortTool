@@ -9,6 +9,28 @@ public sealed class ScriptCompatibilityTests : IDisposable
     private readonly string root = Directory.CreateTempSubdirectory("script-compatibility-").FullName;
 
     [Fact]
+    public async Task SplitImageStrideScalesWithoutChangingDeviceLimit()
+    {
+        const string script = """
+            function split(engine, path)
+              local stride = tonumber(engine:var("g.texture_maxsize"))
+              local size = read(path .. "/size.csv")
+              engine:tag({"lyprop", left = (column - 1) * stride})
+            end
+            function capability(engine)
+              local limit = tonumber(engine:var("g.texture_maxsize"))
+              return limit
+            end
+            """;
+        string path = Path.Combine(root, "tiles.iet");
+        await File.WriteAllBytesAsync(path, Asb(("lua", ["script", script])));
+        await new ArtemisTextProcessor().ProcessAsync(path, 0.5);
+        string changed = ReadLua(await File.ReadAllBytesAsync(path));
+        Assert.Contains("local stride = (tonumber(engine:var(\"g.texture_maxsize\"))*0.5)", changed);
+        Assert.Contains("local limit = tonumber(engine:var(\"g.texture_maxsize\"))", changed);
+    }
+
+    [Fact]
     public async Task ButtonZoomAcceptsItsStringDefaultWithoutRemovingNumericZero()
     {
         const string script = """

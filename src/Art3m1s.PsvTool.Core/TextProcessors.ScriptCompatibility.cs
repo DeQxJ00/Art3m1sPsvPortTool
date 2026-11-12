@@ -4,9 +4,9 @@ public sealed partial class ArtemisTextProcessor
 {
     private sealed record OptionalMessageLayer(string Flag, string Parent);
 
-    private static byte[] RepairCompiledScripts(byte[] bytes)
+    private static byte[] RepairCompiledScripts(byte[] bytes, double ratio)
     {
-        if (bytes.AsSpan().IndexOf("rollzoom"u8) < 0 && bytes.AsSpan().IndexOf("file_exists"u8) < 0)
+        if (bytes.AsSpan().IndexOf("rollzoom"u8) < 0 && bytes.AsSpan().IndexOf("file_exists"u8) < 0 && bytes.AsSpan().IndexOf("g.texture_maxsize"u8) < 0)
             return bytes;
         var records = ReadAsbRecords(bytes);
         if (records is null) return bytes;
@@ -20,7 +20,7 @@ public sealed partial class ArtemisTextProcessor
             foreach (var (key, field) in record.Fields)
             {
                 if (key != "script") continue;
-                string updated = RepairLuaCompatibility(field.Value, optionalLayers, callbacks);
+                string updated = ScaleSplitImagePitch(RepairLuaCompatibility(field.Value, optionalLayers, callbacks), ratio);
                 if (updated != field.Value) edits.Add((field, updated));
             }
         }

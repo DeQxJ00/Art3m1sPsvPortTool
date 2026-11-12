@@ -13,6 +13,7 @@ public sealed partial class ArtemisTextProcessor
     // This deliberately isn't an evaluator. Unknown expressions retain their meaning.
     private static string ScaleScript(string text, double ratio, string extension, List<int> preservedExpressions, bool runtimeScaledCoordinates = false)
     {
+        if (extension == ".lua") text = ScaleSplitImagePitch(text, ratio);
         List<ScriptToken> tokens = LexScript(text);
         List<ScriptEdit> edits = [];
         string[] keys = extension switch

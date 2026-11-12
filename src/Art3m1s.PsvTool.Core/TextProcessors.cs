@@ -36,7 +36,7 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         string extension = Path.GetExtension(path).ToLowerInvariant();
         if (extension is ".iet" or ".asb" && bytes.AsSpan().StartsWith("ASB\0"u8))
         {
-            byte[] repaired = RepairCompiledScripts(bytes);
+            byte[] repaired = RepairCompiledScripts(bytes, ratio);
             if (!ReferenceEquals(bytes, repaired))
                 await File.WriteAllBytesAsync(path, repaired, cancellationToken);
             return [];
