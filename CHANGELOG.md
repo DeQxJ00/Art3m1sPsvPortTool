@@ -6,6 +6,11 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.0.31] - 2026-11-12
+
+- 缩放分块图片时，同步缩放 Lua 和 IET 内嵌 Lua 中可识别的分块间距，使图块按缩小后的尺寸拼接。设备最大纹理尺寸查询继续返回原值。
+- Scale the tile pitch for recognized split-image scripts in Lua and embedded IET Lua so resized tiles align. Device texture size queries still return their original values.
+
 ## [1.0.30] - 2026-11-12
 
 - 文本转换自动修复可识别的按钮缩放默认值校验，并在可选字体布局缺失时跳过相关 ASB 文字层重绘。
