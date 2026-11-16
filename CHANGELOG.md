@@ -6,6 +6,11 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-16
+
+- 版本更新至 1.1.0，保留此前的按钮缩放默认值校验、IET 内嵌 Lua 和分块图片拼接间距修正；本次仅调整版本信息。
+- Bump the version to 1.1.0, retaining the existing button zoom default validation, embedded IET Lua, and split-image tile pitch fixes. This release only updates version information.
+
 ## [1.0.31] - 2026-11-12
 
 - 缩放分块图片时，同步缩放 Lua 和 IET 内嵌 Lua 中可识别的分块间距，使图块按缩小后的尺寸拼接。设备最大纹理尺寸查询继续返回原值。
