@@ -35,7 +35,10 @@ function Copy-PackageLicense {
 function Save-PinnedLicense {
     param([string]$Uri, [string]$DestinationName)
     Write-Host "Collecting $DestinationName from $Uri"
-    try { Invoke-WebRequest -Uri $Uri -OutFile (Join-Path $licensePath $DestinationName) }
+    try {
+        Invoke-WebRequest -Uri $Uri -OutFile (Join-Path $licensePath $DestinationName) `
+            -TimeoutSec 60 -MaximumRetryCount 3 -RetryIntervalSec 3
+    }
     catch { throw "Unable to collect $DestinationName from ${Uri}: $($_.Exception.Message)" }
 }
 
@@ -84,7 +87,9 @@ Save-PinnedLicense 'https://raw.githubusercontent.com/hokejyo/VisualNovelUpscale
 Save-PinnedLicense 'https://raw.githubusercontent.com/xiph/ogg/v1.3.6/COPYING' 'libogg-BSD-3-Clause.txt'
 Save-PinnedLicense 'https://raw.githubusercontent.com/xiph/theora/8e4808736e9c181b971306cc3f05df9e61354004/COPYING' 'libtheora-BSD-3-Clause.txt'
 Save-PinnedLicense 'https://raw.githubusercontent.com/videolan/dav1d/1.5.4/COPYING' 'dav1d-BSD-2-Clause.txt'
-Save-PinnedLicense 'https://code.videolan.org/videolan/x264/-/raw/b35605ace3ddf7c1a5d67a2eb553f034aef41d55/COPYING' 'x264-GPL-2.0.txt'
+# COPYING from x264 commit b35605ace3ddf7c1a5d67a2eb553f034aef41d55.
+# The upstream raw endpoint can return an anti-bot page with HTTP 200.
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../packaging/licenses/x264-GPL-2.0.txt') -Destination (Join-Path $licensePath 'x264-GPL-2.0.txt') -Force
 Save-PinnedLicense 'https://raw.githubusercontent.com/madler/zlib/v1.3.2/LICENSE' 'zlib-LICENSE.txt'
 
 if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {

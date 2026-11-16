@@ -188,7 +188,8 @@ jobs:
           $binary = (Resolve-Path "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App$suffix").Path
           $process = Start-Process -FilePath $binary -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw "Native self-test failed: $($process.ExitCode)" }
-      - shell: pwsh
+      - name: Collect release licenses
+        shell: pwsh
         run: |
           Copy-Item LICENSE "publish/${{ matrix.rid }}"
           Copy-Item "publish/${{ matrix.rid }}/tools/BUILD-CONFIG.txt" "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt"
@@ -197,25 +198,27 @@ jobs:
             Copy-Item ffmpeg-install/BTBN-LICENSE.txt "publish/${{ matrix.rid }}/licenses/BtbN-FFmpeg-Builds-GPLv3.txt"
             Copy-Item ffmpeg-install/BTBN-checksums.sha256 "publish/${{ matrix.rid }}/tools/BTBN-checksums.sha256"
           }
-          if ('${{ matrix.rid }}' -eq 'win-x64') {
-            $withFfmpegFiles = @(
-              "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
-              "publish/${{ matrix.rid }}/PVRTexLib.dll",
-              "publish/${{ matrix.rid }}/LICENSE",
-              "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt",
-              "publish/${{ matrix.rid }}/tools",
-              "publish/${{ matrix.rid }}/licenses"
-            )
-            $withoutFfmpegFiles = @(
-              "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
-              "publish/${{ matrix.rid }}/PVRTexLib.dll",
-              "publish/${{ matrix.rid }}/LICENSE",
-              "publish/${{ matrix.rid }}/licenses"
-            )
-            $prefix = "art3m1s_psv_port_tool-v$env:PACKAGE_VERSION-${{ matrix.rid }}"
-            Compress-Archive -Path $withFfmpegFiles -DestinationPath "$prefix-with-ffmpeg.zip"
-            Compress-Archive -Path $withoutFfmpegFiles -DestinationPath "$prefix-no-ffmpeg.zip"
-          }
+      - name: Package Windows archives
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $withFfmpegFiles = @(
+            "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
+            "publish/${{ matrix.rid }}/PVRTexLib.dll",
+            "publish/${{ matrix.rid }}/LICENSE",
+            "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt",
+            "publish/${{ matrix.rid }}/tools",
+            "publish/${{ matrix.rid }}/licenses"
+          )
+          $withoutFfmpegFiles = @(
+            "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
+            "publish/${{ matrix.rid }}/PVRTexLib.dll",
+            "publish/${{ matrix.rid }}/LICENSE",
+            "publish/${{ matrix.rid }}/licenses"
+          )
+          $prefix = "art3m1s_psv_port_tool-v$env:PACKAGE_VERSION-${{ matrix.rid }}"
+          Compress-Archive -Path $withFfmpegFiles -DestinationPath "$prefix-with-ffmpeg.zip"
+          Compress-Archive -Path $withoutFfmpegFiles -DestinationPath "$prefix-no-ffmpeg.zip"
       - if: runner.os == 'Linux'
         shell: bash
         run: |
