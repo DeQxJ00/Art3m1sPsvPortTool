@@ -16,7 +16,9 @@ CSV files follow the text-conversion option. Sibling non-CSV files or folders (i
 
 Preflight builds a shared resource index across all PFS archives and loose files. Later archives override earlier entries, and loose files take precedence. Lua helpers, layout tables and image sidecars can therefore be matched across archives. Resolution detection also uses the winning `system.ini`.
 
-Repacking uses loose `.iet` files from the input directory to replace entries with the same full relative path in every PFS. The output also includes the loose copies. To include an edited script, place it under the input directory at its archive-relative path and run the conversion with the same settings.
+Repacking uses loose `.iet` files from the input directory to replace entries with the same full relative path in every PFS. The output also includes the loose copies. To include an edited script, keep its coordinates in the source resolution and place it under the input directory at its archive-relative path.
+
+With text processing enabled, the tool applies the conversion ratio to pixel coordinates in supported `.iet` commands, whether archived in a PFS or loose. This includes all keyframes in title menu animations. Duration, delay, opacity, and zoom percentages retain their original values. A ratio of `1` preserves the original coordinates. Reconvert from the original resources if an older package is missing this step.
 
 Text conversion repairs recognized button zoom default checks and skips the associated ASB message-layer redraw when an optional font layout is missing. It identifies these cases from script arguments, resource checks and layer operations.
 

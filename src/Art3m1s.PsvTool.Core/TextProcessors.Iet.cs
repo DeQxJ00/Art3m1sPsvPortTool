@@ -24,14 +24,15 @@ public sealed partial class ArtemisTextProcessor
                 if (Regex.IsMatch(trimmed, @"^\[(?:endlua|/lua)\s*\]\s*$", RegexOptions.IgnoreCase))
                 {
                     List<int> diagnostics = [];
-                    result.Append(ScaleScript(RepairLuaCompatibility(luaBody.ToString()), ratio, ".lua", diagnostics));
+                    string repaired = RepairLuaCompatibility(luaBody.ToString());
+                    result.Append(ratio == 1 ? repaired : ScaleScript(repaired, ratio, ".lua", diagnostics));
                     preserved.AddRange(diagnostics.Select(n => n + luaStartLine));
                     luaBody.Clear(); lua = false; result.Append(line);
                 }
                 else luaBody.Append(line);
                 continue;
             }
-            if (!trimmed.StartsWith('[')) { result.Append(line); continue; }
+            if (ratio == 1 || !trimmed.StartsWith('[')) { result.Append(line); continue; }
 
             // Match complete tags, respecting quoted closing brackets. Only
             // engine geometry commands have known pixel units; macros do not.

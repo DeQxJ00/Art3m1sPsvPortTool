@@ -6,6 +6,11 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-17
+
+- 修复转换比例为 `1` 时 IET 坐标的小数被截断的问题。增加 PFS 内标题动画坐标转换的回归测试，并补充从原始资源重新转换的说明。
+- Preserve fractional IET coordinates at a conversion ratio of `1`. Add regression coverage for title animation coordinates packaged in PFS and document reconversion from original resources.
+
 ## [1.1.0] - 2026-11-16
 
 - 版本更新至 1.1.0，保留此前的按钮缩放默认值校验、IET 内嵌 Lua 和分块图片拼接间距修正；本次仅调整版本信息。

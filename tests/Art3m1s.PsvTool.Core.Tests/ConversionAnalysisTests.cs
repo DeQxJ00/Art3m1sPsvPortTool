@@ -63,6 +63,28 @@ public sealed class ConversionAnalysisTests : IDisposable
         await Convert();
         Assert.Contains("x=720",await Read("root.pfs","chapter.ast"));
     }
+
+    [Theory]
+    [InlineData(0.75, "900,678", "-30,0")]
+    [InlineData(0.703125, "844,635", "-28,0")]
+    [InlineData(1, "1200.5,904.25", "-40.5,0")]
+    public async Task RepackScalesArchivedIetGeometryWithoutLooseOverride(double ratio, string x, string y)
+    {
+        const string entry = "ui/panel_intro.iet";
+        const string animation = "[tween id=\"panel\" x=\"1200.5,904.25\" y=\"-40.5,0\" time=\"1000\" delay=\"200\" alpha=\"0,255\"]\r\n"
+            + "[lua]\r\ntween{x=\"1200.5,904.25\", y=\"-40.5,0\", time=200}\r\n[endlua]\r\n";
+        await Pack("root.pfs", ("system.ini", Ini));
+        await Pack("root.pfs.001", (entry, animation));
+
+        await new ConversionService().ConvertAsync(new(Input, Output, Ratio: ratio, Categories: AssetCategories.Text));
+
+        string expected = animation.Replace("1200.5,904.25", x).Replace("-40.5,0", y);
+        Assert.Equal(expected, await Read("root.pfs.001", entry));
+        Assert.False(File.Exists(Path.Combine(Output, entry)));
+        byte[]? original = await new PfsCodec().ReadSmallEntryAsync(Path.Combine(Input, "root.pfs.001"), entry);
+        Assert.Equal(Encoding.UTF8.GetBytes(animation), original);
+    }
+
     [Fact]
     public async Task RepackUsesLooseIetByFullPathInEveryMatchingArchive()
     {
