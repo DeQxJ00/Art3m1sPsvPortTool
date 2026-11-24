@@ -8,6 +8,9 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [1.1.2] - 2026-11-24
 
+- macOS 构建和发布仅保留 Apple Silicon（arm64），CI 与 Release 的 arm64 任务使用 `macos-26`。
+- macOS builds and releases target Apple Silicon (arm64), using `macos-26` runners in CI and Release.
+
 - 补齐旧式 Lua 立绘定位和背景滚动辅助函数的坐标缩放，同步处理立绘位置、锚点和滚动起止坐标。
 - Scale positions and anchors in recognized legacy Lua sprite helpers and both endpoints in background scrolling helpers.
 

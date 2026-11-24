@@ -39,7 +39,7 @@ The audit covers supported Lua/AST/TBL/IET resource fields, INI boot entries, AS
 
 ## Downloads and platform support
 
-Every release provides two versioned archives for each of `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`: `with-ffmpeg` works out of the box, while the smaller `no-ffmpeg` archive requires FFmpeg to be supplied separately. Windows/Linux use a NativeAOT executable with a separate PVRTexLib native library; macOS uses an unsigned and unnotarized `.app.zip` bundle and may require manual approval under Privacy & Security.
+Every release provides two versioned archives for each of `win-x64`, `linux-x64`, and `osx-arm64`: `with-ffmpeg` works out of the box, while the smaller `no-ffmpeg` archive requires FFmpeg to be supplied separately. The macOS build targets Apple Silicon (arm64). Windows/Linux use a NativeAOT executable with a separate PVRTexLib native library; macOS uses an unsigned and unnotarized `.app.zip` bundle and may require manual approval under Privacy & Security.
 
 ### Installing FFmpeg
 
