@@ -6,6 +6,14 @@ This file records user-facing changes by application version. Dates use China St
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-11-24
+
+- 补齐旧式 Lua 立绘定位和背景滚动辅助函数的坐标缩放，同步处理立绘位置、锚点和滚动起止坐标。
+- Scale positions and anchors in recognized legacy Lua sprite helpers and both endpoints in background scrolling helpers.
+
+- 识别脚本已按游戏比例换算的背景平移坐标，保留其逻辑坐标，并保留原始纵向锚点供运行时计算偏移，避免重复缩放导致背景移动错位。纹理像素锚点按转换比例缩放。
+- Recognize background movement already scaled by the script, preserve its logical coordinates and original vertical anchor for runtime offset calculation, and scale texture pixel anchors with the resources.
+
 ## [1.1.1] - 2026-11-17
 
 - 修复转换比例为 `1` 时 IET 坐标的小数被截断的问题。增加 PFS 内标题动画坐标转换的回归测试，并补充从原始资源重新转换的说明。
