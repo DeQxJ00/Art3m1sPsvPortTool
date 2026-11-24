@@ -50,6 +50,8 @@ public sealed partial class ArtemisTextProcessor
                 && tokens[n+6].Text == "=" && KeyName(tokens[n+7]) == "font")
                 fontTables.Add(tokens[n].Text);
         bool[] vita = VitaBranches(tokens);
+        if (extension == ".lua" && ratio != 1)
+            ScaleLegacySceneGeometry(text, tokens, vita, ratio, edits);
         HashSet<int> clipLookupValues = [];
         if (extension == ".lua")
         {

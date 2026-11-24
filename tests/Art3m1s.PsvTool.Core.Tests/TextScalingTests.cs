@@ -36,6 +36,66 @@ public sealed class TextScalingTests : IDisposable
         Assert.Contains("local y=375", result);
     }
 
+    private const string SpriteGeometry = """
+        function getSpritePOS(p)
+            if p.y == "0-10" then p.y = -10 end
+            local spritepos = {
+                x = (640 + p.x - p.ax),
+                y = (360 + p.y - p.ay)
+            }
+            return spritepos
+        end
+        local m = getSpritePOS(p)
+        e:tag{"lyprop", id=(subid), left=(m.x), top=(m.y), anchorx=(p.ax), anchory=(p.ay), rotate=(-r)}
+        e:tag{"lyprop", id=(id), left="0", top="0", anchorx="640", anchory="360", alpha=(alpha)}
+        """;
+
+    private const string BackgroundScroll = """
+        function bg_scroll(param)
+            local x1 = -param.x1
+            local x2 = -param.x2
+            local y1 = -param.y1
+            local y2 = -param.y2
+            local time = param.fade
+            if x1 ~= x2 then tween{x=(x1..","..x2), time=(time)} end
+            if y1 ~= y2 then tween{y=(y1..","..y2), time=(time)} else e:tag{"lyprop", top=(y1)} end
+        end
+        """;
+
+    [Theory]
+    [InlineData(.75, "0.75", 480, 270)]
+    [InlineData(.5, "0.5", 320, 180)]
+    public async Task ScalesLegacySpritePositionsAndTheirLayerAnchors(double ratio, string factor, int centerX, int centerY)
+    {
+        string result = await Convert(SpriteGeometry, ".lua", ratio);
+        Assert.Contains($"x = ((640 + p.x - p.ax)*{factor})", result);
+        Assert.Contains($"y = ((360 + p.y - p.ay)*{factor})", result);
+        Assert.Contains($"anchorx=((p.ax)*{factor}), anchory=((p.ay)*{factor}), rotate=(-r)", result);
+        Assert.Contains($"anchorx=\"{centerX}\", anchory=\"{centerY}\", alpha=(alpha)", result);
+        Assert.Contains("if p.y == \"0-10\" then p.y = -10 end", result);
+    }
+
+    [Fact]
+    public async Task ScalesBothBackgroundScrollEndpointsBeforeStaticAndTweenPathsDiverge()
+    {
+        string result = await Convert(BackgroundScroll, ".lua", .75);
+        foreach (string axis in new[] { "x1", "x2", "y1", "y2" })
+            Assert.Contains($"local {axis} = (-param.{axis}*0.75)", result);
+        Assert.Contains("local time = param.fade", result);
+        Assert.Contains("else e:tag{\"lyprop\", top=(y1)} end", result);
+    }
+
+    [Fact]
+    public async Task LeavesUnscaledAndUnrelatedSceneGeometryAlone()
+    {
+        string source = SpriteGeometry + "\n" + BackgroundScroll;
+        Assert.Equal(source, await Convert(source, ".lua", 1));
+        string unrelated = source.Replace("getSpritePOS", "otherPosition").Replace("bg_scroll", "otherScroll");
+        Assert.Equal(unrelated, await Convert(unrelated, ".lua", .75));
+        string vita = "if game.os == \"vita\" then\n" + source + "\nend";
+        Assert.Equal(vita, await Convert(vita, ".lua", .75));
+    }
+
     [Fact]
     public async Task LegacyCsvLayoutScalesAtlasAndMessageGeometryTogether()
     {
