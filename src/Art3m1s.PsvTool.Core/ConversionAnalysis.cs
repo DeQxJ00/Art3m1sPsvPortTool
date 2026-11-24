@@ -29,6 +29,7 @@ internal sealed class ConversionAnalysis
     private readonly ConcurrentBag<ConversionFinding> findings = [];
     private readonly ConcurrentBag<ResourceReference> references = [];
     public ConversionProfile Profile { get; private set; } = null!;
+    public bool RuntimeScaledBackgroundPositions { get; private set; }
     public IReadOnlySet<string> ResourcePaths { get; private set; } = null!;
     public bool LocalizedManual { get; private set; }
     private byte[] manifest = [];
@@ -85,6 +86,7 @@ internal sealed class ConversionAnalysis
             }
         }
         var detected = ArtemisTextProcessor.DescribeCoordinateProfile(scripts);
+        result.RuntimeScaledBackgroundPositions = detected.BackgroundPositions;
         string[] dirs = result.ResourcePaths.Select(p => p.Split('/')).Where(p => p.Length >= 3 &&
                 p[0].ToLowerInvariant() is "ui" or "image" or "movie" && p[1].Length > 0 && p[1].All(char.IsAsciiDigit))
             .Select(p => p[1]).Distinct().Order(StringComparer.Ordinal).ToArray();

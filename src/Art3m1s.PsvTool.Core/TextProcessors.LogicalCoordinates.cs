@@ -2,6 +2,27 @@ namespace Art3m1s.PsvTool.Core;
 
 public sealed partial class ArtemisTextProcessor
 {
+    private const string LogicalBackgroundAnchor = "art3m1s_logical_ay";
+    private static readonly string[] BackgroundAnchorAdjustment =
+        ["if", "p", ".", "ay", "then", "y", "=", "y", "-", "getScalePos", "(", "p", ".", "ay", "-", "game", ".", "say", ")", "end"];
+
+    private static string NormalizeBackgroundAnchorOffset(string text)
+    {
+        var tokens = LexScript(text);
+        var vita = VitaBranches(tokens);
+        var result = new System.Text.StringBuilder(text);
+        for (int i = tokens.Count - BackgroundAnchorAdjustment.Length; i >= 0; i--)
+        {
+            if (vita[i] || !Matches(tokens, i, BackgroundAnchorAdjustment)) continue;
+            // The pixel anchor stays resized. The offset needs the original AY
+            // so it can subtract the logical center before applying game.scale.
+            int start = tokens[i + 11].Start;
+            int end = tokens[i + 13].End;
+            result.Remove(start, end - start).Insert(start, $"(p.{LogicalBackgroundAnchor} or p.ay)");
+        }
+        return result.ToString();
+    }
+
     // A legacy movement helper computes its start through getScale but inlines
     // the original display ratio at its endpoint. Once resized this exposes the
     // underlying CG. Normalize only this verified helper, never arbitrary ratios.
@@ -50,19 +71,34 @@ public sealed partial class ArtemisTextProcessor
         }
         return DescribeCoordinateProfile(scripts).Scaled;
     }
-    internal static (bool Scaled,bool Directories,int? Base,bool ConflictingBases) DescribeCoordinateProfile(IEnumerable<string> scripts)
+    internal static (bool Scaled, bool Directories, int? Base, bool ConflictingBases, bool BackgroundPositions)
+        DescribeCoordinateProfile(IEnumerable<string> scripts)
     {
         bool scale=false,helper=false,directories=false;
+        bool tableBasedScale = false, backgroundMovement = false, scaledPositionHelper = false, anchorAdjustment = false;
         HashSet<int> bases=[];
         foreach(string script in scripts)
         {
             foreach(var item in NumericSettingValues(script,"game_scale"))bases.Add(item.Value);
             var tokens=LexScript(script);
             directories |= FindSizeAssignments(tokens).Any();
-            bool Match(int i, params string[] pattern) => tokens.Skip(i).Take(pattern.Length).Select(t=>t.Text).SequenceEqual(pattern);
+            bool Match(int i, params string[] pattern) => Matches(tokens, i, pattern);
             for(int i=0;i<tokens.Count;i++)
             {
                 scale |= Match(i,"game",".","scale","=","game",".","width","/","init",".","game_scale");
+                if (Match(i, "local", "s", "=", "init", ".", "game_scale"))
+                    tableBasedScale |= Enumerable.Range(i + 6, Math.Min(64, tokens.Count - i - 6))
+                        .Any(j => Match(j, "game", ".", "scale", "=", "game", ".", "width", "/", "s", "[", "1", "]"));
+                if (Match(i, "local", "x1", "=", "p", ".", "x", "and", "getScalePos", "(", "p", ".", "x", ")"))
+                    backgroundMovement |= Match(i + 13, "local", "x2", "=", "p", ".", "x2", "and", "getScalePos", "(", "p", ".", "x2", ")")
+                        && Match(i + 26, "local", "y1", "=", "p", ".", "y", "and", "getScalePos", "(", "p", ".", "y", ")")
+                        && Match(i + 39, "local", "y2", "=", "p", ".", "y2", "and", "getScalePos", "(", "p", ".", "y2", ")");
+                if (Match(i, "function", "getScalePos", "(", "p", ")"))
+                {
+                    for (int j = i + 5; j < Math.Min(tokens.Count, i + 40) && tokens[j].Text != "function"; j++)
+                        scaledPositionHelper |= Match(j, "math", ".", "ceil", "(", "p", "*", "game", ".", "scale", ")");
+                }
+                if (tokens[i].Text == "if") anchorAdjustment |= Matches(tokens, i, BackgroundAnchorAdjustment);
                 if(KeyName(tokens[i])=="game_scale")
                 {
                     int eq=i+1;if(eq<tokens.Count&&tokens[eq].Text=="]")eq++;
@@ -77,6 +113,15 @@ public sealed partial class ArtemisTextProcessor
                 }
             }
         }
-        return (scale&&helper,directories,bases.Count==1?bases.Single():null,bases.Count>1);
+        return (scale && helper, directories, bases.Count == 1 ? bases.Single() : null, bases.Count > 1,
+            (scale || tableBasedScale) && backgroundMovement && scaledPositionHelper && anchorAdjustment);
+    }
+
+    private static bool Matches(List<ScriptToken> tokens, int start, string[] pattern)
+    {
+        if (start + pattern.Length > tokens.Count) return false;
+        for (int i = 0; i < pattern.Length; i++)
+            if (tokens[start + i].Text != pattern[i]) return false;
+        return true;
     }
 }

@@ -11,7 +11,8 @@ public sealed partial class ArtemisTextProcessor
 
     // Tokenize first: identifiers inside dialogue/comments are never geometry keys.
     // This deliberately isn't an evaluator. Unknown expressions retain their meaning.
-    private static string ScaleScript(string text, double ratio, string extension, List<int> preservedExpressions, bool runtimeScaledCoordinates = false)
+    private static string ScaleScript(string text, double ratio, string extension, List<int> preservedExpressions,
+        bool runtimeScaledCoordinates = false, bool runtimeScaledBackgroundPositions = false)
     {
         if (extension == ".lua") text = ScaleSplitImagePitch(text, ratio);
         List<ScriptToken> tokens = LexScript(text);
@@ -82,7 +83,7 @@ public sealed partial class ArtemisTextProcessor
             }
         }
         Stack<string> tables = new();
-        Stack<bool> logicalTables = new();
+        Stack<(bool Image, bool Background)> logicalTables = new();
         for (int i = 0; i < tokens.Count; i++)
         {
             ScriptToken token = tokens[i];
@@ -98,17 +99,20 @@ public sealed partial class ArtemisTextProcessor
                 bool emote = tables.Contains("emote");
                 bool chatLayout = tables.Contains("line");
                 tables.Push(owner);
-                logicalTables.Push(runtimeScaledCoordinates && extension == ".ast" && i+1<tokens.Count &&
-                    tokens[i+1].Kind=='s' && RuntimeScaledImageCommands.Contains(KeyName(tokens[i+1])));
+                string command = extension == ".ast" && i + 1 < tokens.Count && tokens[i + 1].Kind == 's'
+                    ? KeyName(tokens[i + 1]) : "";
+                logicalTables.Push((runtimeScaledCoordinates && RuntimeScaledImageCommands.Contains(command),
+                    runtimeScaledBackgroundPositions && ratio != 1 && command is "bg" or "cg"));
                 if (!vita[i] && extension == ".tbl")
                 {
-                    if (TblListKeys.Contains(owner) && !(runtimeScaledCoordinates && owner == "game_scale")) ScaleTuple(i, false);
+                    if (TblListKeys.Contains(owner) && !((runtimeScaledCoordinates || runtimeScaledBackgroundPositions) && owner == "game_scale")) ScaleTuple(i, false);
                     else if (emote) ScaleTuple(i, true);
                     else if (chatLayout) ScaleChatTuple(i, owner);
                 }
                 continue;
             }
-            if (vita[i] || logicalTables.TryPeek(out bool logical) && logical) continue;
+            logicalTables.TryPeek(out var logical);
+            if (vita[i] || logical.Image) continue;
             if (clipLookupValues.Contains(i))
             {
                 ScaleString(token, true, false);
@@ -163,6 +167,7 @@ public sealed partial class ArtemisTextProcessor
             bool dimensionMember = key is "width" or "height" && At(i - 1) == ".";
             bool tableConfig = extension == ".tbl" && key is "game_width" or "game_height";
             if (!field && !dimensionMember && !tableConfig && !fontMember) continue;
+            if (logical.Background && key is "x" or "y" or "x2" or "y2") continue;
             bool size = key is "w" or "h" or "width" or "height" or "cw" or "ch" or "fw" or "fh" or "size" or "rubysize" or "game_width" or "game_height";
             bool clip = TblClipKeys.Contains(key);
             int parentheses = 0;
@@ -191,10 +196,14 @@ public sealed partial class ArtemisTextProcessor
             if (start < tokens.Count && tokens[start].Kind is ('s' or 'l') && EndOfValue(start + 1))
             {
                 ScaleString(tokens[start], clip, size);
+                if (logical.Background && key == "ay"
+                    && double.TryParse(KeyName(tokens[start]), NumberStyles.Float, CultureInfo.InvariantCulture, out double anchor)
+                    && double.IsFinite(anchor)) PreserveBackgroundAnchor(anchor);
             }
             else if (TryNumber(start, out end, out number) && EndOfValue(end))
             {
                 AddNumber(start, end, number, size);
+                PreserveBackgroundAnchor(number);
             }
             else if (extension == ".lua" && key is "left" or "top" or "width" or "height"
                 && start < tokens.Count && tokens[start].Kind == 'i'
@@ -222,6 +231,13 @@ public sealed partial class ArtemisTextProcessor
                 // Expose conservative decisions to the conversion log. Do not silently
                 // guess which constants in a dynamic expression have pixel units.
                 preservedExpressions.Add(1 + text.AsSpan(0, token.Start).Count('\n'));
+            }
+
+            void PreserveBackgroundAnchor(double anchor)
+            {
+                if (!logical.Background || key != "ay") return;
+                int index = tokens[bracketKey ? i - 1 : i].Start;
+                edits.Add(new(index, index, $"{LogicalBackgroundAnchor}={anchor.ToString("G", CultureInfo.InvariantCulture)}, "));
             }
         }
         StringBuilder result = new(text);

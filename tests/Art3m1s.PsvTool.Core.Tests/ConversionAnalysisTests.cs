@@ -54,6 +54,46 @@ public sealed class ConversionAnalysisTests : IDisposable
         await Convert();
         Assert.Equal("525:370",await Read("root.pfs","any/layout/item.csv"));
     }
+
+    [Fact]
+    public async Task BackgroundPanKeepsScriptPositionsAndConvertsThePixelAnchor()
+    {
+        const string setup = "local s = init.game_scale\ngame.scale = game.width / s[1]";
+        const string helper = "function getScalePos(p) return math.ceil(p * game.scale) end";
+        const string image = """
+            function image_view(p, flag)
+                local x1 = p.x and getScalePos(p.x)
+                local x2 = p.x2 and getScalePos(p.x2)
+                local y1 = p.y and getScalePos(p.y)
+                local y2 = p.y2 and getScalePos(p.y2)
+            end
+            function readImage(id, p, tone)
+                local y = 0
+                if p.ay then y = y - getScalePos(p.ay - game.say) end
+                tag{'lyprop', id=id, anchory=p.ay}
+            end
+            """;
+        const string ast = """
+            ast = {{{'cg', x=-480, y=-60, ax=1200, ay=420},
+                    {'cg', x=480, y=60, x2=-480, y2=-60},
+                    {'bg', x=320, y=200}, {'fg', x=320, y=200}}}
+            """;
+        await Pack("root.pfs", ("system.ini", Ini), ("system/init.lua", setup),
+            ("system/position.lua", helper), ("system/layout.tbl", "init={game_scale={1280,720}}"));
+        await Pack("root.pfs.001", ("system/image.lua", image), ("script/scene.ast", ast));
+
+        await new ConversionService().ConvertAsync(new(Input, Output, Ratio: .5, Categories: AssetCategories.Text));
+
+        string script = await Read("root.pfs.001", "script/scene.ast");
+        Assert.Contains("x=-480, y=-60, ax=600, art3m1s_logical_ay=420, ay=210", script);
+        Assert.Contains("x=480, y=60, x2=-480, y2=-60", script);
+        Assert.Contains("'bg', x=320, y=200", script);
+        Assert.Contains("'fg', x=160, y=100", script);
+        string lua = await Read("root.pfs.001", "system/image.lua");
+        Assert.Contains("getScalePos((p.art3m1s_logical_ay or p.ay) - game.say)", lua);
+        Assert.Contains("anchory=p.ay", lua);
+        Assert.Contains("game_scale={1280,720}", await Read("root.pfs", "system/layout.tbl"));
+    }
     [Fact] public async Task LooseOverrideDoesNotEnableAProfileFromShadowedCode()
     {
         await Pack("root.pfs",("system.ini",Ini),("system/init.lua",Init),("system/func.lua",Helper),

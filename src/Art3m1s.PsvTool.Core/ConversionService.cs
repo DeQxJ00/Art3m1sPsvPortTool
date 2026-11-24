@@ -268,7 +268,7 @@ public sealed class ConversionService : IConversionService
                     if (_text is ArtemisTextProcessor artemis)
                     {
                         IReadOnlyList<int> preserved = await artemis.ProcessWithDiagnosticsAsync(path, options.Ratio, token, runtimeScaledCoordinates,
-                            analysis.ResourcePaths, relativePath);
+                            analysis.ResourcePaths, relativePath, analysis.RuntimeScaledBackgroundPositions);
                         analysis.AddPreserved(archiveName, relativePath.Replace('\\', '/'), preserved);
                         if (adaptPngReader && extension.Equals(".lua", StringComparison.OrdinalIgnoreCase))
                             await ArtemisTextProcessor.AddPngCoordinateReadersAsync(path, token);
